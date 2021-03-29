@@ -232,6 +232,15 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.Ur
 	return originalUL, nil
 }
 
+func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
+	collName := "NfProfile"
+	filter := bson.M{"nfType": nfType}
+
+	MongoDBLibrary.RestfulAPIDeleteMany(collName, filter)
+
+	return nil
+}
+
 func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemDetails) {
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
@@ -336,7 +345,9 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	if err != nil {
 		logger.ManagementLog.Errorln("Unmarshal error in NFRegisterProcedure: ", err)
 	}
-	// set db info
+
+	//set db info
+	NFDeleteAll(string(nf.NfType))
 	collName := "NfProfile"
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
