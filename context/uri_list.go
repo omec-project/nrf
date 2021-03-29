@@ -5,7 +5,7 @@
 package context
 
 import (
-	"free5gc/lib/openapi/models"
+	"github.com/free5gc/openapi/models"
 )
 
 type UriList struct {

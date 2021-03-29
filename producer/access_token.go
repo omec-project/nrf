@@ -1,11 +1,13 @@
 package producer
 
 import (
-	"free5gc/lib/http_wrapper"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/logger"
-	"github.com/dgrijalva/jwt-go"
 	"net/http"
+
+	"github.com/dgrijalva/jwt-go"
+
+	"github.com/free5gc/http_wrapper"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/openapi/models"
 )
 
 func HandleAccessTokenRequest(request *http_wrapper.Request) *http_wrapper.Response {
@@ -34,11 +36,11 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
 
 	var expiration int32 = 1000
-	var scope = request.Scope
-	var tokenType = "Bearer"
+	scope := request.Scope
+	tokenType := "Bearer"
 
 	// Create AccessToken
-	var accessTokenClaims = models.AccessTokenClaims{
+	accessTokenClaims := models.AccessTokenClaims{
 		Iss:            "1234567",                  // TODO: NF instance id of the NRF
 		Sub:            request.NfInstanceId,       // nfInstanceId of service consumer
 		Aud:            request.TargetNfInstanceId, // nfInstanceId of service producer
@@ -50,7 +52,6 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	mySigningKey := []byte("NRF") // AllYourBase
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenClaims)
 	accessToken, err := token.SignedString(mySigningKey)
-
 	if err != nil {
 		logger.AccessTokenLog.Warnln("Signed string error: ", err)
 		errResponse = &models.AccessTokenErr{
@@ -68,5 +69,4 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	}
 
 	return response, nil
-
 }

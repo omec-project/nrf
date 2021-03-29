@@ -2,19 +2,21 @@ package producer
 
 import (
 	"encoding/json"
-	"free5gc/lib/MongoDBLibrary"
-	"free5gc/lib/TimeDecode"
-	"free5gc/lib/http_wrapper"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/context"
-	"free5gc/src/nrf/logger"
-	"go.mongodb.org/mongo-driver/bson"
 	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+
+	"github.com/free5gc/MongoDBLibrary"
+	"github.com/free5gc/TimeDecode"
+	"github.com/free5gc/http_wrapper"
+	"github.com/free5gc/nrf/context"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/openapi/models"
 )
 
 func HandleNFDiscoveryRequest(request *http_wrapper.Request) *http_wrapper.Response {
@@ -35,13 +37,12 @@ func HandleNFDiscoveryRequest(request *http_wrapper.Request) *http_wrapper.Respo
 		Cause:  "UNSPECIFIED",
 	}
 	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
-
 }
 
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,
 	problemDetails *models.ProblemDetails) {
 	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
-		var problemDetails = &models.ProblemDetails{
+		problemDetails := &models.ProblemDetails{
 			Title:  "Invalid Parameter",
 			Status: http.StatusBadRequest,
 			Cause:  "Loss mandatory parameter",
@@ -60,7 +61,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		}
 		// Check either CNF or DNF
 		if complexQueryStruct.CNf != nil && complexQueryStruct.DNf != nil {
-			var problemDetails = &models.ProblemDetails{
+			problemDetails := &models.ProblemDetails{
 				Title:  "Invalid Parameter",
 				Status: http.StatusBadRequest,
 				Cause:  "EITHER CNF OR DNF",
@@ -115,13 +116,12 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 					ipv6IntEnd := new(big.Int)
 					ipv6IntEnd.SetString(((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End, 10)
 					((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End = context.Ipv6IntToIpv6String(ipv6IntEnd)
-
 				}
 			}
 		}
 	}
 	// Build SearchResult model
-	var searchResult = &models.SearchResult{
+	searchResult := &models.SearchResult{
 		ValidityPeriod: 100,
 		NfInstances:    nfProfilesStruct,
 	}
@@ -1177,7 +1177,6 @@ func complexQueryFilter(complexQueryParameter *models.ComplexQuery) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), cnfUnitFilter)
 		}
 	} else {
-
 		filter = bson.M{
 			"$or": []bson.M{},
 		}
@@ -1693,7 +1692,6 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 					},
 				},
 			}
-
 		} else if targetNfType == "CHF" {
 			supiFilter = bson.M{
 				"chfInfo": bson.M{

@@ -3,29 +3,30 @@ package accesstoken_test
 import (
 	"context"
 	"crypto/tls"
-	"free5gc/lib/MongoDBLibrary"
-	"free5gc/lib/openapi/Nnrf_AccessToken"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/accesstoken"
-	"free5gc/src/nrf/logger"
-	"free5gc/src/nrf/util"
 	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/antihax/optional"
-	//"github.com/stretchr/testify/assert"
+
+	"github.com/free5gc/MongoDBLibrary"
+	"github.com/free5gc/nrf/accesstoken"
+	"github.com/free5gc/nrf/factory"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/nrf/util"
+	"github.com/free5gc/openapi/Nnrf_AccessToken"
+	"github.com/free5gc/openapi/models"
 )
 
 func TestAccessTokenRequest(t *testing.T) {
 	// run accesstoken Server Routine
 	go func() {
-		kl, _ := os.OpenFile(util.NrfLogPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		kl, _ := os.OpenFile(util.NrfLogPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		router := accesstoken.NewRouter()
 
 		server := http.Server{
-			Addr: "127.0.0.1:29510",
+			Addr: factory.NRF_DEFAULT_IPV4 + ":" + factory.NRF_DEFAULT_PORT,
 			TLSConfig: &tls.Config{
 				KeyLogWriter: kl,
 			},
@@ -33,7 +34,6 @@ func TestAccessTokenRequest(t *testing.T) {
 			Handler: router,
 		}
 		_ = server.ListenAndServeTLS(util.NrfPemPath, util.NrfKeyPath)
-
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
 

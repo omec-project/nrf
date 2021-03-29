@@ -1,21 +1,22 @@
 package context
 
 import (
-	"fmt"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/factory"
-	"free5gc/src/nrf/logger"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/free5gc/nrf/factory"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/openapi/models"
 )
 
-var NrfNfProfile models.NfProfile
-var Nrf_NfInstanceID string
+var (
+	NrfNfProfile     models.NfProfile
+	Nrf_NfInstanceID string
+)
 
 func InitNrfContext() {
-
 	config := factory.NrfConfig
 	logger.InitLog.Infof("nrfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
@@ -30,11 +31,11 @@ func InitNrfContext() {
 	NrfNfProfile.NfServices = &NFServices
 }
 
-func InitNFService(serivceName []string, version string) []models.NfService {
+func InitNFService(srvNameList []string, version string) []models.NfService {
 	tmpVersion := strings.Split(version, ".")
 	versionUri := "v" + tmpVersion[0]
-	NFServices := make([]models.NfService, len(serivceName))
-	for index, nameString := range serivceName {
+	NFServices := make([]models.NfService, len(srvNameList))
+	for index, nameString := range srvNameList {
 		name := models.ServiceName(nameString)
 		NFServices[index] = models.NfService{
 			ServiceInstanceId: strconv.Itoa(index),
@@ -45,26 +46,17 @@ func InitNFService(serivceName []string, version string) []models.NfService {
 					ApiVersionInUri: versionUri,
 				},
 			},
-			Scheme:          models.UriScheme(factory.NrfConfig.Configuration.Sbi.Scheme),
+			Scheme:          models.UriScheme(factory.NrfConfig.GetSbiScheme()),
 			NfServiceStatus: models.NfServiceStatus_REGISTERED,
-			ApiPrefix:       GetIPv4Uri(),
+			ApiPrefix:       factory.NrfConfig.GetSbiUri(),
 			IpEndPoints: &[]models.IpEndPoint{
 				{
-					Ipv4Address: factory.NrfConfig.Configuration.Sbi.IPv4Addr,
+					Ipv4Address: factory.NrfConfig.GetSbiRegisterIP(),
 					Transport:   models.TransportProtocol_TCP,
-					Port:        int32(factory.NrfConfig.Configuration.Sbi.Port),
+					Port:        int32(factory.NrfConfig.GetSbiPort()),
 				},
 			},
 		}
 	}
 	return NFServices
-}
-
-func GetIPv4Uri() string {
-	return fmt.Sprintf("%s://%s:%d", factory.NrfConfig.Configuration.Sbi.Scheme,
-		factory.NrfConfig.Configuration.Sbi.IPv4Addr, factory.NrfConfig.Configuration.Sbi.Port)
-}
-
-func GetServiceIp() string {
-	return factory.NrfConfig.Configuration.DefaultServiceIP
 }

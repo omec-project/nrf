@@ -10,20 +10,20 @@
 package management
 
 import (
-	"free5gc/lib/http_wrapper"
-	"free5gc/lib/openapi"
-	"free5gc/lib/openapi/models"
-
-	"free5gc/src/nrf/producer"
 	"net/http"
 
-	"free5gc/src/nrf/logger"
 	"github.com/gin-gonic/gin"
+
+	"github.com/free5gc/http_wrapper"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/nrf/producer"
+	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/models"
 )
 
 // DeregisterNFInstance - Deregisters a given NF Instance
 func HTTPDeregisterNFInstance(c *gin.Context) {
-	//parse nfInstanceId
+	// parse nfInstanceId
 
 	req := http_wrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
@@ -42,12 +42,10 @@ func HTTPDeregisterNFInstance(c *gin.Context) {
 	} else {
 		c.Data(httpResponse.Status, "application/json", responseBody)
 	}
-
 }
 
 // GetNFInstance - Read the profile of a given NF Instance
 func HTTPGetNFInstance(c *gin.Context) {
-
 	req := http_wrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
 
@@ -65,7 +63,6 @@ func HTTPGetNFInstance(c *gin.Context) {
 	} else {
 		c.Data(httpResponse.Status, "application/json", responseBody)
 	}
-
 }
 
 // RegisterNFInstance - Register a new NF Instance
@@ -126,7 +123,6 @@ func HTTPRegisterNFInstance(c *gin.Context) {
 
 // UpdateNFInstance - Update NF Instance profile
 func HTTPUpdateNFInstance(c *gin.Context) {
-
 	// step 1: retrieve http request body
 	requestBody, err := c.GetRawData()
 	if err != nil {
@@ -159,5 +155,4 @@ func HTTPUpdateNFInstance(c *gin.Context) {
 	} else {
 		c.Data(httpResponse.Status, "application/json", responseBody)
 	}
-
 }

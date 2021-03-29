@@ -1,7 +1,7 @@
 package context
 
 import (
-	"free5gc/lib/openapi/models"
+	"github.com/free5gc/openapi/models"
 )
 
 type SearchNFInstances struct {
@@ -40,5 +40,5 @@ type SearchNFInstances struct {
 	ChfSupportedPlmn        models.PlmnId        `form:"chf-supported-plmn" `
 	PreferredLocality       string               `form:"preferred-locality" `
 	AccessType              models.AccessType    `form:"access-type" `
-	//IfNoneMatch             string            `form:"target-nf-type" `
+	// IfNoneMatch             string            `form:"target-nf-type" `
 }

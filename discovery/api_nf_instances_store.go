@@ -10,23 +10,25 @@
 package discovery
 
 import (
-	"free5gc/lib/http_wrapper"
-	"free5gc/lib/openapi"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/logger"
-	"free5gc/src/nrf/producer"
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/free5gc/http_wrapper"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/nrf/producer"
+	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/models"
 )
 
 // SearchNFInstances - Search a collection of NF Instances
 func HTTPSearchNFInstances(c *gin.Context) {
 	// var searchNFInstance context.SearchNFInstances
 	// c.BindQuery(&searchNFInstance)
-	//logger.DiscoveryLog.Infoln("searchNFInstance: ", searchNFInstance)
+	// logger.DiscoveryLog.Infoln("searchNFInstance: ", searchNFInstance)
 	// logger.DiscoveryLog.Infoln("targetNFType: ", searchNFInstance.TargetNFType)
 	// logger.DiscoveryLog.Infoln("requesterNFType: ", searchNFInstance.RequesterNFType)
-	//logger.DiscoveryLog.Infoln("ChfSupportedPlmn: ", searchNFInstance.ChfSupportedPlmn)
+	// logger.DiscoveryLog.Infoln("ChfSupportedPlmn: ", searchNFInstance.ChfSupportedPlmn)
 
 	req := http_wrapper.NewRequest(c.Request, nil)
 	req.Query = c.Request.URL.Query()
@@ -44,5 +46,4 @@ func HTTPSearchNFInstances(c *gin.Context) {
 	} else {
 		c.Data(httpResponse.Status, "application/json", responseBody)
 	}
-
 }

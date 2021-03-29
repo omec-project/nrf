@@ -10,22 +10,21 @@
 package management
 
 import (
-	"free5gc/lib/http_wrapper"
-	"free5gc/lib/openapi"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/logger"
-	"free5gc/src/nrf/producer"
-
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/free5gc/http_wrapper"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/nrf/producer"
+	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/models"
 )
 
 // Provide SubsciptionId for each request (add by one each time)
 
 // CreateSubscription - Create a new subscription
 func HTTPCreateSubscription(c *gin.Context) {
-
 	var subscription models.NrfSubscriptionData
 
 	// step 1: retrieve http request body
@@ -71,5 +70,4 @@ func HTTPCreateSubscription(c *gin.Context) {
 	} else {
 		c.Data(httpResponse.Status, "application/json", responseBody)
 	}
-
 }

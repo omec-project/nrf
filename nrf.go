@@ -7,14 +7,14 @@ package main
 
 import (
 	"fmt"
-	"free5gc/src/app"
-	"free5gc/src/nrf/logger"
-	nrf_service "free5gc/src/nrf/service"
-	"free5gc/src/nrf/version"
 	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+
+	"github.com/free5gc/nrf/logger"
+	nrf_service "github.com/free5gc/nrf/service"
+	"github.com/free5gc/version"
 )
 
 var NRF = &nrf_service.NRF{}
@@ -35,13 +35,17 @@ func main() {
 	app.Flags = NRF.GetCliCmd()
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Printf("Run(os.Args error: %v", err)
+		appLog.Errorf("NRF Run Error: %v", err)
 	}
-
 }
 
-func action(c *cli.Context) {
-	app.AppInitializeWillInitialize(c.String("free5gccfg"))
-	NRF.Initialize(c)
+func action(c *cli.Context) error {
+	if err := NRF.Initialize(c); err != nil {
+		logger.CfgLog.Errorf("%+v", err)
+		return fmt.Errorf("Failed to initialize !!")
+	}
+
 	NRF.Start()
+
+	return nil
 }

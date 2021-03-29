@@ -1,10 +1,6 @@
 package management
 
 import (
-	"free5gc/lib/MongoDBLibrary"
-	"free5gc/lib/TimeDecode"
-	"free5gc/lib/openapi/models"
-	"free5gc/src/nrf/logger"
 	"net"
 	"reflect"
 	"strconv"
@@ -12,6 +8,11 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
+
+	"github.com/free5gc/MongoDBLibrary"
+	"github.com/free5gc/TimeDecode"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/openapi/models"
 )
 
 func getLocalIp() string {
@@ -30,7 +31,7 @@ func getLocalIp() string {
 }
 
 func GetNrfInfo() *models.NrfInfo {
-	//init
+	// init
 	var nrfinfo models.NrfInfo
 
 	nrfinfo.ServedUdrInfo = getUdrInfo()
@@ -45,6 +46,7 @@ func GetNrfInfo() *models.NrfInfo {
 
 	return &nrfinfo
 }
+
 func getUdrInfo() map[string]models.UdrInfo {
 	var servedUdrInfo map[string]models.UdrInfo
 	servedUdrInfo = make(map[string]models.UdrInfo)
@@ -68,7 +70,6 @@ func getUdrInfo() map[string]models.UdrInfo {
 		servedUdrInfo[index] = *UDRProfile.UdrInfo
 	}
 	return servedUdrInfo
-
 }
 
 func getUdmInfo() map[string]models.UdmInfo {
@@ -94,8 +95,8 @@ func getUdmInfo() map[string]models.UdmInfo {
 		servedUdmInfo[index] = *UDMProfile.UdmInfo
 	}
 	return servedUdmInfo
-
 }
+
 func getAusfInfo() map[string]models.AusfInfo {
 	var servedAusfInfo map[string]models.AusfInfo
 	servedAusfInfo = make(map[string]models.AusfInfo)
@@ -118,7 +119,6 @@ func getAusfInfo() map[string]models.AusfInfo {
 		servedAusfInfo[index] = *AUSFProfile.AusfInfo
 	}
 	return servedAusfInfo
-
 }
 
 func getAmfInfo() map[string]models.AmfInfo {
@@ -143,8 +143,8 @@ func getAmfInfo() map[string]models.AmfInfo {
 		servedAmfinfo[index] = *AMFProfile.AmfInfo
 	}
 	return servedAmfinfo
-
 }
+
 func getSmfInfo() map[string]models.SmfInfo {
 	var servedSmfInfo map[string]models.SmfInfo
 	servedSmfInfo = make(map[string]models.SmfInfo)
@@ -167,8 +167,8 @@ func getSmfInfo() map[string]models.SmfInfo {
 		servedSmfInfo[index] = *SMFProfile.SmfInfo
 	}
 	return servedSmfInfo
-
 }
+
 func getUpfInfo() map[string]models.UpfInfo {
 	var servedUpfInfo map[string]models.UpfInfo
 	servedUpfInfo = make(map[string]models.UpfInfo)
@@ -191,8 +191,8 @@ func getUpfInfo() map[string]models.UpfInfo {
 		servedUpfInfo[index] = *UPFProfile.UpfInfo
 	}
 	return servedUpfInfo
-
 }
+
 func getPcfInfo() map[string]models.PcfInfo {
 	var servedPcfInfo map[string]models.PcfInfo
 	servedPcfInfo = make(map[string]models.PcfInfo)
@@ -215,8 +215,8 @@ func getPcfInfo() map[string]models.PcfInfo {
 		servedPcfInfo[index] = *PCFProfile.PcfInfo
 	}
 	return servedPcfInfo
-
 }
+
 func getBsfInfo() map[string]models.BsfInfo {
 	var servedBsfInfo map[string]models.BsfInfo
 	servedBsfInfo = make(map[string]models.BsfInfo)
@@ -239,8 +239,8 @@ func getBsfInfo() map[string]models.BsfInfo {
 		servedBsfInfo[index] = *BSFProfile.BsfInfo
 	}
 	return servedBsfInfo
-
 }
+
 func getChfInfo() map[string]models.ChfInfo {
 	var servedChfInfo map[string]models.ChfInfo
 	servedChfInfo = make(map[string]models.ChfInfo)
@@ -263,7 +263,6 @@ func getChfInfo() map[string]models.ChfInfo {
 		servedChfInfo[index] = *CHFProfile.ChfInfo
 	}
 	return servedChfInfo
-
 }
 
 // DecodeNfProfile - Only support []map[string]interface to []models.NfProfile

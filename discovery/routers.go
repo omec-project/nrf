@@ -10,12 +10,14 @@
 package discovery
 
 import (
-	"free5gc/lib/logger_util"
-	"free5gc/src/nrf/logger"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/free5gc/logger_util"
+	"github.com/free5gc/nrf/factory"
+	"github.com/free5gc/nrf/logger"
 )
 
 // Route is the information for every URI.
@@ -41,7 +43,7 @@ func NewRouter() *gin.Engine {
 }
 
 func AddService(engine *gin.Engine) *gin.RouterGroup {
-	group := engine.Group("/nnrf-disc/v1")
+	group := engine.Group(factory.NRF_DISC_RES_URI_PREFIX)
 
 	for _, route := range routes {
 		switch route.Method {

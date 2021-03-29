@@ -2,21 +2,22 @@ package main
 
 import (
 	"fmt"
-	"free5gc/lib/http2_util"
-	"free5gc/lib/logger_util"
-	. "free5gc/lib/openapi/models"
-	"free5gc/lib/path_util"
-	"free5gc/src/nrf/logger"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/free5gc/http2_util"
+	"github.com/free5gc/logger_util"
+	"github.com/free5gc/nrf/logger"
+	. "github.com/free5gc/openapi/models"
+	"github.com/free5gc/path_util"
 )
 
 var (
-	NrfLogPath = path_util.Gofree5gcPath("free5gc/src/nrf/management/sslkeylog.log")
-	NrfPemPath = path_util.Gofree5gcPath("free5gc/support/TLS/nrf.pem")
-	NrfKeyPath = path_util.Gofree5gcPath("free5gc/support/TLS/nrf.key")
+	NrfLogPath = path_util.Free5gcPath("github.com/free5gc/nrf/management/sslkeylog.log")
+	NrfPemPath = path_util.Free5gcPath("free5gc/support/TLS/nrf.pem")
+	NrfKeyPath = path_util.Free5gcPath("free5gc/support/TLS/nrf.key")
 )
 
 func main() {
@@ -47,5 +48,4 @@ func main() {
 	if err2 != nil && err2 != http.ErrServerClosed {
 		log.Panic(err2.Error())
 	}
-
 }

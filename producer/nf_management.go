@@ -4,24 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"free5gc/lib/MongoDBLibrary"
-	"free5gc/lib/TimeDecode"
-	"free5gc/lib/http_wrapper"
-	//"free5gc/lib/openapi"
-	"free5gc/lib/openapi/Nnrf_NFManagement"
-	"free5gc/lib/openapi/models"
-	nrf_context "free5gc/src/nrf/context"
-	//"free5gc/src/nrf/factory"
-	"free5gc/src/nrf/logger"
-	"github.com/mitchellh/mapstructure"
-	"go.mongodb.org/mongo-driver/bson"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	"go.mongodb.org/mongo-driver/bson"
+
+	"github.com/free5gc/MongoDBLibrary"
+	"github.com/free5gc/TimeDecode"
+	"github.com/free5gc/http_wrapper"
+	nrf_context "github.com/free5gc/nrf/context"
+	"github.com/free5gc/nrf/logger"
+	"github.com/free5gc/openapi/Nnrf_NFManagement"
+	"github.com/free5gc/openapi/models"
 )
 
 func HandleNFDeregisterRequest(request *http_wrapper.Request) *http_wrapper.Response {
-
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
@@ -33,11 +32,9 @@ func HandleNFDeregisterRequest(request *http_wrapper.Request) *http_wrapper.Resp
 	} else {
 		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
-
 }
 
 func HandleGetNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.Response {
-
 	logger.ManagementLog.Infoln("Handle GetNFInstanceRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
@@ -55,14 +52,12 @@ func HandleGetNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.Res
 }
 
 func HandleNFRegisterRequest(request *http_wrapper.Request) *http_wrapper.Response {
-
 	logger.ManagementLog.Infoln("Handle NFRegisterRequest")
 	nfProfile := request.Body.(models.NfProfile)
 
 	header, response, problemDetails := NFRegisterProcedure(nfProfile)
 
 	if response != nil {
-
 		logger.ManagementLog.Traceln("register success")
 		return http_wrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
@@ -75,11 +70,9 @@ func HandleNFRegisterRequest(request *http_wrapper.Request) *http_wrapper.Respon
 	}
 	logger.ManagementLog.Traceln("register failed")
 	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
-
 }
 
 func HandleUpdateNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.Response {
-
 	logger.ManagementLog.Infoln("Handle UpdateNFInstanceRequest")
 	nfInstanceID := request.Params["nfInstanceID"]
 	patchJSON := request.Body.([]byte)
@@ -88,13 +81,11 @@ func HandleUpdateNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.
 	if response != nil {
 		return http_wrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
-
 		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
 
 func HandleGetNFInstancesRequest(request *http_wrapper.Request) *http_wrapper.Response {
-
 	logger.ManagementLog.Infoln("Handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
 	limit, err := strconv.Atoi(request.Query.Get("limit"))
@@ -111,7 +102,6 @@ func HandleGetNFInstancesRequest(request *http_wrapper.Request) *http_wrapper.Re
 
 	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
 	if response != nil {
-
 		logger.ManagementLog.Traceln("GetNFInstances success")
 		return http_wrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
@@ -167,7 +157,6 @@ func HandleCreateSubscriptionRequest(request *http_wrapper.Request) *http_wrappe
 	}
 	logger.ManagementLog.Traceln("CreateSubscription failed")
 	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
-
 }
 
 func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (response bson.M,
@@ -178,7 +167,7 @@ func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (respo
 	if err != nil {
 		logger.ManagementLog.Errorln("Marshal error in CreateSubscriptionProcedure: ", err)
 	}
-	var putData = bson.M{}
+	putData := bson.M{}
 	err = json.Unmarshal(tmp, &putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("Unmarshal error in CreateSubscriptionProcedure: ", err)
@@ -191,7 +180,7 @@ func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (respo
 	} else {
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusBadRequest,
-			Cause:  "CREATE_SUBSCIRPTION_ERROR",
+			Cause:  "CREATE_SUBSCRIPTION_ERROR",
 		}
 
 		return nil, problemDetails
@@ -208,11 +197,9 @@ func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (respo
 	} else {
 		return nil
 	}
-
 }
 
 func RemoveSubscriptionProcedure(subscriptionID string) {
-
 	collName := "Subscriptions"
 	filter := bson.M{"subscriptionId": subscriptionID}
 
@@ -241,7 +228,7 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.Ur
 		return nil, problemDetail
 	}
 	nrf_context.NnrfUriListLimit(originalUL, limit)
-	//c.JSON(http.StatusOK, originalUL)
+	// c.JSON(http.StatusOK, originalUL)
 	return originalUL, nil
 }
 
@@ -277,10 +264,8 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 
 	uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
-	//make nfInstanceUri
-	localIP := nrf_context.GetServiceIp()
-	nfInstanceUri := fmt.Sprintf("%s%s%s%s%s", "https://", localIP, ":29510", "/nnrf-nfm/v1/nf-instances/", nfInstanceID)
-	//set info for NotificationData
+	nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
+	// set info for NotificationData
 	Notification_event := models.NotificationEventType_DEREGISTERED
 
 	for _, uri := range uriList {
@@ -294,7 +279,6 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 }
 
 func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}) {
-
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
@@ -311,12 +295,9 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		}
 		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
-		//make nfInstanceUri
-		localIP := nrf_context.GetServiceIp()
-		uri := fmt.Sprintf("%s%s%s%s%s", "https://", localIP, ":29510", "/nnrf-nfm/v1/nf-instances/", nfInstanceID)
-		//set info for NotificationData
+		// set info for NotificationData
 		Notification_event := models.NotificationEventType_PROFILE_CHANGED
-		nfInstanceUri := uri
+		nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
 
 		for _, uri := range uriList {
 			SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
@@ -340,7 +321,6 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	problemDetails *models.ProblemDetails) {
 	logger.ManagementLog.Traceln("[NRF] In NFRegisterProcedure")
 	var nf models.NfProfile
-	localIP := nrf_context.GetServiceIp()
 
 	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {
@@ -353,18 +333,19 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		return nil, nil, problemDetails
 	}
 
-	//make location header
-	locationHeaderValue := nrf_context.SetLocationHeader(nfProfile, localIP)
-	//Marshal nf to bson
+	// make location header
+	locationHeaderValue := nrf_context.SetLocationHeader(nfProfile)
+	// Marshal nf to bson
 	tmp, err := json.Marshal(nf)
 	if err != nil {
 		logger.ManagementLog.Errorln("Marshal error in NFRegisterProcedure: ", err)
 	}
-	var putData = bson.M{}
+	putData := bson.M{}
 	err = json.Unmarshal(tmp, &putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("Unmarshal error in NFRegisterProcedure: ", err)
 	}
+
 	//set db info
 	NFDeleteAll(string(nf.NfType))
 	collName := "NfProfile"
@@ -372,15 +353,15 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	filter := bson.M{"nfInstanceId": nfInstanceId}
 
 	// Update NF Profile case
-	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) { //true insert
+	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrf_context.GetNofificationUri(nf)
 
-		//set info for NotificationData
+		// set info for NotificationData
 		Notification_event := models.NotificationEventType_PROFILE_CHANGED
 		nfInstanceUri := locationHeaderValue
 
-		//receive the rsp from handler
+		// receive the rsp from handler
 		for _, uri := range uriList {
 			problemDetails = SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
 			if problemDetails != nil {
@@ -394,7 +375,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("Create NF Profile")
 		uriList := nrf_context.GetNofificationUri(nf)
-		//set info for NotificationData
+		// set info for NotificationData
 		Notification_event := models.NotificationEventType_REGISTERED
 		nfInstanceUri := locationHeaderValue
 
@@ -414,10 +395,9 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
 	url string) *models.ProblemDetails {
-
 	// Set client and set url
 	configuration := Nnrf_NFManagement.NewConfiguration()
-	//url = fmt.Sprintf("%s%s", url, "/notification")
+	// url = fmt.Sprintf("%s%s", url, "/notification")
 
 	configuration.SetBasePathNoGroup(url)
 	notifcationData := models.NotificationData{
@@ -437,6 +417,11 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 		return problemDetails
 	}
 	if res != nil {
+		defer func() {
+			if resCloseErr := res.Body.Close(); resCloseErr != nil {
+				logger.ManagementLog.Errorf("NotificationApi response body cannot close: %+v", resCloseErr)
+			}
+		}()
 		if status := res.StatusCode; status != http.StatusNoContent {
 			logger.ManagementLog.Warnln("Error status in NotificationPost: ", status)
 			problemDetails := &models.ProblemDetails{
