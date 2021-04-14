@@ -43,4 +43,4 @@ RUN mkdir -p nrf/
 COPY --from=builder /go/src/nrf/bin/* ./nrf
 WORKDIR /free5gc/nrf
 # Exposed ports
-EXPOSE 29502
+EXPOSE 29510
