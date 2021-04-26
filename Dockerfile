@@ -42,5 +42,3 @@ RUN mkdir -p nrf/
 # Copy executable and default certs
 COPY --from=builder /go/src/nrf/bin/* ./nrf
 WORKDIR /free5gc/nrf
-# Exposed ports
-EXPOSE 29510
