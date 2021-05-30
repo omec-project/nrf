@@ -12,6 +12,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"github.com/spf13/viper"
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/free5gc/MongoDBLibrary"
 	mongoDBLibLogger "github.com/free5gc/MongoDBLibrary/logger"
@@ -83,7 +85,28 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 		return err
 	}
 
+	viper.SetConfigName("nrfcfg.conf") 
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("/free5gc/config")
+	err := viper.ReadInConfig() // Find and read the config file
+	if err != nil { // Handle errors reading the config file
+		return err
+	}
 	return nil
+}
+
+func (nrf *NRF) WatchConfig() {
+	viper.WatchConfig()
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Println("Config file changed:", e.Name)
+		if err := factory.UpdateNrfConfig("/free5gc/config/nrfcfg.conf"); err != nil {
+			fmt.Println("error in loading updated configuration")
+		} else {
+			//self := context.NRF_Self()
+			//util.InitNrfContext(self)
+			fmt.Println("successfully updated configuration")
+		}
+	})
 }
 
 func (nrf *NRF) setLogLevel() {
