@@ -102,8 +102,7 @@ func (nrf *NRF) WatchConfig() {
 		if err := factory.UpdateNrfConfig("/free5gc/config/nrfcfg.conf"); err != nil {
 			fmt.Println("error in loading updated configuration")
 		} else {
-			//self := context.NRF_Self()
-			//util.InitNrfContext(self)
+			nrf_context.InitNrfContext()
 			fmt.Println("successfully updated configuration")
 		}
 	})
