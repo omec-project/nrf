@@ -99,7 +99,7 @@ func (nrf *NRF) WatchConfig() {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		fmt.Println("Config file changed:", e.Name)
-		if err := factory.UpdateNrfConfig("/free5gc/config/nrfcfg.conf"); err != nil {
+		if err := factory.UpdateNrfConfig(e.Name + "/nrfcfg.conf"); err != nil {
 			fmt.Println("error in loading updated configuration")
 		} else {
 			nrf_context.InitNrfContext()
