@@ -178,8 +178,8 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (nrf *NRF) Start() {
-	MongoDBLibrary.SetMongoDB(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl)
 	initLog.Infoln("Server started")
+	MongoDBLibrary.SetMongoDB(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl)
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
 
@@ -199,6 +199,12 @@ func (nrf *NRF) Start() {
 		os.Exit(0)
 	}()
 
+	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
+	if roc == "true" {
+		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
+	} else {
+		initLog.Infoln("Use helm chart config ")
+	}
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	initLog.Infof("Binding addr: [%s]", bindAddr)
 	server, err := http2_util.NewServer(bindAddr, util.NrfLogPath, router)

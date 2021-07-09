@@ -26,6 +26,7 @@ var (
 	AccessTokenLog *logrus.Entry
 	DiscoveryLog   *logrus.Entry
 	GinLog         *logrus.Entry
+	GrpcLog        *logrus.Entry
 )
 
 func init() {
@@ -58,6 +59,7 @@ func init() {
 	AccessTokenLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "Token"})
 	DiscoveryLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "DSCV"})
 	GinLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GIN"})
+	GrpcLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GRPC"})
 }
 
 func SetLogLevel(level logrus.Level) {

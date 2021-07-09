@@ -16,6 +16,7 @@ import (
 	"github.com/free5gc/logger_util"
 	"github.com/free5gc/nrf/logger"
 	"github.com/free5gc/openapi/models"
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 )
 
 const (
@@ -40,11 +41,17 @@ type Info struct {
 }
 
 type Configuration struct {
-	Sbi             *Sbi          `yaml:"sbi,omitempty"`
-	MongoDBName     string        `yaml:"MongoDBName"`
-	MongoDBUrl      string        `yaml:"MongoDBUrl"`
-	DefaultPlmnId   models.PlmnId `yaml:"DefaultPlmnId"`
-	ServiceNameList []string      `yaml:"serviceNameList,omitempty"`
+	Sbi             *Sbi              `yaml:"sbi,omitempty"`
+	MongoDBName     string            `yaml:"MongoDBName"`
+	MongoDBUrl      string            `yaml:"MongoDBUrl"`
+	DefaultPlmnId   models.PlmnId     `yaml:"DefaultPlmnId"`
+	ServiceNameList []string          `yaml:"serviceNameList,omitempty"`
+	PlmnSupportList []PlmnSupportItem `yaml:"plmnSupportList,omitempty"`
+}
+
+type PlmnSupportItem struct {
+	PlmnId     models.PlmnId   `yaml:"plmnId"`
+	SNssaiList []models.Snssai `yaml:"snssaiList,omitempty"`
 }
 
 type Sbi struct {
@@ -54,6 +61,8 @@ type Sbi struct {
 	BindingIPv4 string `yaml:"bindingIPv4,omitempty"` // IP used to run the server in the node.
 	Port        int    `yaml:"port,omitempty"`
 }
+
+var MinConfigAvailable bool
 
 func (c *Config) GetVersion() string {
 	if c.Info != nil && c.Info.Version != "" {
@@ -118,4 +127,31 @@ func (c *Config) GetSbiRegisterAddr() string {
 
 func (c *Config) GetSbiUri() string {
 	return c.GetSbiScheme() + "://" + c.GetSbiRegisterAddr()
+}
+
+func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
+	for rsp := range commChannel {
+		logger.GrpcLog.Infoln("Received updateConfig in the nrf app : ", rsp)
+		for _, ns := range rsp.NetworkSlice {
+			logger.GrpcLog.Infoln("Network Slice Name ", ns.Name)
+			if ns.Site != nil {
+				logger.GrpcLog.Infoln("Network Slice has site name present ")
+				site := ns.Site
+				logger.GrpcLog.Infoln("Site name ", site.SiteName)
+				if site.Plmn != nil {
+					logger.GrpcLog.Infoln("Plmn mcc ", site.Plmn.Mcc)
+					plmn := PlmnSupportItem{}
+					plmn.PlmnId.Mnc = site.Plmn.Mnc
+					plmn.PlmnId.Mcc = site.Plmn.Mcc
+					NrfConfig.Configuration.PlmnSupportList = append(NrfConfig.Configuration.PlmnSupportList, plmn)
+				} else {
+					logger.GrpcLog.Infoln("Plmn not present in the message ")
+				}
+
+			}
+		}
+		logger.GrpcLog.Infoln("minimum config Available")
+		MinConfigAvailable = true
+	}
+	return true
 }

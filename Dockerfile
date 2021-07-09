@@ -21,6 +21,7 @@ RUN apt-get clean
 
 RUN cd $GOPATH/src && mkdir -p nrf
 COPY . $GOPATH/src/nrf
+
 RUN cd $GOPATH/src/nrf \
     && make all
 

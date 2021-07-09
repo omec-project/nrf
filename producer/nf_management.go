@@ -378,7 +378,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		header.Add("Location", locationHeaderValue)
 		return header, putData, nil
 	} else { // Create NF Profile case
-		logger.ManagementLog.Infoln("Create NF Profile")
+		logger.ManagementLog.Infoln("Create NF Profile ", nfProfile.NfType)
 		uriList := nrf_context.GetNofificationUri(nf)
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_REGISTERED
