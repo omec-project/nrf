@@ -8,6 +8,8 @@ package service
 import (
 	"bufio"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof" //Using package only for invoking initialization.
 	"os"
 	"os/exec"
 	"os/signal"
@@ -87,6 +89,11 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
+
+	//Initiating a server for profiling
+	go func() {
+		http.ListenAndServe(":5001", nil)
+	}()
 
 	return nil
 }
