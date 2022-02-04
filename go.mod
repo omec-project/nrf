@@ -10,7 +10,7 @@ require (
 	github.com/free5gc/TimeDecode v1.0.0
 	github.com/free5gc/http2_util v1.0.0
 	github.com/free5gc/http_wrapper v1.0.0
-	github.com/free5gc/logger_conf v1.0.0
+	github.com/free5gc/logger_conf v1.0.0 // indirect
 	github.com/free5gc/logger_util v1.0.0
 	github.com/free5gc/openapi v1.0.0
 	github.com/free5gc/path_util v1.0.0
