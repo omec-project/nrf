@@ -1,11 +1,3 @@
-<!--
-SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
-Copyright 2019 free5GC.org
-
-SPDX-License-Identifier: Apache-2.0
-
--->
-
 # NRF
 
 Network Repository Function provides service discovery functionality in the 5G core network. 
