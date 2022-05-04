@@ -2,6 +2,8 @@ module github.com/free5gc/nrf
 
 go 1.14
 
+replace github.com/free5gc/nrf => ./
+
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
@@ -17,9 +19,10 @@ require (
 	github.com/gin-gonic/gin v1.6.3
 	github.com/google/uuid v1.1.2
 	github.com/mitchellh/mapstructure v1.4.0
+	github.com/omec-project/MongoDBLibrary v1.0.0
 	github.com/omec-project/config5g v1.0.7
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli v1.22.5
-	go.mongodb.org/mongo-driver v1.4.4
+	go.mongodb.org/mongo-driver v1.7.3
 	gopkg.in/yaml.v2 v2.4.0
 )

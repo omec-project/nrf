@@ -10,16 +10,17 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
 	"github.com/free5gc/TimeDecode"
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/nrf/context"
+	"github.com/free5gc/nrf/dbadapter"
 	"github.com/free5gc/nrf/logger"
 	"github.com/free5gc/openapi/models"
 )
@@ -85,7 +86,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	logger.DiscoveryLog.Traceln("Query filter: ", filter)
 
 	// Use the filter to find documents
-	nfProfilesRaw := MongoDBLibrary.RestfulAPIGetMany("NfProfile", filter)
+	nfProfilesRaw := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
 
 	// nfProfile data for response
 	var nfProfilesStruct []models.NfProfile
@@ -94,6 +95,17 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	if err != nil {
 		logger.DiscoveryLog.Warnln("NF Profile Raw decode error: ", nfProfilesStruct)
 	}
+
+	// sort nfprofiles based on timestamp
+	sort.Slice(nfProfilesStruct, func(i, j int) bool {
+		var updatedTimeVal time.Time
+		if nfProfilesStruct[j].CustomInfo == nil {
+			return false
+		}
+		updatedTimeVal = nfProfilesStruct[j].CustomInfo["updatedAt"].(time.Time)
+
+		return nfProfilesStruct[i].CustomInfo["updatedAt"].(time.Time).Before(updatedTimeVal)
+	})
 
 	// handle ipv4 & ipv6
 	if queryParameters["target-nf-type"][0] == "BSF" {

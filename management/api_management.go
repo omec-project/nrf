@@ -13,8 +13,8 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
 	"github.com/free5gc/TimeDecode"
+	"github.com/free5gc/nrf/dbadapter"
 	"github.com/free5gc/nrf/logger"
 	"github.com/free5gc/openapi/models"
 )
@@ -59,7 +59,7 @@ func getUdrInfo() map[string]models.UdrInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "UDR"}
 
-	UDR := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	UDR := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	UDRStruct, err := TimeDecode.Decode(UDR, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -84,7 +84,7 @@ func getUdmInfo() map[string]models.UdmInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "UDM"}
 
-	UDM := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	UDM := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	UDMStruct, err := TimeDecode.Decode(UDM, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -109,7 +109,7 @@ func getAusfInfo() map[string]models.AusfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "AUSF"}
 
-	AUSF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	AUSF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	AUSFStruct, err := TimeDecode.Decode(AUSF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -133,7 +133,7 @@ func getAmfInfo() map[string]models.AmfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "AMF"}
 
-	AMF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	AMF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	AMFStruct, err := TimeDecode.Decode(AMF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -157,7 +157,7 @@ func getSmfInfo() map[string]models.SmfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "SMF"}
 
-	SMF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	SMF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	SMFStruct, err := TimeDecode.Decode(SMF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -181,7 +181,7 @@ func getUpfInfo() map[string]models.UpfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "UPF"}
 
-	UPF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	UPF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	UPFStruct, err := TimeDecode.Decode(UPF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -205,7 +205,7 @@ func getPcfInfo() map[string]models.PcfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "PCF"}
 
-	PCF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	PCF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	PCFStruct, err := TimeDecode.Decode(PCF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -229,7 +229,7 @@ func getBsfInfo() map[string]models.BsfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "BSF"}
 
-	BSF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	BSF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	BSFStruct, err := TimeDecode.Decode(BSF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
@@ -253,7 +253,7 @@ func getChfInfo() map[string]models.ChfInfo {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": "CHF"}
 
-	CHF := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	CHF := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	CHFStruct, err := TimeDecode.Decode(CHF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)

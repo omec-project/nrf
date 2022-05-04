@@ -47,6 +47,7 @@ type Configuration struct {
 	DefaultPlmnId   models.PlmnId     `yaml:"DefaultPlmnId"`
 	ServiceNameList []string          `yaml:"serviceNameList,omitempty"`
 	PlmnSupportList []PlmnSupportItem `yaml:"plmnSupportList,omitempty"`
+	NfKeepAliveTime int32             `yaml:"nfKeepAliveTime,omitempty"`
 }
 
 type PlmnSupportItem struct {

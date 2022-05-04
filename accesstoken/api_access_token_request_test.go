@@ -15,8 +15,8 @@ import (
 
 	"github.com/antihax/optional"
 
-	"github.com/free5gc/MongoDBLibrary"
 	"github.com/free5gc/nrf/accesstoken"
+	"github.com/free5gc/nrf/dbadapter"
 	"github.com/free5gc/nrf/factory"
 	"github.com/free5gc/nrf/logger"
 	"github.com/free5gc/nrf/util"
@@ -43,7 +43,7 @@ func TestAccessTokenRequest(t *testing.T) {
 	time.Sleep(time.Duration(2) * time.Second)
 
 	// connect to mongoDB
-	MongoDBLibrary.SetMongoDB("free5gc", "mongodb://140.113.214.205:30030")
+	dbadapter.ConnectToDBClient("free5gc", "mongodb://140.113.214.205:30030")
 
 	// Set client and set url
 	configuration := Nnrf_AccessToken.NewConfiguration()

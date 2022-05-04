@@ -18,12 +18,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	"github.com/free5gc/MongoDBLibrary"
-	mongoDBLibLogger "github.com/free5gc/MongoDBLibrary/logger"
 	"github.com/free5gc/http2_util"
 	"github.com/free5gc/logger_util"
 	"github.com/free5gc/nrf/accesstoken"
 	nrf_context "github.com/free5gc/nrf/context"
+	"github.com/free5gc/nrf/dbadapter"
 	"github.com/free5gc/nrf/discovery"
 	"github.com/free5gc/nrf/factory"
 	"github.com/free5gc/nrf/logger"
@@ -32,6 +31,7 @@ import (
 	openApiLogger "github.com/free5gc/openapi/logger"
 	"github.com/free5gc/path_util"
 	pathUtilLogger "github.com/free5gc/path_util/logger"
+	mongoDBLibLogger "github.com/omec-project/MongoDBLibrary/logger"
 )
 
 type NRF struct{}
@@ -179,7 +179,7 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 
 func (nrf *NRF) Start() {
 	initLog.Infoln("Server started")
-	MongoDBLibrary.SetMongoDB(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl)
+	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl)
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
 

@@ -15,7 +15,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
+	"github.com/free5gc/nrf/dbadapter"
 	"github.com/free5gc/nrf/factory"
 	"github.com/free5gc/nrf/logger"
 	"github.com/free5gc/openapi"
@@ -62,10 +62,13 @@ func SetsubscriptionId() string {
 }
 
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
+
 	// HeartBeatTimer
-	if nfprofile.HeartBeatTimer >= 0 {
-		nf.HeartBeatTimer = nfprofile.HeartBeatTimer
+	if factory.NrfConfig.Configuration.NfKeepAliveTime == 0 {
+		factory.NrfConfig.Configuration.NfKeepAliveTime = 30
 	}
+	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
+
 	// PlmnList
 	if nfprofile.PlmnList != nil {
 		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
@@ -426,7 +429,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 	nfType := nfprofile.NfType
 	filter := bson.M{"nfType": nfType}
 
-	ul := MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	ul := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 
 	var originalUL UriList
 	err := mapstructure.Decode(ul, &originalUL)
@@ -448,7 +451,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 		logger.ManagementLog.Error(err)
 	}
 
-	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) {
+	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) {
 		logger.ManagementLog.Info("urilist update")
 	} else {
 		logger.ManagementLog.Info("urilist create")
@@ -458,7 +461,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 }
 
 func setUriListByFilter(filter bson.M, uriList *[]string) {
-	filterNfTypeResultsRaw := MongoDBLibrary.RestfulAPIGetMany("Subscriptions", filter)
+	filterNfTypeResultsRaw := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
 	var filterNfTypeResults []models.NrfSubscriptionData
 	err := openapi.Convert(filterNfTypeResultsRaw, &filterNfTypeResults)
 	if err != nil {
