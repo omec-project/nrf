@@ -16,12 +16,12 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
-	"github.com/free5gc/TimeDecode"
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/nrf/context"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/TimeDecode"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/models"
 )
 
 func HandleNFDiscoveryRequest(request *http_wrapper.Request) *http_wrapper.Response {

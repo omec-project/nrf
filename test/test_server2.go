@@ -12,11 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/http2_util"
-	"github.com/free5gc/logger_util"
-	"github.com/free5gc/nrf/logger"
-	. "github.com/free5gc/openapi/models"
-	"github.com/free5gc/path_util"
+	"github.com/omec-project/http2_util"
+	"github.com/omec-project/logger_util"
+	"github.com/omec-project/nrf/logger"
+	. "github.com/omec-project/openapi/models"
+	"github.com/omec-project/path_util"
 )
 
 var (

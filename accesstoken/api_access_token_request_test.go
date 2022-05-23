@@ -15,13 +15,13 @@ import (
 
 	"github.com/antihax/optional"
 
-	"github.com/free5gc/MongoDBLibrary"
-	"github.com/free5gc/nrf/accesstoken"
-	"github.com/free5gc/nrf/factory"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/nrf/util"
-	"github.com/free5gc/openapi/Nnrf_AccessToken"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/nrf/accesstoken"
+	"github.com/omec-project/nrf/factory"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/util"
+	"github.com/omec-project/openapi/Nnrf_AccessToken"
+	"github.com/omec-project/openapi/models"
 )
 
 func TestAccessTokenRequest(t *testing.T) {
