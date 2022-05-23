@@ -13,10 +13,10 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
-	"github.com/free5gc/TimeDecode"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/TimeDecode"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/models"
 )
 
 func getLocalIp() string {

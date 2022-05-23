@@ -13,10 +13,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/free5gc/logger_util"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/models"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
+	"github.com/omec-project/logger_util"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/models"
 )
 
 const (

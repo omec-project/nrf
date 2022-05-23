@@ -16,13 +16,13 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/MongoDBLibrary"
-	"github.com/free5gc/TimeDecode"
-	"github.com/free5gc/http_wrapper"
-	nrf_context "github.com/free5gc/nrf/context"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/Nnrf_NFManagement"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/TimeDecode"
+	"github.com/omec-project/http_wrapper"
+	nrf_context "github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/Nnrf_NFManagement"
+	"github.com/omec-project/openapi/models"
 )
 
 func HandleNFDeregisterRequest(request *http_wrapper.Request) *http_wrapper.Response {
@@ -298,6 +298,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		if err != nil {
 			logger.ManagementLog.Info(err.Error())
 		}
+
 		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
 		// set info for NotificationData
@@ -326,7 +327,6 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	problemDetails *models.ProblemDetails) {
 	logger.ManagementLog.Traceln("[NRF] In NFRegisterProcedure")
 	var nf models.NfProfile
-
 	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {
 		str1 := fmt.Sprint(nfProfile.HeartBeatTimer)
@@ -340,6 +340,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 
 	// make location header
 	locationHeaderValue := nrf_context.SetLocationHeader(nfProfile)
+
 	// Marshal nf to bson
 	tmp, err := json.Marshal(nf)
 	if err != nil {
@@ -356,6 +357,15 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	collName := "NfProfile"
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
+
+	if nf.NfType == models.NfType_PCF {
+		if len(MongoDBLibrary.RestfulAPIGetOne(collName, filter)) == 0 {
+			putData["createdAt"] = time.Now()
+			putData["updatedAt"] = time.Now()
+		} else {
+			putData["updatedAt"] = time.Now()
+		}
+	}
 
 	// Update NF Profile case
 	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) { // true insert

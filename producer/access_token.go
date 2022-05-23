@@ -8,11 +8,11 @@ package producer
 import (
 	"net/http"
 
-	"github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/models"
 )
 
 func HandleAccessTokenRequest(request *http_wrapper.Request) *http_wrapper.Response {

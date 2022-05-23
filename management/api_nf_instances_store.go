@@ -18,11 +18,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/nrf/producer"
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/producer"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/models"
 )
 
 // GetNFInstances - Retrieves a collection of NF Instances
