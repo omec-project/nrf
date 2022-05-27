@@ -16,8 +16,8 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/free5gc/nrf/logger"
 	"github.com/omec-project/config5g/proto/client"
+	"github.com/omec-project/nrf/logger"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,7 +41,7 @@ func InitConfigFactory(f string) error {
 		if yamlErr := yaml.Unmarshal(content, &NrfConfig); yamlErr != nil {
 			return yamlErr
 		}
-		initLog.Infoln("DefaultPlmnId Mnc %v , Mcc %v \n", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
+		initLog.Infof("DefaultPlmnId Mnc %v , Mcc %v \n", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
