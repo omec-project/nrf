@@ -18,20 +18,19 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	"github.com/free5gc/http2_util"
-	"github.com/free5gc/logger_util"
-	"github.com/free5gc/nrf/accesstoken"
-	nrf_context "github.com/free5gc/nrf/context"
-	"github.com/free5gc/nrf/dbadapter"
-	"github.com/free5gc/nrf/discovery"
-	"github.com/free5gc/nrf/factory"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/nrf/management"
-	"github.com/free5gc/nrf/util"
-	openApiLogger "github.com/free5gc/openapi/logger"
-	"github.com/free5gc/path_util"
-	pathUtilLogger "github.com/free5gc/path_util/logger"
 	mongoDBLibLogger "github.com/omec-project/MongoDBLibrary/logger"
+	"github.com/omec-project/http2_util"
+	"github.com/omec-project/logger_util"
+	"github.com/omec-project/nrf/accesstoken"
+	nrf_context "github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/discovery"
+	"github.com/omec-project/nrf/factory"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/management"
+	"github.com/omec-project/nrf/util"
+	"github.com/omec-project/path_util"
+	pathUtilLogger "github.com/omec-project/path_util/logger"
 )
 
 type NRF struct{}
@@ -131,21 +130,17 @@ func (nrf *NRF) setLogLevel() {
 		pathUtilLogger.SetReportCaller(factory.NrfConfig.Logger.PathUtil.ReportCaller)
 	}
 
-	if factory.NrfConfig.Logger.OpenApi != nil {
+	/*if factory.NrfConfig.Logger.OpenApi != nil {
 		if factory.NrfConfig.Logger.OpenApi.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.NrfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				openApiLogger.OpenApiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
+			if _, err := logrus.ParseLevel(factory.NrfConfig.Logger.OpenApi.DebugLevel); err != nil {
+				logger.OpenapiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.OpenApi.DebugLevel)
-				openApiLogger.SetLogLevel(logrus.InfoLevel)
-			} else {
-				openApiLogger.SetLogLevel(level)
 			}
 		} else {
-			openApiLogger.OpenApiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
-			openApiLogger.SetLogLevel(logrus.InfoLevel)
+			logger.OpenapiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
 		}
-		openApiLogger.SetReportCaller(factory.NrfConfig.Logger.OpenApi.ReportCaller)
-	}
+		logger.SetReportCaller(factory.NrfConfig.Logger.OpenApi.ReportCaller)
+	}*/
 
 	if factory.NrfConfig.Logger.MongoDBLibrary != nil {
 		if factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel != "" {

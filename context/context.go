@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/free5gc/nrf/factory"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/nrf/factory"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/models"
 )
 
 var (

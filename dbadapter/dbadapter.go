@@ -53,7 +53,7 @@ func (db *MongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) []map
 	return MongoDBLibrary.RestfulAPIGetMany(collName, filter)
 }
 func (db *MongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool {
-	return MongoDBLibrary.PutOneWithTimeout(collName, filter, putData, timeout, timeField)
+	return MongoDBLibrary.RestfulAPIPutOneTimeout(collName, filter, putData, timeout, timeField)
 }
 func (db *MongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) bool {
 	return MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData)

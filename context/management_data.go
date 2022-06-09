@@ -15,11 +15,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/free5gc/nrf/dbadapter"
-	"github.com/free5gc/nrf/factory"
-	"github.com/free5gc/nrf/logger"
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/models"
 )
 
 const NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"

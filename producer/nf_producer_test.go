@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/free5gc/nrf/dbadapter"
-	"github.com/free5gc/nrf/factory"
-	"github.com/free5gc/nrf/producer"
-	"github.com/free5gc/openapi/models"
 	"github.com/google/uuid"
+	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
+	"github.com/omec-project/nrf/producer"
+	"github.com/omec-project/openapi/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
