@@ -20,6 +20,7 @@ import (
 	"github.com/omec-project/http_wrapper"
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
@@ -298,16 +299,15 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		if err != nil {
 			logger.ManagementLog.Info(err.Error())
 		}
-		value := time.Now()
-		pitem := models.PatchItem{
-			Op:    "replace",
-			Path:  "/updatedAt",
-			Value: value,
+
+		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
+		nf["expireAt"] = timein
+		//dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
+		if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf) {
+			logger.ManagementLog.Info("nf profile update success")
+		} else {
+			logger.ManagementLog.Info("nf profile update failed")
 		}
-		var patchItem []models.PatchItem
-		patchItem = append(patchItem, pitem)
-		jsonStr, _ := json.Marshal(patchItem)
-		dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
 
 		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
@@ -368,13 +368,14 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
 
-	putData["updatedAt"] = time.Now()
+	timein := time.Now().Local().Add(time.Second * time.Duration(nf.HeartBeatTimer*3))
+	putData["expireAt"] = timein
 	if len(dbadapter.DBClient.RestfulAPIGetOne(collName, filter)) == 0 {
 		putData["createdAt"] = time.Now()
 	}
 
 	// Update NF Profile case
-	if dbadapter.DBClient.PutOneWithTimeout(collName, filter, putData, nf.HeartBeatTimer, "updatedAt") { // true insert
+	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrf_context.GetNofificationUri(nf)
 
