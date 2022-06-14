@@ -11,7 +11,7 @@ require (
 	github.com/golang-jwt/jwt v3.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/mitchellh/mapstructure v1.4.1
-	github.com/omec-project/MongoDBLibrary v1.1.1
+	github.com/omec-project/MongoDBLibrary v1.1.2
 	github.com/omec-project/TimeDecode v1.1.0
 	github.com/omec-project/config5g v1.1.0
 	github.com/omec-project/http2_util v1.1.0
