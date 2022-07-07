@@ -20,6 +20,7 @@ import (
 	"github.com/omec-project/http_wrapper"
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
@@ -298,16 +299,20 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		if err != nil {
 			logger.ManagementLog.Info(err.Error())
 		}
-		value := time.Now()
-		pitem := models.PatchItem{
-			Op:    "replace",
-			Path:  "/updatedAt",
-			Value: value,
+
+		// Update expiry time for document.
+		// Currently we are using 3 times the hearbeat timer as the expiry time interval.
+		// We should update it to be configurable : TBD
+		if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+			timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
+			nf["expireAt"] = timein
 		}
-		var patchItem []models.PatchItem
-		patchItem = append(patchItem, pitem)
-		jsonStr, _ := json.Marshal(patchItem)
-		dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
+		//dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
+		if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf) {
+			logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
+		} else {
+			logger.ManagementLog.Infof("nf profile [%s] update failed", nfProfiles[0].NfType)
+		}
 
 		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
@@ -368,13 +373,19 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
 
-	putData["updatedAt"] = time.Now()
-	if len(dbadapter.DBClient.RestfulAPIGetOne(collName, filter)) == 0 {
-		putData["createdAt"] = time.Now()
+	// fallback to older approach
+	if factory.NrfConfig.Configuration.NfProfileExpiryEnable == false {
+		NFDeleteAll(string(nf.NfType))
+	} else {
+		timein := time.Now().Local().Add(time.Second * time.Duration(nf.HeartBeatTimer*3))
+		putData["expireAt"] = timein
+		if len(dbadapter.DBClient.RestfulAPIGetOne(collName, filter)) == 0 {
+			putData["createdAt"] = time.Now()
+		}
 	}
 
 	// Update NF Profile case
-	if dbadapter.DBClient.PutOneWithTimeout(collName, filter, putData, nf.HeartBeatTimer, "updatedAt") { // true insert
+	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrf_context.GetNofificationUri(nf)
 

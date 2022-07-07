@@ -64,10 +64,15 @@ func SetsubscriptionId() string {
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
 
 	// HeartBeatTimer
-	if factory.NrfConfig.Configuration.NfKeepAliveTime == 0 {
-		factory.NrfConfig.Configuration.NfKeepAliveTime = 30
+	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		//setting 1day keepAliveTimer value
+		factory.NrfConfig.Configuration.NfKeepAliveTime = 24 * 60 * 60
+	} else if factory.NrfConfig.Configuration.NfKeepAliveTime == 0 {
+		logger.ManagementLog.Infoln("NfProfileExpiryEnable: true but keepAliveTime: 0, setting default keepAliveTimer: 60 sec")
+		factory.NrfConfig.Configuration.NfKeepAliveTime = 60
 	}
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
+	logger.ManagementLog.Infoln("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
 
 	// PlmnList
 	if nfprofile.PlmnList != nil {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/omec-project/TimeDecode"
 	"github.com/omec-project/http_wrapper"
@@ -97,14 +98,14 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	}
 
 	// sort nfprofiles based on timestamp
-	sort.Slice(nfProfilesStruct, func(i, j int) bool {
+	sort.Slice(nfProfilesRaw, func(i, j int) bool {
 		var updatedTimeVal time.Time
-		if nfProfilesStruct[j].CustomInfo == nil {
+		if nfProfilesRaw[i]["expireAt"] == nil {
 			return false
 		}
-		updatedTimeVal = nfProfilesStruct[j].CustomInfo["updatedAt"].(time.Time)
+		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(primitive.DateTime).Time()
 
-		return nfProfilesStruct[i].CustomInfo["updatedAt"].(time.Time).Before(updatedTimeVal)
+		return nfProfilesRaw[i]["expireAt"].(primitive.DateTime).Time().Before(updatedTimeVal)
 	})
 
 	// handle ipv4 & ipv6

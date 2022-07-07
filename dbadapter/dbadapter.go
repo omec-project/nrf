@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-//
-
 package dbadapter
 
 import (
+	"context"
+	"log"
+
 	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -34,7 +35,19 @@ type MongoDBClient struct {
 	dbName string
 }
 
-func ConnectToDBClient(setdbName string, url string) DBInterface {
+func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream) {
+	log.Println("iterate change stream for timeout")
+	defer stream.Close(routineCtx)
+	for stream.Next(routineCtx) {
+		var data bson.M
+		if err := stream.Decode(&data); err != nil {
+			panic(err)
+		}
+		log.Println("iterate stream : ", data)
+	}
+}
+
+func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
 	dbc := &MongoDBClient{}
 	MongoDBLibrary.SetMongoDB(setdbName, url)
 	if MongoDBLibrary.Client != nil {
@@ -42,6 +55,30 @@ func ConnectToDBClient(setdbName string, url string) DBInterface {
 		dbc.dbName = setdbName
 	}
 	DBClient = dbc
+
+	if enableStream {
+		log.Println("MongoDB Change stream Enabled")
+		database := dbc.Client.Database(setdbName)
+		NfProfileColl := database.Collection("NfProfile")
+		//create stream to monitor actions on the collection
+		NfProfStream, err := NfProfileColl.Watch(context.TODO(), mongo.Pipeline{})
+		if err != nil {
+			panic(err)
+		}
+		routineCtx, _ := context.WithCancel(context.Background())
+		//run routine to get messages from stream
+		go iterateChangeStream(routineCtx, NfProfStream)
+	}
+
+	if nfProfileExpiryEnable {
+		log.Println("NfProfile document expiry enabled")
+		ret := MongoDBLibrary.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
+		if ret {
+			log.Println("TTL Index created for Field : expireAt in Collection : NfProfile")
+		} else {
+			log.Println("TTL Index exists for Field : expireAt in Collection : NfProfile")
+		}
+	}
 	return dbc
 }
 
