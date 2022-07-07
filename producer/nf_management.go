@@ -300,6 +300,9 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 			logger.ManagementLog.Info(err.Error())
 		}
 
+		// Update expiry time for document.
+		// Currently we are using 3 times the hearbeat timer as the expiry time interval.
+		// We should update it to be configurable : TBD
 		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
 		nf["expireAt"] = timein
 		//dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)

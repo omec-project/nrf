@@ -43,7 +43,7 @@ func TestAccessTokenRequest(t *testing.T) {
 	time.Sleep(time.Duration(2) * time.Second)
 
 	// connect to mongoDB
-	dbadapter.ConnectToDBClient("free5gc", "mongodb://140.113.214.205:30030")
+	dbadapter.ConnectToDBClient("free5gc", "mongodb://140.113.214.205:30030", false, false)
 
 	// Set client and set url
 	configuration := Nnrf_AccessToken.NewConfiguration()
