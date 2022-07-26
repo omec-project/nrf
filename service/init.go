@@ -18,12 +18,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	"github.com/omec-project/MongoDBLibrary"
 	mongoDBLibLogger "github.com/omec-project/MongoDBLibrary/logger"
 	"github.com/omec-project/http2_util"
 	"github.com/omec-project/logger_util"
 	"github.com/omec-project/nrf/accesstoken"
 	nrf_context "github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/discovery"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
@@ -174,7 +174,8 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 
 func (nrf *NRF) Start() {
 	initLog.Infoln("Server started")
-	MongoDBLibrary.SetMongoDB(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl)
+	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl,
+		factory.NrfConfig.Configuration.MongoDBStreamEnable, factory.NrfConfig.Configuration.NfProfileExpiryEnable)
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
 

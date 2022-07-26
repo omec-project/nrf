@@ -15,7 +15,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi"
@@ -64,9 +64,15 @@ func SetsubscriptionId() string {
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
 
 	// HeartBeatTimer
-	if nfprofile.HeartBeatTimer >= 0 {
-		nf.HeartBeatTimer = nfprofile.HeartBeatTimer
+	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		//setting 1day keepAliveTimer value
+		factory.NrfConfig.Configuration.NfKeepAliveTime = 24 * 60 * 60
+	} else if factory.NrfConfig.Configuration.NfKeepAliveTime == 0 {
+		logger.ManagementLog.Infoln("NfProfileExpiryEnable: true but keepAliveTime: 0, setting default keepAliveTimer: 60 sec")
+		factory.NrfConfig.Configuration.NfKeepAliveTime = 60
 	}
+	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
+	logger.ManagementLog.Infoln("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
 
 	// PlmnList
 	if nfprofile.PlmnList != nil {
@@ -428,7 +434,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 	nfType := nfprofile.NfType
 	filter := bson.M{"nfType": nfType}
 
-	ul := MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	ul := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 
 	var originalUL UriList
 	err := mapstructure.Decode(ul, &originalUL)
@@ -450,7 +456,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 		logger.ManagementLog.Error(err)
 	}
 
-	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) {
+	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) {
 		logger.ManagementLog.Info("urilist update")
 	} else {
 		logger.ManagementLog.Info("urilist create")
@@ -460,7 +466,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 }
 
 func setUriListByFilter(filter bson.M, uriList *[]string) {
-	filterNfTypeResultsRaw := MongoDBLibrary.RestfulAPIGetMany("Subscriptions", filter)
+	filterNfTypeResultsRaw := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
 	var filterNfTypeResults []models.NrfSubscriptionData
 	err := openapi.Convert(filterNfTypeResultsRaw, &filterNfTypeResults)
 	if err != nil {

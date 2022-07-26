@@ -10,16 +10,18 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
-	"github.com/omec-project/MongoDBLibrary"
 	"github.com/omec-project/TimeDecode"
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 )
@@ -85,7 +87,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	logger.DiscoveryLog.Traceln("Query filter: ", filter)
 
 	// Use the filter to find documents
-	nfProfilesRaw := MongoDBLibrary.RestfulAPIGetMany("NfProfile", filter)
+	nfProfilesRaw := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
 
 	// nfProfile data for response
 	var nfProfilesStruct []models.NfProfile
@@ -94,6 +96,17 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	if err != nil {
 		logger.DiscoveryLog.Warnln("NF Profile Raw decode error: ", nfProfilesStruct)
 	}
+
+	// sort nfprofiles based on timestamp
+	sort.Slice(nfProfilesRaw, func(i, j int) bool {
+		var updatedTimeVal time.Time
+		if nfProfilesRaw[i]["expireAt"] == nil {
+			return false
+		}
+		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(primitive.DateTime).Time()
+
+		return nfProfilesRaw[i]["expireAt"].(primitive.DateTime).Time().Before(updatedTimeVal)
+	})
 
 	// handle ipv4 & ipv6
 	if queryParameters["target-nf-type"][0] == "BSF" {

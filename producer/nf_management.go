@@ -16,10 +16,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/omec-project/MongoDBLibrary"
 	"github.com/omec-project/TimeDecode"
 	"github.com/omec-project/http_wrapper"
 	nrf_context "github.com/omec-project/nrf/context"
+	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
@@ -179,7 +180,7 @@ func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (respo
 	}
 
 	// TODO: need to store Condition !
-	if !MongoDBLibrary.RestfulAPIPost("Subscriptions", bson.M{"subscriptionId": subscription.SubscriptionId},
+	if !dbadapter.DBClient.RestfulAPIPost("Subscriptions", bson.M{"subscriptionId": subscription.SubscriptionId},
 		putData) { // subscription id not exist before
 		return putData, nil
 	} else {
@@ -196,8 +197,8 @@ func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (respo
 	collName := "Subscriptions"
 	filter := bson.M{"subscriptionId": subscriptionID}
 
-	if MongoDBLibrary.RestfulAPIJSONPatch(collName, filter, patchJSON) {
-		response = MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	if dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON) {
+		response = dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 		return response
 	} else {
 		return nil
@@ -208,7 +209,7 @@ func RemoveSubscriptionProcedure(subscriptionID string) {
 	collName := "Subscriptions"
 	filter := bson.M{"subscriptionId": subscriptionID}
 
-	MongoDBLibrary.RestfulAPIDeleteMany(collName, filter)
+	dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 }
 
 func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.UriList,
@@ -218,7 +219,7 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.Ur
 	collName := "urilist"
 	filter := bson.M{"nfType": nfType}
 
-	UL := MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	UL := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	logger.ManagementLog.Infoln("UL: ", UL)
 	originalUL := &nrf_context.UriList{}
 	err := mapstructure.Decode(UL, originalUL)
@@ -241,7 +242,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 	collName := "NfProfile"
 	filter := bson.M{"nfType": nfType}
 
-	MongoDBLibrary.RestfulAPIDeleteMany(collName, filter)
+	dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 
 	return nil
 }
@@ -250,10 +251,10 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
-	nfProfilesRaw := MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	nfProfilesRaw := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	time.Sleep(time.Duration(1) * time.Second)
 
-	MongoDBLibrary.RestfulAPIDeleteMany(collName, filter)
+	dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 
 	// nfProfile data for response
 	nfProfiles, err := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
@@ -287,8 +288,8 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
-	if MongoDBLibrary.RestfulAPIJSONPatch(collName, filter, patchJSON) {
-		nf := MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	if dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON) {
+		nf := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 
 		nfProfilesRaw := []map[string]interface{}{
 			nf,
@@ -297,6 +298,20 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		nfProfiles, err := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
 		if err != nil {
 			logger.ManagementLog.Info(err.Error())
+		}
+
+		// Update expiry time for document.
+		// Currently we are using 3 times the hearbeat timer as the expiry time interval.
+		// We should update it to be configurable : TBD
+		if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+			timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
+			nf["expireAt"] = timein
+		}
+		//dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
+		if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf) {
+			logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
+		} else {
+			logger.ManagementLog.Infof("nf profile [%s] update failed", nfProfiles[0].NfType)
 		}
 
 		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
@@ -318,7 +333,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{}) {
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
-	response = MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+	response = dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 
 	return response
 }
@@ -329,6 +344,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	var nf models.NfProfile
 	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {
+		logger.ManagementLog.Errorln("NfProfile Validation failed.", err)
 		str1 := fmt.Sprint(nfProfile.HeartBeatTimer)
 		problemDetails = &models.ProblemDetails{
 			Title:  nfProfile.NfInstanceId,
@@ -353,22 +369,23 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	}
 
 	//set db info
-	NFDeleteAll(string(nf.NfType))
 	collName := "NfProfile"
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
 
-	if nf.NfType == models.NfType_PCF {
-		if len(MongoDBLibrary.RestfulAPIGetOne(collName, filter)) == 0 {
+	// fallback to older approach
+	if factory.NrfConfig.Configuration.NfProfileExpiryEnable == false {
+		NFDeleteAll(string(nf.NfType))
+	} else {
+		timein := time.Now().Local().Add(time.Second * time.Duration(nf.HeartBeatTimer*3))
+		putData["expireAt"] = timein
+		if len(dbadapter.DBClient.RestfulAPIGetOne(collName, filter)) == 0 {
 			putData["createdAt"] = time.Now()
-			putData["updatedAt"] = time.Now()
-		} else {
-			putData["updatedAt"] = time.Now()
 		}
 	}
 
 	// Update NF Profile case
-	if MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData) { // true insert
+	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrf_context.GetNofificationUri(nf)
 
