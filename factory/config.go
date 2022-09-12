@@ -44,8 +44,8 @@ type Configuration struct {
 	Sbi                   *Sbi              `yaml:"sbi,omitempty"`
 	MongoDBName           string            `yaml:"MongoDBName"`
 	MongoDBUrl            string            `yaml:"MongoDBUrl"`
-	MongoDBStreamEnable   bool              `yaml:"MongoDBStreamEnable"`
-	NfProfileExpiryEnable bool              `yaml:"NfProfileExpiryEnable"`
+	MongoDBStreamEnable   bool              `yaml:"mongoDBStreamEnable"`
+	NfProfileExpiryEnable bool              `yaml:"nfProfileExpiryEnable"`
 	DefaultPlmnId         models.PlmnId     `yaml:"DefaultPlmnId"`
 	ServiceNameList       []string          `yaml:"serviceNameList,omitempty"`
 	PlmnSupportList       []PlmnSupportItem `yaml:"plmnSupportList,omitempty"`
