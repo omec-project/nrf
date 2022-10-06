@@ -21,15 +21,14 @@ fetches a matching profile from the database and returns it to the caller.
 ## Supported Features
 - Registration of Network Functions
 - Searching of matching Network functions
+- Handling multiple instances of registration from Network Functions
+- Supporting keepalive functionality to check the health of network functions
 
 
 ## Upcoming changes in NRF
-- Handling multiple instances of registration from Network Functions
-- Supporting keepalive functionality to check the health of network functions
 - Supporting callbacks to send notification when a network function is added/removed/modified.
-
-## Upcoming changes
 - Subscription management callbacks to network functions.
+- NRF cache library which can be used by modules to avoid frequent queries to NRF
 
 Compliance of the 5G Network functions can be found at [5G Compliance ](https://docs.sd-core.opennetworking.org/master/overview/3gpp-compliance-5g.html)
 
