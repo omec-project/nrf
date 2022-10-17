@@ -8,10 +8,11 @@ package nrf_cache
 
 import (
 	"encoding/json"
-	"github.com/omec-project/amf/logger"
+	"regexp"
+
+	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
-	"regexp"
 )
 
 type MatchFilter func(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool

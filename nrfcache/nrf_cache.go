@@ -9,11 +9,12 @@ package nrf_cache
 import (
 	"container/heap"
 	"encoding/json"
-	"github.com/omec-project/amf/logger"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/models"
 	"sync"
 	"time"
+
+	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/models"
 )
 
 const defaultCacheTTl = time.Hour

@@ -8,14 +8,15 @@ package nrf_cache
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/antihax/optional"
-	"github.com/omec-project/amf/util"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/models"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/antihax/optional"
+	"github.com/omec-project/nrf/util"
+	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/models"
 )
 
 var nfProfilesDb map[string]string
