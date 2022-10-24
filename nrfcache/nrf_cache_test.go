@@ -8,15 +8,15 @@ package nrf_cache
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/antihax/optional"
+	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/models"
+    "github.com/omec-project/nrf/logger"
+    "reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/antihax/optional"
-	"github.com/omec-project/nrf/util"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/models"
 )
 
 var nfProfilesDb map[string]string
@@ -366,6 +366,95 @@ func init() {
 		  }
 		}`
 
+	nfProfilesDb["AMF-01"] = `
+	{
+	  "nfServices": [
+		{
+		  "serviceInstanceId": "0",
+		  "serviceName": "namf-comm",
+		  "versions": [
+			{
+			  "apiVersionInUri": "v1",
+			  "apiFullVersion": "1.0.0"
+			}
+		  ],
+		  "scheme": "http",
+		  "nfServiceStatus": "REGISTERED",
+		  "ipEndPoints": [
+			{
+			  "ipv4Address": "amf",
+			  "transport": "TCP",
+			  "port": 29518
+			}
+		  ],
+		  "apiPrefix": "http://amf:29518"
+		}
+	  ],
+	  "nfInstanceId": "9f7d5a3f-88ab-4525-b31e-334da7faedab",
+	  "nfType": "AMF",
+	  "nfStatus": "REGISTERED",
+	  "plmnList": [
+		{
+		  "mcc": "208",
+		  "mnc": "93"
+		}
+	  ],
+	  "sNssais": [
+		{
+		  "sst": 1,
+		  "sd": "010203"
+		}
+	  ],
+	  "ipv4Addresses": [
+		"amf"
+	  ],
+	  "amfInfo": {
+		"amfSetId": "3f8",
+		"amfRegionId": "ca",
+		"guamiList": [
+		  {
+			"plmnId": {
+			  "mcc": "208",
+			  "mnc": "93"
+			},
+			"amfId": "cafe00"
+		  }
+		],
+		"taiList": [
+		  {
+			"plmnId": {
+			  "mcc": "208",
+			  "mnc": "93"
+			},
+			"tac": "1"
+		  }
+		]
+	  }
+	} `
+
+}
+
+func MarshToJsonString(v interface{}) (result []string) {
+	types := reflect.TypeOf(v)
+	val := reflect.ValueOf(v)
+	if types.Kind() == reflect.Slice {
+		for i := 0; i < val.Len(); i++ {
+			tmp, err := json.Marshal(val.Index(i).Interface())
+			if err != nil {
+				logger.UtilLog.Errorf("Marshal error: %+v", err)
+			}
+
+			result = append(result, string(tmp))
+		}
+	} else {
+		tmp, err := json.Marshal(v)
+		if err != nil {
+			logger.UtilLog.Errorf("Marshal error: %+v", err)
+		}
+
+		result = append(result, string(tmp))
+	}
+	return
 }
 
 func getNfProfile(key string) (models.NfProfile, error) {
@@ -447,6 +536,8 @@ func nrfDbCallback(nrfUri string, targetNfType, requestNfType models.NfType,
 		}
 	} else if targetNfType == models.NfType_AUSF {
 		searchResult.NfInstances, err = getNfProfiles(targetNfType)
+	} else if targetNfType == models.NfType_AMF {
+		searchResult.NfInstances, err = getNfProfiles(targetNfType)
 	}
 
 	return searchResult, err
@@ -466,7 +557,7 @@ func TestCacheMissAndHits(t *testing.T) {
 	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -498,7 +589,7 @@ func TestCacheMissAndHits(t *testing.T) {
 	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("ims"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -518,7 +609,7 @@ func TestCacheMissAndHits(t *testing.T) {
 	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -534,7 +625,7 @@ func TestCacheMissAndHits(t *testing.T) {
 		t.Error("Unexpected nrfDbCallbackCallCount")
 	}
 
-	DisableNrfCaching()
+	disableNrfCaching()
 }
 
 func TestCacheMissOnTTlExpiry(t *testing.T) {
@@ -567,7 +658,7 @@ func TestCacheMissOnTTlExpiry(t *testing.T) {
 	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -597,7 +688,7 @@ func TestCacheMissOnTTlExpiry(t *testing.T) {
 			expectedCallCount, nrfDbCallbackCallCount)
 	}
 
-	DisableNrfCaching()
+	disableNrfCaching()
 }
 
 func TestCacheEviction(t *testing.T) {
@@ -611,7 +702,7 @@ func TestCacheEviction(t *testing.T) {
 	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -623,7 +714,7 @@ func TestCacheEviction(t *testing.T) {
 	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("ims"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -636,7 +727,7 @@ func TestCacheEviction(t *testing.T) {
 	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
 	}
 
 	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
@@ -653,7 +744,7 @@ func TestCacheEviction(t *testing.T) {
 
 	time.Sleep(125 * time.Second)
 
-	DisableNrfCaching()
+	disableNrfCaching()
 }
 
 func TestCacheConcurrency(t *testing.T) {
@@ -668,7 +759,7 @@ func TestCacheConcurrency(t *testing.T) {
 	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
 		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
 		Dnn:          optional.NewString("internet"),
-		Snssais:      optional.NewInterface(util.MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
 	}
 
 	expectedCallCount := nrfDbCallbackCallCount + 1
@@ -706,7 +797,7 @@ func TestCacheConcurrency(t *testing.T) {
 			expectedCallCount, nrfDbCallbackCallCount)
 	}
 
-	DisableNrfCaching()
+	disableNrfCaching()
 }
 
 func TestAusfMatchFilters(t *testing.T) {
@@ -760,5 +851,50 @@ func TestAusfMatchFilters(t *testing.T) {
 	if expectedCallCount != nrfDbCallbackCallCount {
 		t.Error("Unexpected nrfDbCallbackCallCount")
 	}
-	DisableNrfCaching()
+	disableNrfCaching()
+}
+
+func TestAmfMatchFilters(t *testing.T) {
+	evictionTimerVal := time.Duration(evictionInterval)
+	InitNrfCaching(evictionTimerVal*time.Second, nrfDbCallback)
+
+	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		TargetPlmnList: optional.NewInterface(MarshToJsonString(
+			[]models.PlmnId{{Mcc: "208", Mnc: "93"}, {Mcc: "209", Mnc: "94"}})),
+	}
+
+	expectedCallCount := nrfDbCallbackCallCount
+	expectedCallCount++
+
+	result, err := SearchNFInstances("testNrf", models.NfType_AMF, models.NfType_AMF, &param)
+
+	if err != nil {
+		t.Errorf("test failed, %s", err.Error())
+	}
+	if len(result.NfInstances) == 0 {
+		t.Error("nrf search did not return any records")
+	}
+	if expectedCallCount != nrfDbCallbackCallCount {
+		t.Error("Unexpected nrfDbCallbackCallCount")
+	}
+
+	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		TargetPlmnList: optional.NewInterface(MarshToJsonString([]models.PlmnId{{Mcc: "208", Mnc: "93"}})),
+		AmfRegionId:    optional.NewString("ca"),
+		AmfSetId:       optional.NewString("3f8"),
+	}
+
+	result, err = SearchNFInstances("testNrf", models.NfType_AMF, models.NfType_AMF, &param)
+
+	if err != nil {
+		t.Errorf("test failed, %s", err.Error())
+	}
+	if len(result.NfInstances) == 0 {
+		t.Error("nrf search did not return any records")
+	}
+	if expectedCallCount != nrfDbCallbackCallCount {
+		t.Error("Unexpected nrfDbCallbackCallCount")
+	}
+
+	disableNrfCaching()
 }

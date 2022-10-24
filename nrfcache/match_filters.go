@@ -8,11 +8,10 @@ package nrf_cache
 
 import (
 	"encoding/json"
-	"regexp"
-
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
+	"regexp"
 )
 
 type MatchFilter func(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool
@@ -143,8 +142,76 @@ func MatchNssfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNF
 }
 
 func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
-	logger.UtilLog.Traceln("Amf match found ")
-	return true
+	matchFound := true
+
+	if opts.TargetPlmnList.IsSet() {
+		if profile.PlmnList != nil {
+			plmnMatchCount := 0
+
+			targetPlmnList := opts.TargetPlmnList.Value().([]string)
+			for _, targetPlmn := range targetPlmnList {
+				var plmn models.PlmnId
+				err := json.Unmarshal([]byte(targetPlmn), &plmn)
+
+				if err != nil {
+					return false
+				}
+
+				for _, profilePlmn := range *profile.PlmnList {
+					if profilePlmn == plmn {
+						plmnMatchCount++
+						break
+					}
+				}
+			}
+			matchFound = plmnMatchCount > 0
+		}
+	}
+
+	if matchFound && profile.AmfInfo != nil {
+		if opts.Guami.IsSet() {
+			if profile.AmfInfo.GuamiList != nil {
+				guamiMatchCount := 0
+
+				guamiList := opts.Guami.Value().([]string)
+				for _, guami := range guamiList {
+					var guamiOpt models.Guami
+					err := json.Unmarshal([]byte(guami), &guamiOpt)
+
+					if err != nil {
+						return false
+					}
+
+					for _, guami := range *profile.AmfInfo.GuamiList {
+						if guamiOpt == guami {
+							guamiMatchCount++
+							break
+						}
+					}
+				}
+				matchFound = guamiMatchCount > 0
+			}
+		}
+
+		if matchFound && opts.AmfRegionId.IsSet() {
+			if len(profile.AmfInfo.AmfRegionId) > 0 {
+				if profile.AmfInfo.AmfRegionId != opts.AmfRegionId.Value() {
+					matchFound = false
+				}
+			}
+		}
+
+		if matchFound && opts.AmfSetId.IsSet() {
+			if len(profile.AmfInfo.AmfSetId) > 0 {
+				if profile.AmfInfo.AmfSetId != opts.AmfSetId.Value() {
+					matchFound = false
+				}
+			}
+		}
+	}
+
+	logger.UtilLog.Tracef("Amf match found = %v", matchFound)
+	return matchFound
 }
 
 func MatchPcfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
