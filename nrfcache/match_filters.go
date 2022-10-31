@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: 2022 Infosys Limited
-// Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
 //
+
+// This file contains apis to match the nf profiles based on the parameters provided in the
+// Nnrf_NFDiscovery.SearchNFInstancesParamOpts. There is a match function provided for each NF type
+// which must be updated with logic to compare profiles based on the applicable params in
+// Nnrf_NFDiscovery.SearchNFInstancesParamOpts
 
 package nrf_cache
 
@@ -14,7 +18,7 @@ import (
 	"regexp"
 )
 
-type MatchFilter func(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool
+type MatchFilter func(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error)
 
 type MatchFilters map[models.NfType]MatchFilter
 
@@ -27,9 +31,7 @@ var matchFilters = MatchFilters{
 	models.NfType_AMF:  MatchAmfProfile,
 }
 
-func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
-
-	matchFound := true
+func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 
 	if opts.ServiceNames.IsSet() {
 		reqServiceNames := opts.ServiceNames.Value().([]models.ServiceName)
@@ -44,11 +46,11 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 		}
 
 		if matchCount == 0 {
-			matchFound = false
+			return false, nil
 		}
 	}
 
-	if matchFound && opts.Snssais.IsSet() {
+	if opts.Snssais.IsSet() {
 		reqSnssais := opts.Snssais.Value().([]string)
 		matchCount := 0
 
@@ -56,7 +58,7 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 			var snssai models.Snssai
 			err := json.Unmarshal([]byte(reqSnssai), &snssai)
 			if err != nil {
-				return false
+				return false, err
 			}
 
 			// Snssai in the smfInfo has priority
@@ -78,13 +80,13 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 
 		// if at least one matching snssai has been found
 		if matchCount == 0 {
-			matchFound = false
+			return false, nil
 		}
 
 	}
 
 	// validate dnn
-	if matchFound && opts.Dnn.IsSet() {
+	if opts.Dnn.IsSet() {
 		// if a dnn is provided by the upper layer, check for the exact match
 		// or wild card match
 		dnnMatched := false
@@ -102,30 +104,35 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 				}
 			}
 		}
-		matchFound = dnnMatched
+
+		if dnnMatched == false {
+			return false, nil
+		}
 	}
-	logger.UtilLog.Tracef("SMF match found = %v", matchFound)
-	return matchFound
+	logger.UtilLog.Tracef("SMF match found, nfInstance Id %v", profile.NfInstanceId)
+	return true, nil
 }
 
 func MatchSupiRange(supi string, supiRange []models.SupiRange) bool {
-	matchCount := 0
+	matchFound := false
 	for _, s := range supiRange {
 		if len(s.Pattern) > 0 {
 			r, _ := regexp.Compile(s.Pattern)
 			if r.MatchString(supi) {
-				matchCount++
+				matchFound = true
+				break
 			}
 
 		} else if s.Start <= supi && supi <= s.End {
-			matchCount++
+			matchFound = true
+			break
 		}
 	}
 
-	return matchCount > 0
+	return matchFound
 }
 
-func MatchAusfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
+func MatchAusfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 	matchFound := true
 	if opts.Supi.IsSet() {
 		if profile.AusfInfo != nil && len(profile.AusfInfo.SupiRanges) > 0 {
@@ -133,16 +140,15 @@ func MatchAusfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNF
 		}
 	}
 	logger.UtilLog.Tracef("Ausf match found = %v", matchFound)
-	return matchFound
+	return matchFound, nil
 }
 
-func MatchNssfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
+func MatchNssfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 	logger.UtilLog.Traceln("Nssf match found ")
-	return true
+	return true, nil
 }
 
-func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
-	matchFound := true
+func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 
 	if opts.TargetPlmnList.IsSet() {
 		if profile.PlmnList != nil {
@@ -154,7 +160,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 				err := json.Unmarshal([]byte(targetPlmn), &plmn)
 
 				if err != nil {
-					return false
+					return false, err
 				}
 
 				for _, profilePlmn := range *profile.PlmnList {
@@ -164,11 +170,13 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 					}
 				}
 			}
-			matchFound = plmnMatchCount > 0
+			if plmnMatchCount == 0 {
+				return false, nil
+			}
 		}
 	}
 
-	if matchFound && profile.AmfInfo != nil {
+	if profile.AmfInfo != nil {
 		if opts.Guami.IsSet() {
 			if profile.AmfInfo.GuamiList != nil {
 				guamiMatchCount := 0
@@ -179,7 +187,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 					err := json.Unmarshal([]byte(guami), &guamiOpt)
 
 					if err != nil {
-						return false
+						return false, err
 					}
 
 					for _, guami := range *profile.AmfInfo.GuamiList {
@@ -189,32 +197,34 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 						}
 					}
 				}
-				matchFound = guamiMatchCount > 0
-			}
-		}
-
-		if matchFound && opts.AmfRegionId.IsSet() {
-			if len(profile.AmfInfo.AmfRegionId) > 0 {
-				if profile.AmfInfo.AmfRegionId != opts.AmfRegionId.Value() {
-					matchFound = false
+				if guamiMatchCount == 0 {
+					return false, nil
 				}
 			}
 		}
 
-		if matchFound && opts.AmfSetId.IsSet() {
+		if opts.AmfRegionId.IsSet() {
+			if len(profile.AmfInfo.AmfRegionId) > 0 {
+				if profile.AmfInfo.AmfRegionId != opts.AmfRegionId.Value() {
+					return false, nil
+				}
+			}
+		}
+
+		if opts.AmfSetId.IsSet() {
 			if len(profile.AmfInfo.AmfSetId) > 0 {
 				if profile.AmfInfo.AmfSetId != opts.AmfSetId.Value() {
-					matchFound = false
+					return false, nil
 				}
 			}
 		}
 	}
 
-	logger.UtilLog.Tracef("Amf match found = %v", matchFound)
-	return matchFound
+	logger.UtilLog.Tracef("Amf match found = %v", profile.NfInstanceId)
+	return true, nil
 }
 
-func MatchPcfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
+func MatchPcfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 	matchFound := true
 	if opts.Supi.IsSet() {
 		if profile.PcfInfo != nil && len(profile.PcfInfo.SupiRanges) > 0 {
@@ -222,10 +232,10 @@ func MatchPcfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 		}
 	}
 	logger.UtilLog.Tracef("PCF match found = %v", matchFound)
-	return matchFound
+	return matchFound, nil
 }
 
-func MatchUdmProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) bool {
+func MatchUdmProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error) {
 	matchFound := true
 	if opts.Supi.IsSet() {
 		if profile.UdmInfo != nil && len(profile.UdmInfo.SupiRanges) > 0 {
@@ -233,5 +243,5 @@ func MatchUdmProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 		}
 	}
 	logger.UtilLog.Tracef("UDM match found = %v", matchFound)
-	return matchFound
+	return matchFound, nil
 }

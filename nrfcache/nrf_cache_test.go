@@ -1,5 +1,4 @@
 // SPDX-FileCopyrightText: 2022 Open Networking Foundation <info@opennetworking.org>
-// Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -9,10 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/antihax/optional"
+	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
-    "github.com/omec-project/nrf/logger"
-    "reflect"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"

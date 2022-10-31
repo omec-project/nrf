@@ -1,5 +1,4 @@
 // SPDX-FileCopyrightText: 2022 Infosys Limited
-// Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -26,10 +25,12 @@ type NfProfileItem struct {
 	index      int // index of the entry in the priority queue
 }
 
+// isExpired - returns true if the expiry time has passed.
 func (item *NfProfileItem) isExpired() bool {
 	return item.expiryTime.Before(time.Now())
 }
 
+// updateExpiryTime - sets new expiry time based on the current time
 func (item *NfProfileItem) updateExpiryTime() {
 	item.expiryTime = time.Now().Add(time.Second * item.ttl)
 }
@@ -43,35 +44,45 @@ func newNfProfileItem(profile *models.NfProfile, ttl time.Duration) *NfProfileIt
 	return item
 }
 
-// NfProfilePriorityQ : Priority Queue to store the profile by expiry time
+// NfProfilePriorityQ : Priority Queue to store the profile. Queue is ordered by expiry time
 type NfProfilePriorityQ []*NfProfileItem
 
+// Len - Number of entries in the priority queue
 func (npq NfProfilePriorityQ) Len() int {
 	return len(npq)
 }
 
+// Less - Comparator for the sort interface used by the heap.
+// entries will be sorted by increasing order of expiry time
 func (npq NfProfilePriorityQ) Less(i, j int) bool {
 	return npq[i].expiryTime.Before(npq[j].expiryTime)
 }
 
+// Swap - implemented for the sort interface used by the heap pkg.
+// swaps the element at i and j.
 func (npq NfProfilePriorityQ) Swap(i, j int) {
 	npq[i], npq[j] = npq[j], npq[i]
 	npq[i].index = i
 	npq[j].index = j
 }
 
+// root - returns the root element, i.e. the element with the least expiry time.
 func (npq NfProfilePriorityQ) root() *NfProfileItem {
 	return npq[0]
 }
 
+// at - returns the element at index i
 func (npq NfProfilePriorityQ) at(index int) *NfProfileItem {
 	return npq[index]
 }
 
+// push - adds an entry to the priority queue. Invokes heap api to
+// push the entry to the correct location in the queue
 func (npq *NfProfilePriorityQ) push(item interface{}) {
 	heap.Push(npq, item)
 }
 
+// pop - removes the element with minimum priority
 func (npq *NfProfilePriorityQ) pop() interface{} {
 	if npq.Len() == 0 {
 		return nil
@@ -79,6 +90,7 @@ func (npq *NfProfilePriorityQ) pop() interface{} {
 	return heap.Pop(npq).(*NfProfileItem)
 }
 
+// update - update fields of existing entry. Invokes heap.Fix to re-establish the ordering.
 func (npq *NfProfilePriorityQ) update(item *NfProfileItem, value *models.NfProfile, ttl time.Duration) {
 	item.nfProfile = value
 	item.ttl = ttl
@@ -86,10 +98,12 @@ func (npq *NfProfilePriorityQ) update(item *NfProfileItem, value *models.NfProfi
 	heap.Fix(npq, item.index)
 }
 
+// remove -removes an entry at given index.
 func (npq *NfProfilePriorityQ) remove(item *NfProfileItem) {
 	heap.Remove(npq, item.index)
 }
 
+// Push - implemented for heap interface. appends an element to the priority queue
 func (npq *NfProfilePriorityQ) Push(item interface{}) {
 	n := len(*npq)
 	entry := item.(*NfProfileItem)
@@ -97,6 +111,7 @@ func (npq *NfProfilePriorityQ) Push(item interface{}) {
 	*npq = append(*npq, entry)
 }
 
+// Pop - implemented for heap interface. removes the entry with least expiry time
 func (npq *NfProfilePriorityQ) Pop() interface{} {
 	old := *npq
 	n := len(old)
@@ -107,6 +122,7 @@ func (npq *NfProfilePriorityQ) Pop() interface{} {
 	return item
 }
 
+// newNfProfilePriorityQ - New prority queue for storing NF Profiles.
 func newNfProfilePriorityQ() *NfProfilePriorityQ {
 	q := &NfProfilePriorityQ{}
 	heap.Init(q)
@@ -135,6 +151,9 @@ type NrfCache struct {
 	mutex sync.RWMutex
 }
 
+// handleLookup - Checks if the cache has nf cache entry corresponding to the parameters specified.
+// If entry does not exist, perform nrf discovery query. To avoid concurrency issues,
+// nrf discovery query is mutex protected.
 func (c *NrfCache) handleLookup(nrfUri string, targetNfType, requestNfType models.NfType, param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (models.SearchResult, error) {
 	var searchResult models.SearchResult
 	var err error
@@ -163,6 +182,7 @@ func (c *NrfCache) handleLookup(nrfUri string, targetNfType, requestNfType model
 	return searchResult, err
 }
 
+// set - Adds nf profile entry to the map and the priority queue
 func (c *NrfCache) set(nfProfile *models.NfProfile, ttl time.Duration) {
 	if ttl == 0 {
 		ttl = defaultNfProfileTTl
@@ -179,6 +199,7 @@ func (c *NrfCache) set(nfProfile *models.NfProfile, ttl time.Duration) {
 	}
 }
 
+// get - checks if nf profile corresponding to the search opts exist in the cache.
 func (c *NrfCache) get(opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) []models.NfProfile {
 	var nfProfiles []models.NfProfile
 
@@ -186,8 +207,13 @@ func (c *NrfCache) get(opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) []mode
 		if !element.isExpired() {
 			if opts != nil {
 				cb, ok := matchFilters[element.nfProfile.NfType]
-				if ok && cb(element.nfProfile, opts) {
-					nfProfiles = append(nfProfiles, *(element.nfProfile))
+				if ok {
+					matchFound, err := cb(element.nfProfile, opts)
+					if err != nil {
+						logger.UtilLog.Errorf("match filter returned error %v", err)
+					} else if matchFound {
+						nfProfiles = append(nfProfiles, *(element.nfProfile))
+					}
 				}
 			} else {
 				nfProfiles = append(nfProfiles, *(element.nfProfile))
@@ -197,6 +223,7 @@ func (c *NrfCache) get(opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) []mode
 	return nfProfiles
 }
 
+// removeByNfInstanceId - removes nf profile with nfInstanceId from the cache and queue
 func (c *NrfCache) removeByNfInstanceId(nfInstanceId string) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -208,11 +235,13 @@ func (c *NrfCache) removeByNfInstanceId(nfInstanceId string) bool {
 	return rc
 }
 
+// remove -
 func (c *NrfCache) remove(item *NfProfileItem) {
 	c.priorityQ.remove(item)
 	delete(c.cache, item.nfProfile.NfInstanceId)
 }
 
+// cleanupExpiredItems - removes the profiles with expired TTLs
 func (c *NrfCache) cleanupExpiredItems() {
 	logger.UtilLog.Infoln("nrf cache: cleanup expired items")
 
@@ -229,6 +258,7 @@ func (c *NrfCache) cleanupExpiredItems() {
 	}
 }
 
+// purge - release the cache and its resources.
 func (c *NrfCache) purge() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
