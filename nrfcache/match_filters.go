@@ -12,10 +12,11 @@ package nrf_cache
 
 import (
 	"encoding/json"
+	"regexp"
+
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
-	"regexp"
 )
 
 type MatchFilter func(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (bool, error)
@@ -58,6 +59,7 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 			var snssai models.Snssai
 			err := json.Unmarshal([]byte(reqSnssai), &snssai)
 			if err != nil {
+				logger.UtilLog.Errorf("Error Unmarshaling nssai : ", err)
 				return false, err
 			}
 
@@ -160,6 +162,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 				err := json.Unmarshal([]byte(targetPlmn), &plmn)
 
 				if err != nil {
+					logger.UtilLog.Errorf("Error Unmarshaling plmn : ", err)
 					return false, err
 				}
 
@@ -187,6 +190,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 					err := json.Unmarshal([]byte(guami), &guamiOpt)
 
 					if err != nil {
+						logger.UtilLog.Errorf("Error Unmarshaling guami : ", err)
 						return false, err
 					}
 
