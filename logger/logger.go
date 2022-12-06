@@ -23,6 +23,7 @@ var (
 	DiscoveryLog   *logrus.Entry
 	GinLog         *logrus.Entry
 	GrpcLog        *logrus.Entry
+	UtilLog        *logrus.Entry
 )
 
 func init() {
@@ -46,6 +47,7 @@ func init() {
 	DiscoveryLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "DSCV"})
 	GinLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GIN"})
 	GrpcLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GRPC"})
+	UtilLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "Util"})
 }
 
 func SetLogLevel(level logrus.Level) {
