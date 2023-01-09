@@ -7,9 +7,9 @@ replace github.com/omec-project/nrf => ./
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
-	github.com/gin-gonic/gin v1.7.0
+	github.com/gin-gonic/gin v1.7.3
 	github.com/golang-jwt/jwt v3.2.1+incompatible
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.3.0
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/omec-project/MongoDBLibrary v1.1.3
 	github.com/omec-project/TimeDecode v1.1.0
@@ -19,9 +19,9 @@ require (
 	github.com/omec-project/logger_util v1.1.0
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/omec-project/util v1.0.9
+	github.com/sirupsen/logrus v1.9.0
 	github.com/urfave/cli v1.22.5
-	go.mongodb.org/mongo-driver v1.7.3
-	google.golang.org/grpc v1.48.0 // indirect
+	go.mongodb.org/mongo-driver v1.10.1
 	gopkg.in/yaml.v2 v2.4.0
 )

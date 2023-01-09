@@ -434,7 +434,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 	nfType := nfprofile.NfType
 	filter := bson.M{"nfType": nfType}
 
-	ul := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	ul, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 
 	var originalUL UriList
 	err := mapstructure.Decode(ul, &originalUL)
@@ -456,7 +456,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 		logger.ManagementLog.Error(err)
 	}
 
-	if dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData) {
+	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok {
 		logger.ManagementLog.Info("urilist update")
 	} else {
 		logger.ManagementLog.Info("urilist create")
@@ -466,7 +466,7 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 }
 
 func setUriListByFilter(filter bson.M, uriList *[]string) {
-	filterNfTypeResultsRaw := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
+	filterNfTypeResultsRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
 	var filterNfTypeResults []models.NrfSubscriptionData
 	err := openapi.Convert(filterNfTypeResultsRaw, &filterNfTypeResults)
 	if err != nil {

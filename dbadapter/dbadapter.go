@@ -7,32 +7,31 @@ import (
 	"context"
 	"log"
 
-	"github.com/omec-project/MongoDBLibrary"
+	"github.com/omec-project/util/mongoapi"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type DBInterface interface {
-	RestfulAPIGetOne(collName string, filter bson.M) map[string]interface{}
-	RestfulAPIGetMany(collName string, filter bson.M) []map[string]interface{}
-	PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool
-	RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) bool
-	RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) bool
-	RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) bool
-	RestfulAPIDeleteOne(collName string, filter bson.M)
-	RestfulAPIDeleteMany(collName string, filter bson.M)
-	RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) bool
-	RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) bool
-	RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) bool
-	RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) bool
-	RestfulAPIPostMany(collName string, filter bson.M, postDataArray []interface{}) bool
+	RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error)
+	RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error)
+	//	PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool
+	RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
+	RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
+	RestfulAPIDeleteOne(collName string, filter bson.M) error
+	RestfulAPIDeleteMany(collName string, filter bson.M) error
+	RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) error
+	RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error
+	RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error
+	RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) (bool, error)
+	RestfulAPIPutMany(collName string, filterArray []primitive.M, putDataArray []map[string]interface{}) error
 }
 
 var DBClient DBInterface = nil
 
 type MongoDBClient struct {
-	Client *mongo.Client
-	dbName string
+	mongoapi.MongoClient
 }
 
 func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream) {
@@ -48,23 +47,21 @@ func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream)
 }
 
 func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
-	dbc := &MongoDBClient{}
 	for {
-		MongoDBLibrary.SetMongoDB(setdbName, url)
-		if MongoDBLibrary.Client != nil {
-			dbc.Client = MongoDBLibrary.Client
-			dbc.dbName = setdbName
+		MongoClient, _ := mongoapi.SetMongoDB(setdbName, url)
+		if MongoClient != nil {
 			log.Println("MongoDB Connection Successful")
+			DBClient = MongoClient
 			break
 		} else {
 			log.Println("MongoDB Connection Failed")
 		}
 	}
-	DBClient = dbc
 
+	db := DBClient.(*mongoapi.MongoClient)
 	if enableStream {
 		log.Println("MongoDB Change stream Enabled")
-		database := dbc.Client.Database(setdbName)
+		database := db.Client.Database(setdbName)
 		NfProfileColl := database.Collection("NfProfile")
 		//create stream to monitor actions on the collection
 		NfProfStream, err := NfProfileColl.Watch(context.TODO(), mongo.Pipeline{})
@@ -78,53 +75,53 @@ func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfil
 
 	if nfProfileExpiryEnable {
 		log.Println("NfProfile document expiry enabled")
-		ret := MongoDBLibrary.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
+		ret := db.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
 		if ret {
 			log.Println("TTL Index created for Field : expireAt in Collection : NfProfile")
 		} else {
 			log.Println("TTL Index exists for Field : expireAt in Collection : NfProfile")
 		}
 	}
-	return dbc
+	return DBClient
 }
 
-func (db *MongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) map[string]interface{} {
-	return MongoDBLibrary.RestfulAPIGetOne(collName, filter)
+func (db *MongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return db.RestfulAPIGetOne(collName, filter)
 }
 
 func (db *MongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) []map[string]interface{} {
-	return MongoDBLibrary.RestfulAPIGetMany(collName, filter)
+	return db.RestfulAPIGetMany(collName, filter)
 }
 func (db *MongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool {
-	return MongoDBLibrary.RestfulAPIPutOneTimeout(collName, filter, putData, timeout, timeField)
+	return db.RestfulAPIPutOneTimeout(collName, filter, putData, timeout, timeField)
 }
 func (db *MongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) bool {
-	return MongoDBLibrary.RestfulAPIPutOne(collName, filter, putData)
+	return db.RestfulAPIPutOne(collName, filter, putData)
 }
 func (db *MongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) bool {
-	return MongoDBLibrary.RestfulAPIPutOneNotUpdate(collName, filter, putData)
+	return db.RestfulAPIPutOneNotUpdate(collName, filter, putData)
 }
-func (db *MongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) bool {
-	return MongoDBLibrary.RestfulAPIPutMany(collName, filterArray, putDataArray)
+func (db *MongoDBClient) RestfulAPIPutMany(collName string, filterArray []primitive.M, putDataArray []map[string]interface{}) bool {
+	return db.RestfulAPIPutMany(collName, filterArray, putDataArray)
 }
 func (db *MongoDBClient) RestfulAPIDeleteOne(collName string, filter bson.M) {
-	MongoDBLibrary.RestfulAPIDeleteOne(collName, filter)
+	db.RestfulAPIDeleteOne(collName, filter)
 }
 func (db *MongoDBClient) RestfulAPIDeleteMany(collName string, filter bson.M) {
-	MongoDBLibrary.RestfulAPIDeleteMany(collName, filter)
+	db.RestfulAPIDeleteMany(collName, filter)
 }
 func (db *MongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) bool {
-	return MongoDBLibrary.RestfulAPIMergePatch(collName, filter, patchData)
+	return db.RestfulAPIMergePatch(collName, filter, patchData)
 }
 func (db *MongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) bool {
-	return MongoDBLibrary.RestfulAPIJSONPatch(collName, filter, patchJSON)
+	return db.RestfulAPIJSONPatch(collName, filter, patchJSON)
 }
 func (db *MongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) bool {
-	return MongoDBLibrary.RestfulAPIJSONPatchExtend(collName, filter, patchJSON, dataName)
+	return db.RestfulAPIJSONPatchExtend(collName, filter, patchJSON, dataName)
 }
 func (db *MongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) bool {
-	return MongoDBLibrary.RestfulAPIPost(collName, filter, postData)
+	return db.RestfulAPIPost(collName, filter, postData)
 }
 func (db *MongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, postDataArray []interface{}) bool {
-	return MongoDBLibrary.RestfulAPIPostMany(collName, filter, postDataArray)
+	return db.RestfulAPIPostMany(collName, filter, postDataArray)
 }
