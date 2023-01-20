@@ -222,6 +222,14 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 				}
 			}
 		}
+
+		if opts.TargetNfInstanceId.IsSet() {
+			if profile.NfInstanceId != "" {
+				if profile.NfInstanceId != opts.TargetNfInstanceId.Value() {
+					return false, nil
+				}
+			}
+		}
 	}
 
 	logger.UtilLog.Tracef("Amf match found = %v", profile.NfInstanceId)
