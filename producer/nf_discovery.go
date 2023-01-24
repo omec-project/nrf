@@ -87,7 +87,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	logger.DiscoveryLog.Traceln("Query filter: ", filter)
 
 	// Use the filter to find documents
-	nfProfilesRaw := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
+	nfProfilesRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
 
 	// nfProfile data for response
 	var nfProfilesStruct []models.NfProfile
