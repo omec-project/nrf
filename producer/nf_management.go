@@ -482,7 +482,7 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 				logger.ManagementLog.Errorf("NotificationApi response body cannot close: %+v", resCloseErr)
 			}
 		}()
-		if status := res.StatusCode; status != http.StatusNoContent {
+		if status := res.StatusCode; status != http.StatusNoContent && status != http.StatusOK {
 			logger.ManagementLog.Warnln("Error status in NotificationPost: ", status)
 			problemDetails := &models.ProblemDetails{
 				Status: int32(status),
