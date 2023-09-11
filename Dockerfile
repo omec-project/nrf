@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM golang:1.21.1-bullseye AS builder
+FROM golang:1.21.1-bookworm AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
