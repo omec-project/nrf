@@ -2,8 +2,6 @@ module github.com/omec-project/nrf
 
 go 1.21
 
-replace github.com/omec-project/nrf => ./
-
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
