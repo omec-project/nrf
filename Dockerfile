@@ -20,7 +20,7 @@ COPY . $GOPATH/src/nrf
 RUN cd $GOPATH/src/nrf \
     && make all
 
-FROM alpine:3.16 as nrf
+FROM alpine:3.18 as nrf
 
 LABEL description="ONF open source 5G Core Network" \
     version="Stage 3"
