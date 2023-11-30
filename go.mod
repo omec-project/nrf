@@ -7,7 +7,7 @@ require (
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt v3.2.1+incompatible
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.4.0
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/omec-project/MongoDBLibrary v1.1.3
 	github.com/omec-project/TimeDecode v1.1.0
