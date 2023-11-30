@@ -6,9 +6,9 @@ require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
 	github.com/gin-gonic/gin v1.9.1
-	github.com/golang-jwt/jwt v3.2.1+incompatible
-	github.com/google/uuid v1.3.0
-	github.com/mitchellh/mapstructure v1.4.1
+	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/google/uuid v1.4.0
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/omec-project/MongoDBLibrary v1.1.3
 	github.com/omec-project/TimeDecode v1.1.0
 	github.com/omec-project/config5g v1.2.0
@@ -17,8 +17,8 @@ require (
 	github.com/omec-project/logger_util v1.1.0
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
-	github.com/omec-project/util v1.0.9
-	github.com/sirupsen/logrus v1.9.0
+	github.com/omec-project/util v1.0.11
+	github.com/sirupsen/logrus v1.9.3
 	github.com/urfave/cli v1.22.5
 	go.mongodb.org/mongo-driver v1.10.1
 	gopkg.in/yaml.v2 v2.4.0

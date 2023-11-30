@@ -4,7 +4,7 @@
 #
 
 
-FROM golang:1.21.1-bookworm AS builder
+FROM golang:1.21.4-bookworm AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
@@ -20,7 +20,7 @@ COPY . $GOPATH/src/nrf
 RUN cd $GOPATH/src/nrf \
     && make all
 
-FROM alpine:3.16 as nrf
+FROM alpine:3.18 as nrf
 
 LABEL description="ONF open source 5G Core Network" \
     version="Stage 3"
