@@ -18,7 +18,7 @@ require (
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
 	github.com/omec-project/util v1.0.9
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/urfave/cli v1.22.5
 	go.mongodb.org/mongo-driver v1.10.1
 	gopkg.in/yaml.v2 v2.4.0
