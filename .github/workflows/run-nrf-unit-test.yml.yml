@@ -2,18 +2,16 @@
 # Copyright 2023 Canonical Ltd.
 # Copyright 2023 Intel Corporation
 
-name: Main workflow
+name: Unit tests
 
 on:
-  pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
+  pull_request:
 
 jobs:
-  build:
+  unit-test-nrf:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
