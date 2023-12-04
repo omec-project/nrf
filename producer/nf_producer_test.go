@@ -24,52 +24,53 @@ func init() {
 	factory.InitConfigFactory("../nrfTest/nrfcfg.yaml")
 }
 
-func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) map[string]interface{} {
+func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
 	fmt.Println("Called Mock RestfulAPIGetOne")
-	return nil
+	return nil, nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) []map[string]interface{} {
+func (db *MockMongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
 	fmt.Println("Called Mock RestfulAPIGetMany")
-	return nil
+	return nil, nil
 }
 func (db *MockMongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool {
 	fmt.Println("Called Mock PutOneWithTimeout")
 	return true
 }
-func (db *MockMongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
 	fmt.Println("Called Mock RestfulAPIPutOne")
-	return true
+	return true, nil
 }
-func (db *MockMongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
 	fmt.Println("Called Mock RestfulAPIPutOneNotUpdate")
-	return true
+	return true, nil
 }
-func (db *MockMongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) error {
 	fmt.Println("Called Mock RestfulAPIPutMany")
-	return true
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIDeleteOne(collName string, filter bson.M) {
+func (db *MockMongoDBClient) RestfulAPIDeleteOne(collName string, filter bson.M) error {
 	fmt.Println("Called Mock RestfulAPIDeleteOne")
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIDeleteMany(collName string, filter bson.M) {
+func (db *MockMongoDBClient) RestfulAPIDeleteMany(collName string, filter bson.M) error {
 	fmt.Println("Called Mock RestfulAPIDeleteMany")
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) error {
 	fmt.Println("Called Mock RestfulAPIMergePatch")
-	return true
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) bool {
-	fmt.Println("Called Mock RestfulAPIJSONPatch")
-	return true
+func (db *MockMongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error {
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) bool {
+func (db *MockMongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error {
 	fmt.Println("Called Mock RestfulAPIJSONPatchExtend")
-	return true
+	return nil
 }
-func (db *MockMongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) (bool, error) {
 	fmt.Println("Called Mock RestfulAPIPost")
-	return true
+	return true, nil
 }
 func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, postDataArray []interface{}) bool {
 	fmt.Println("Called Mock RestfulAPIPost")

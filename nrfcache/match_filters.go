@@ -59,7 +59,7 @@ func MatchSmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 			var snssai models.Snssai
 			err := json.Unmarshal([]byte(reqSnssai), &snssai)
 			if err != nil {
-				logger.UtilLog.Errorf("Error Unmarshaling nssai : ", err)
+				logger.UtilLog.Errorf("Error Unmarshaling nssai : %+v", err)
 				return false, err
 			}
 
@@ -162,7 +162,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 				err := json.Unmarshal([]byte(targetPlmn), &plmn)
 
 				if err != nil {
-					logger.UtilLog.Errorf("Error Unmarshaling plmn : ", err)
+					logger.UtilLog.Errorf("Error Unmarshaling plmn : %+v", err)
 					return false, err
 				}
 
@@ -190,7 +190,7 @@ func MatchAmfProfile(profile *models.NfProfile, opts *Nnrf_NFDiscovery.SearchNFI
 					err := json.Unmarshal([]byte(guami), &guamiOpt)
 
 					if err != nil {
-						logger.UtilLog.Errorf("Error Unmarshaling guami : ", err)
+						logger.UtilLog.Errorf("Error Unmarshaling guami : %+v", err)
 						return false, err
 					}
 

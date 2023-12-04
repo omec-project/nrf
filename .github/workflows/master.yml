@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2023 Canonical Ltd.
 
-name: Main workflow
+name: Master workflow
 
 on:
   pull_request:
     branches:
-      - main
+      - master
   push:
     branches:
-      - main
+      - master
 
 jobs:
   build:
@@ -17,8 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unit tests
-        run: go test
-
       - name: Build
         run: go build
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests
+        run: go test ./...
