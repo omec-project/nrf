@@ -691,59 +691,59 @@ func TestCacheMissOnTTlExpiry(t *testing.T) {
 }
 
 func TestCacheEviction(t *testing.T) {
-	// var result models.SearchResult
-	// var err error
+	var result models.SearchResult
+	var err error
 
-	// evictionTimerVal := time.Duration(evictionInterval)
-	// InitNrfCaching(evictionTimerVal*time.Second, nrfDbCallback)
+	evictionTimerVal := time.Duration(evictionInterval)
+	InitNrfCaching(evictionTimerVal*time.Second, nrfDbCallback)
 
-	// // Cache Miss for dnn 'internet' sd '0a0b0c' as ttl expired..
-	// param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
-	// 	ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
-	// 	Dnn:          optional.NewString("internet"),
-	// 	Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
-	// }
+	// Cache Miss for dnn 'internet' sd '0a0b0c' as ttl expired..
+	param := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
+		Dnn:          optional.NewString("internet"),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+	}
 
-	// result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
-	// if err != nil {
-	// 	t.Errorf("test failed, %s", err.Error())
-	// }
+	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
+	if err != nil {
+		t.Errorf("test failed, %s", err.Error())
+	}
 
-	// validityPeriod = 30
-	// param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
-	// 	ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
-	// 	Dnn:          optional.NewString("ims"),
-	// 	Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
-	// }
+	validityPeriod = 30
+	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
+		Dnn:          optional.NewString("ims"),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "010203"}})),
+	}
 
-	// result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
+	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
 
-	// if err != nil {
-	// 	t.Errorf("test failed, %s", err.Error())
-	// }
+	if err != nil {
+		t.Errorf("test failed, %s", err.Error())
+	}
 
-	// validityPeriod = 90
-	// param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
-	// 	ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
-	// 	Dnn:          optional.NewString("internet"),
-	// 	Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
-	// }
+	validityPeriod = 90
+	param = Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		ServiceNames: optional.NewInterface([]models.ServiceName{models.ServiceName_NSMF_PDUSESSION}),
+		Dnn:          optional.NewString("internet"),
+		Snssais:      optional.NewInterface(MarshToJsonString([]models.Snssai{{Sst: 1, Sd: "0a0b0c"}})),
+	}
 
-	// result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
+	result, err = SearchNFInstances("testNrf", models.NfType_SMF, models.NfType_AMF, &param)
 
-	// if err != nil {
-	// 	t.Errorf("test failed, %s", err.Error())
-	// }
+	if err != nil {
+		t.Errorf("test failed, %s", err.Error())
+	}
 
-	// if len(result.NfInstances) == 0 {
-	// 	t.Errorf("nf instances len 0")
-	// }
+	if len(result.NfInstances) == 0 {
+		t.Errorf("nf instances len 0")
+	}
 
-	// t.Log("wait for eviction timeout")
+	t.Log("wait for eviction timeout")
 
-	// time.Sleep(125 * time.Second)
+	time.Sleep(125 * time.Second)
 
-	// disableNrfCaching()
+	disableNrfCaching()
 }
 
 func TestCacheConcurrency(t *testing.T) {
