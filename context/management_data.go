@@ -72,7 +72,7 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 		factory.NrfConfig.Configuration.NfKeepAliveTime = 60
 	}
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
-	logger.ManagementLog.Infoln("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
+	logger.ManagementLog.Infof("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
 
 	// PlmnList
 	if nfprofile.PlmnList != nil {
