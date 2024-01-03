@@ -299,6 +299,9 @@ func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
 	if nfProfile.NfType == models.NfType_AMF {
 		url := "http://amf:29518" + "/namf-oam/v1/amfInstanceDown/" + nfInstanceID
 		req, err := http.NewRequest(http.MethodPost, url, nil)
+		if err != nil {
+			logger.ManagementLog.Infoln("Error in creating request ", err)
+		}
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		_, err = client.Do(req)
