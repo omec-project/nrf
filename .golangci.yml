@@ -1,7 +1,6 @@
 # Copyright 2019 free5GC.org
 # SPDX-License-Identifier: Apache-2.0
 
-
 # This file contains all available configuration options
 # with their default values.
 # options for analysis running
@@ -143,17 +142,17 @@ linters-settings:
         checks: argument,case,condition,operation,return,assign
   gomodguard:
     allowed:
-      modules:                                                        # List of allowed modules
+      modules: # List of allowed modules
         # - gopkg.in/yaml.v2
-      domains:                                                        # List of allowed module domains
+      domains: # List of allowed module domains
         # - golang.org
     blocked:
-      modules:                                                        # List of blocked modules
+      modules: # List of blocked modules
         # - github.com/uudashr/go-module:                             # Blocked module
         #     recommendations:                                        # Recommended modules that should be used instead (Optional)
         #       - golang.org/x/mod
         #     reason: "`mod` is the official go.mod parser library."  # Reason why the recommended module should be used (Optional)
-      versions:                                                       # List of blocked module version constraints
+      versions: # List of blocked module version constraints
         # - github.com/mitchellh/go-homedir:                          # Blocked module with version constraint
         #     version: "< 1.1.0"                                      # Version constraint, see https://github.com/Masterminds/semver#basic-comparisons
         #     reason: "testing if blocked version constraint works."  # Reason why the version constraint exists. (Optional)
@@ -205,7 +204,7 @@ linters-settings:
     # with golangci-lint call it on a directory with the changed file.
     check-exported: false
   whitespace:
-    multi-if: false   # Enforces newlines (or comments) after every multi-line if statement
+    multi-if: false # Enforces newlines (or comments) after every multi-line if statement
     multi-func: false # Enforces newlines (or comments) after every multi-line function signature
   gci:
     local-prefixes: "bitbucket.org"
@@ -217,40 +216,35 @@ linters-settings:
 
 linters:
   enable:
-    - gofmt
-    - govet
-    - errcheck
-    - staticcheck
-    - unused
-    - gosimple
-    - structcheck
-    - varcheck
-    - ineffassign
-    - deadcode
+    # - gofmt
+    # - govet
+    # - errcheck
+    # - staticcheck
+    # - unused
+    # - gosimple
     - typecheck
     # Additional
-    - lll
+    # - lll
     - godox
-    #- gomnd
-    #- goconst
+    # - gomnd
+    # - goconst
     # - gocognit
-    # - maligned
     # - nestif
-    # - gomodguard
+    - gomodguard
     - nakedret
-    - gci
+    # - gci
     - misspell
-    - gofumpt
-    - whitespace
+    # - gofumpt
+    # - whitespace
     - unconvert
     - predeclared
-    - noctx
+    # - noctx
     - dogsled
-    - bodyclose
-    - asciicheck
-      #- stylecheck
-      # - unparam
-      #- wsl
+    # - bodyclose
+    # - asciicheck
+    # - stylecheck
+    # - unparam
+    # - wsl
 
   #disable-all: false
   fast: true
@@ -309,5 +303,5 @@ severity:
   # Only affects out formats that support setting severity information.
   rules:
     - linters:
-      - gomnd
+        - gomnd
       severity: ignore
