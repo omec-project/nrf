@@ -147,12 +147,12 @@ linters-settings:
       domains:                                                        # List of allowed module domains
         # - golang.org
     blocked:
-      modules: # List of blocked modules
+      modules:                                                        # List of blocked modules
         # - github.com/uudashr/go-module:                             # Blocked module
         #     recommendations:                                        # Recommended modules that should be used instead (Optional)
         #       - golang.org/x/mod
         #     reason: "`mod` is the official go.mod parser library."  # Reason why the recommended module should be used (Optional)
-      versions: # List of blocked module version constraints
+      versions:                                                       # List of blocked module version constraints
         # - github.com/mitchellh/go-homedir:                          # Blocked module with version constraint
         #     version: "< 1.1.0"                                      # Version constraint, see https://github.com/Masterminds/semver#basic-comparisons
         #     reason: "testing if blocked version constraint works."  # Reason why the version constraint exists. (Optional)
@@ -204,7 +204,7 @@ linters-settings:
     # with golangci-lint call it on a directory with the changed file.
     check-exported: false
   whitespace:
-    multi-if: false # Enforces newlines (or comments) after every multi-line if statement
+    multi-if: false   # Enforces newlines (or comments) after every multi-line if statement
     multi-func: false # Enforces newlines (or comments) after every multi-line function signature
   gci:
     local-prefixes: "bitbucket.org"
