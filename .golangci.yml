@@ -220,7 +220,7 @@ linters:
     # - govet
     # - errcheck
     # - staticcheck
-    # - unused
+    - unused
     # - gosimple
     - typecheck
     # Additional

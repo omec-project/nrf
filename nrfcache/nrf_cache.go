@@ -7,12 +7,12 @@ package nrf_cache
 
 import (
 	"container/heap"
-	"encoding/json"
+	"sync"
+	"time"
+
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
-	"sync"
-	"time"
 )
 
 const defaultCacheTTl = time.Hour
@@ -66,11 +66,6 @@ func (npq NfProfilePriorityQ) Swap(i, j int) {
 	npq[j].index = j
 }
 
-// root - returns the root element, i.e. the element with the least expiry time.
-func (npq NfProfilePriorityQ) root() *NfProfileItem {
-	return npq[0]
-}
-
 // at - returns the element at index i
 func (npq NfProfilePriorityQ) at(index int) *NfProfileItem {
 	return npq[index]
@@ -80,14 +75,6 @@ func (npq NfProfilePriorityQ) at(index int) *NfProfileItem {
 // push the entry to the correct location in the queue
 func (npq *NfProfilePriorityQ) push(item interface{}) {
 	heap.Push(npq, item)
-}
-
-// pop - removes the element with minimum priority
-func (npq *NfProfilePriorityQ) pop() interface{} {
-	if npq.Len() == 0 {
-		return nil
-	}
-	return heap.Pop(npq).(*NfProfileItem)
 }
 
 // update - update fields of existing entry. Invokes heap.Fix to re-establish the ordering.
@@ -127,11 +114,6 @@ func newNfProfilePriorityQ() *NfProfilePriorityQ {
 	q := &NfProfilePriorityQ{}
 	heap.Init(q)
 	return q
-}
-
-type NrfRequest struct {
-	targetNfType models.NfType
-	searchParams *Nnrf_NFDiscovery.SearchNFInstancesParamOpts
 }
 
 // NrfCache : cache of nf profiles
@@ -304,19 +286,6 @@ func NewNrfCache(duration time.Duration, dbqueryCb NrfDiscoveryQueryCb) *NrfCach
 	return cache
 }
 
-func copyNrfProfile(src *models.NfProfile) (*models.NfProfile, error) {
-	nrfProfileJSON, err := json.Marshal(src)
-	if err != nil {
-		return nil, err
-	}
-	nrfProfile := models.NfProfile{}
-	if err = json.Unmarshal(nrfProfileJSON, &nrfProfile); err != nil {
-		return nil, err
-	}
-
-	return &nrfProfile, nil
-}
-
 type NrfMasterCache struct {
 	nfTypeToCacheMap    map[models.NfType]*NrfCache
 	evictionInterval    time.Duration
@@ -337,17 +306,6 @@ func (c *NrfMasterCache) GetNrfCacheInstance(targetNfType models.NfType) *NrfCac
 		c.nfTypeToCacheMap[targetNfType] = cache
 	}
 	return cache
-}
-
-func (c *NrfMasterCache) clearNrfCache(nfType models.NfType) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	cache, exists := c.nfTypeToCacheMap[nfType]
-	if exists == true {
-		cache.purge()
-		delete(c.nfTypeToCacheMap, nfType)
-	}
 }
 
 func (c *NrfMasterCache) clearNrfMasterCache() {
