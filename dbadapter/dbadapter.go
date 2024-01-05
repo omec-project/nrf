@@ -68,7 +68,8 @@ func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfil
 		if err != nil {
 			panic(err)
 		}
-		routineCtx, _ := context.WithCancel(context.Background())
+		routineCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		//run routine to get messages from stream
 		go iterateChangeStream(routineCtx, NfProfStream)
 	}
