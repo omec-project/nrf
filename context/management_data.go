@@ -6,11 +6,11 @@
 package context
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strconv"
-	"time"
 
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
@@ -23,6 +23,16 @@ import (
 )
 
 const NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
+
+// Generates a random int between 0 and 99
+func GenerateRandomNumber() (int, error) {
+	max := big.NewInt(100)
+	randomNumber, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return 0, err
+	}
+	return int(randomNumber.Int64()), nil
+}
 
 func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile) error {
 	if nfprofile.NfInstanceId != "" {
@@ -56,8 +66,10 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 }
 
 func SetsubscriptionId() string {
-	rand.Seed(time.Now().UnixNano())
-	x := rand.Intn(100)
+	x, err := GenerateRandomNumber()
+	if err != nil {
+		logger.ManagementLog.Error(err)
+	}
 	return strconv.Itoa(x)
 }
 
