@@ -323,9 +323,9 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 			nf,
 		}
 
-		nfProfiles, err := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
-		if err != nil {
-			logger.ManagementLog.Info(err.Error())
+		nfProfiles, decodeErr := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
+		if decodeErr != nil {
+			logger.ManagementLog.Info(decodeErr.Error())
 		}
 
 		// Update expiry time for document.
