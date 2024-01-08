@@ -510,7 +510,7 @@ func nrfDbCallback(nrfUri string, targetNfType, requestNfType models.NfType,
 				snssais := param.Snssais.Value().([]string)
 
 				var snssai models.Snssai
-				err := json.Unmarshal([]byte(snssais[0]), &snssai)
+				err = json.Unmarshal([]byte(snssais[0]), &snssai)
 				if err != nil {
 					err = fmt.Errorf("snssai invalid %s", snssais[0])
 					return searchResult, err
