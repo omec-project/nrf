@@ -20,8 +20,8 @@ const defaultNfProfileTTl = time.Minute
 
 type NfProfileItem struct {
 	nfProfile  *models.NfProfile
-	ttl        time.Duration
 	expiryTime time.Time
+	ttl        time.Duration
 	index      int // index of the entry in the priority queue
 }
 
@@ -122,13 +122,13 @@ type NrfCache struct {
 
 	priorityQ *NfProfilePriorityQ // sorted by expiry time
 
-	evictionInterval time.Duration // timer interval in which the cache is checked for eviction of expired entries
-
 	evictionTicker *time.Ticker
+
+	done chan struct{}
 
 	nrfDiscoveryQueryCb NrfDiscoveryQueryCb // nrf query callback
 
-	done chan struct{}
+	evictionInterval time.Duration // timer interval in which the cache is checked for eviction of expired entries
 
 	mutex sync.RWMutex
 }
@@ -287,11 +287,10 @@ func NewNrfCache(duration time.Duration, dbqueryCb NrfDiscoveryQueryCb) *NrfCach
 }
 
 type NrfMasterCache struct {
+	nrfDiscoveryQueryCb NrfDiscoveryQueryCb
 	nfTypeToCacheMap    map[models.NfType]*NrfCache
 	evictionInterval    time.Duration
-	nrfDiscoveryQueryCb NrfDiscoveryQueryCb
-
-	mutex sync.Mutex
+	mutex               sync.Mutex
 }
 
 func (c *NrfMasterCache) GetNrfCacheInstance(targetNfType models.NfType) *NrfCache {

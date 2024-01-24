@@ -32,7 +32,6 @@ type SearchNFInstances struct {
 	UeIpv4Address           string               `form:"ue-ipv4-address" `
 	IPDomain                string               `form:"ip-domain" `
 	UeIpv6Prefix            string               `form:"ue-ipv6-prefix" `
-	PgwInd                  bool                 `form:"pgw-ind" `
 	Pgw                     string               `form:"pgw" `
 	Gpsi                    string               `form:"gpsi" `
 	ExternalGroupIdentity   string               `form:"external-group-identity" `
@@ -40,10 +39,11 @@ type SearchNFInstances struct {
 	RoutingIndicator        string               `form:"routing-indicator" `
 	GroupIDList             []string             `form:"group-id-list" `
 	DnaiList                []string             `form:"dnai-list" `
-	SupportedFeatures       []string             `form:"supported-features" `
-	UpfIwkEpsInd            bool                 `form:"upf-iwk-eps-ind" `
 	ChfSupportedPlmn        models.PlmnId        `form:"chf-supported-plmn" `
 	PreferredLocality       string               `form:"preferred-locality" `
 	AccessType              models.AccessType    `form:"access-type" `
+	SupportedFeatures       []string             `form:"supported-features" `
+	UpfIwkEpsInd            bool                 `form:"upf-iwk-eps-ind" `
+	PgwInd                  bool                 `form:"pgw-ind" `
 	// IfNoneMatch             string            `form:"target-nf-type" `
 }
