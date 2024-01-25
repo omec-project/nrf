@@ -35,13 +35,13 @@ type SearchNFInstances struct {
 	Pgw                     string               `form:"pgw" `
 	Gpsi                    string               `form:"gpsi" `
 	ExternalGroupIdentity   string               `form:"external-group-identity" `
-	DataSet                 models.DataSetId     `form:"data-set" `
 	RoutingIndicator        string               `form:"routing-indicator" `
+	PreferredLocality       string               `form:"preferred-locality" `
+	DataSet                 models.DataSetId     `form:"data-set" `
+	ChfSupportedPlmn        models.PlmnId        `form:"chf-supported-plmn" `
+	AccessType              models.AccessType    `form:"access-type" `
 	GroupIDList             []string             `form:"group-id-list" `
 	DnaiList                []string             `form:"dnai-list" `
-	ChfSupportedPlmn        models.PlmnId        `form:"chf-supported-plmn" `
-	PreferredLocality       string               `form:"preferred-locality" `
-	AccessType              models.AccessType    `form:"access-type" `
 	SupportedFeatures       []string             `form:"supported-features" `
 	UpfIwkEpsInd            bool                 `form:"upf-iwk-eps-ind" `
 	PgwInd                  bool                 `form:"pgw-ind" `
