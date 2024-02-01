@@ -46,9 +46,9 @@ func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream)
 	}
 }
 
-func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
+func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
 	for {
-		MongoClient, _ := mongoapi.SetMongoDB(setdbName, url)
+		MongoClient, _ := mongoapi.NewMongoClient(url, dbName)
 		if MongoClient != nil {
 			log.Println("MongoDB Connection Successful")
 			DBClient = MongoClient
@@ -61,7 +61,7 @@ func ConnectToDBClient(setdbName string, url string, enableStream bool, nfProfil
 	db := DBClient.(*mongoapi.MongoClient)
 	if enableStream {
 		log.Println("MongoDB Change stream Enabled")
-		database := db.Client.Database(setdbName)
+		database := db.Client.Database(dbName)
 		NfProfileColl := database.Collection("NfProfile")
 		//create stream to monitor actions on the collection
 		NfProfStream, err := NfProfileColl.Watch(context.TODO(), mongo.Pipeline{})
