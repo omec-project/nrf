@@ -18,7 +18,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	mongoDBLibLogger "github.com/omec-project/MongoDBLibrary/logger"
 	"github.com/omec-project/http2_util"
 	"github.com/omec-project/logger_util"
 	"github.com/omec-project/nrf/accesstoken"
@@ -31,6 +30,7 @@ import (
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/path_util"
 	pathUtilLogger "github.com/omec-project/path_util/logger"
+	mongoDBLibLogger "github.com/omec-project/util/logger"
 )
 
 type NRF struct{}
@@ -145,14 +145,14 @@ func (nrf *NRF) setLogLevel() {
 	if factory.NrfConfig.Logger.MongoDBLibrary != nil {
 		if factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel != "" {
 			if level, err := logrus.ParseLevel(factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel); err != nil {
-				mongoDBLibLogger.MongoDBLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
+				mongoDBLibLogger.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel)
 				mongoDBLibLogger.SetLogLevel(logrus.InfoLevel)
 			} else {
 				mongoDBLibLogger.SetLogLevel(level)
 			}
 		} else {
-			mongoDBLibLogger.MongoDBLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
+			mongoDBLibLogger.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
 			mongoDBLibLogger.SetLogLevel(logrus.InfoLevel)
 		}
 		mongoDBLibLogger.SetReportCaller(factory.NrfConfig.Logger.MongoDBLibrary.ReportCaller)
