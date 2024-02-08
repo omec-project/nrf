@@ -19,14 +19,14 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/omec-project/TimeDecode"
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/util/httpwrapper"
 )
 
-func HandleNFDiscoveryRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	// Get all query parameters
 	logger.DiscoveryLog.Infoln("Handle NFDiscoveryRequest")
 
@@ -35,15 +35,15 @@ func HandleNFDiscoveryRequest(request *http_wrapper.Request) *http_wrapper.Respo
 	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,

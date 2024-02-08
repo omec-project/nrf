@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -27,7 +27,7 @@ import (
 
 // RemoveSubscription - Deletes a subscription
 func HTTPRemoveSubscription(c *gin.Context) {
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["subscriptionID"] = c.Params.ByName("subscriptionID")
 
 	httpResponse := producer.HandleRemoveSubscriptionRequest(req)
@@ -61,7 +61,7 @@ func HTTPUpdateSubscription(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["subscriptionID"] = c.Params.ByName("subscriptionID")
 	req.Body = requestBody
 

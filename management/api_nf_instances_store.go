@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -27,7 +27,7 @@ import (
 
 // GetNFInstances - Retrieves a collection of NF Instances
 func HTTPGetNFInstances(c *gin.Context) {
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Query = c.Request.URL.Query()
 
 	httpResponse := producer.HandleGetNFInstancesRequest(req)

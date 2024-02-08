@@ -17,16 +17,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/TimeDecode"
-	"github.com/omec-project/http_wrapper"
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/util/httpwrapper"
 )
 
-func HandleNFDeregisterRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
@@ -34,30 +34,30 @@ func HandleNFDeregisterRequest(request *http_wrapper.Request) *http_wrapper.Resp
 
 	if problemDetails != nil {
 		logger.ManagementLog.Infoln("[NRF] Dergeister Success")
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
-		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
 
-func HandleGetNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleGetNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle GetNFInstanceRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
 	response := GetNFInstanceProcedure(nfInstanceId)
 
 	if response != nil {
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
 		problemDetails := &models.ProblemDetails{
 			Status: http.StatusNotFound,
 			Cause:  "UNSPECIFIED",
 		}
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 }
 
-func HandleNFRegisterRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle NFRegisterRequest")
 	nfProfile := request.Body.(models.NfProfile)
 
@@ -65,33 +65,33 @@ func HandleNFRegisterRequest(request *http_wrapper.Request) *http_wrapper.Respon
 
 	if response != nil {
 		logger.ManagementLog.Traceln("register success")
-		return http_wrapper.NewResponse(http.StatusCreated, header, response)
+		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Traceln("register failed")
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
 	logger.ManagementLog.Traceln("register failed")
-	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
-func HandleUpdateNFInstanceRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle UpdateNFInstanceRequest")
 	nfInstanceID := request.Params["nfInstanceID"]
 	patchJSON := request.Body.([]byte)
 
 	response := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if response != nil {
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
-		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
 
-func HandleGetNFInstancesRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
 	limit, err := strconv.Atoi(request.Query.Get("limit"))
@@ -103,35 +103,35 @@ func HandleGetNFInstancesRequest(request *http_wrapper.Request) *http_wrapper.Re
 			Detail: err.Error(),
 		}
 
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
 	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
 	if response != nil {
 		logger.ManagementLog.Traceln("GetNFInstances success")
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Traceln("GetNFInstances failed")
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
 	logger.ManagementLog.Traceln("GetNFInstances failed")
-	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
-func HandleRemoveSubscriptionRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle RemoveSubscription")
 	subscriptionID := request.Params["subscriptionID"]
 
 	RemoveSubscriptionProcedure(subscriptionID)
 
-	return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-func HandleUpdateSubscriptionRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleUpdateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle UpdateSubscription")
 	subscriptionID := request.Params["subscriptionID"]
 	patchJSON := request.Body.([]byte)
@@ -139,30 +139,30 @@ func HandleUpdateSubscriptionRequest(request *http_wrapper.Request) *http_wrappe
 	response := UpdateSubscriptionProcedure(subscriptionID, patchJSON)
 
 	if response != nil {
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
-		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
 
-func HandleCreateSubscriptionRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle CreateSubscriptionRequest")
 	subscription := request.Body.(models.NrfSubscriptionData)
 
 	response, problemDetails := CreateSubscriptionProcedure(subscription)
 	if response != nil {
 		logger.ManagementLog.Traceln("CreateSubscription success")
-		return http_wrapper.NewResponse(http.StatusCreated, nil, response)
+		return httpwrapper.NewResponse(http.StatusCreated, nil, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Traceln("CreateSubscription failed")
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
 	logger.ManagementLog.Traceln("CreateSubscription failed")
-	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
 func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (response bson.M,

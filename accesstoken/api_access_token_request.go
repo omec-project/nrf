@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -45,7 +45,7 @@ func HTTPAccessTokenRequest(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, accessTokenReq)
+	req := httpwrapper.NewRequest(c.Request, accessTokenReq)
 	req.Params["paramName"] = c.Params.ByName("paramName")
 
 	httpResponse := producer.HandleAccessTokenRequest(req)

@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -29,7 +29,7 @@ import (
 func HTTPDeregisterNFInstance(c *gin.Context) {
 	// parse nfInstanceId
 
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
 
 	httpResponse := producer.HandleNFDeregisterRequest(req)
@@ -50,7 +50,7 @@ func HTTPDeregisterNFInstance(c *gin.Context) {
 
 // GetNFInstance - Read the profile of a given NF Instance
 func HTTPGetNFInstance(c *gin.Context) {
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
 
 	httpResponse := producer.HandleGetNFInstanceRequest(req)
@@ -101,8 +101,8 @@ func HTTPRegisterNFInstance(c *gin.Context) {
 		return
 	}
 
-	// step 3: encapsulate the request by http_wrapper package
-	req := http_wrapper.NewRequest(c.Request, nfprofile)
+	// step 3: encapsulate the request by httpwrapper package
+	req := httpwrapper.NewRequest(c.Request, nfprofile)
 
 	// step 4: call producer
 	httpResponse := producer.HandleNFRegisterRequest(req)
@@ -141,7 +141,7 @@ func HTTPUpdateNFInstance(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
 	req.Body = requestBody
 
