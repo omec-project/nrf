@@ -10,12 +10,12 @@ import (
 
 	jwt "github.com/golang-jwt/jwt"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/util/httpwrapper"
 )
 
-func HandleAccessTokenRequest(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	// Param of AccessTokenRsp
 	logger.AccessTokenLog.Infoln("Handle AccessTokenRequest")
 
@@ -25,15 +25,15 @@ func HandleAccessTokenRequest(request *http_wrapper.Request) *http_wrapper.Respo
 
 	if response != nil {
 		// status code is based on SPEC, and option headers
-		return http_wrapper.NewResponse(http.StatusOK, nil, response)
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if errResponse != nil {
-		return http_wrapper.NewResponse(http.StatusBadRequest, nil, errResponse)
+		return httpwrapper.NewResponse(http.StatusBadRequest, nil, errResponse)
 	}
 	problemDetails := &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	return http_wrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
 func AccessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp,

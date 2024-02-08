@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -35,7 +35,7 @@ func HTTPSearchNFInstances(c *gin.Context) {
 	// logger.DiscoveryLog.Infoln("requesterNFType: ", searchNFInstance.RequesterNFType)
 	// logger.DiscoveryLog.Infoln("ChfSupportedPlmn: ", searchNFInstance.ChfSupportedPlmn)
 
-	req := http_wrapper.NewRequest(c.Request, nil)
+	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Query = c.Request.URL.Query()
 	httpResponse := producer.HandleNFDiscoveryRequest(req)
 

@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi"
@@ -59,7 +59,7 @@ func HTTPCreateSubscription(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, subscription)
+	req := httpwrapper.NewRequest(c.Request, subscription)
 
 	httpResponse := producer.HandleCreateSubscriptionRequest(req)
 	responseBody, err := openapi.Serialize(httpResponse.Body, "application/json")
