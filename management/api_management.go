@@ -13,9 +13,9 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/omec-project/TimeDecode"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/models"
 )
 
@@ -60,7 +60,7 @@ func getUdrInfo() map[string]models.UdrInfo {
 	filter := bson.M{"nfType": "UDR"}
 
 	UDR, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	UDRStruct, err := TimeDecode.Decode(UDR, time.RFC3339)
+	UDRStruct, err := util.Decode(UDR, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -85,7 +85,7 @@ func getUdmInfo() map[string]models.UdmInfo {
 	filter := bson.M{"nfType": "UDM"}
 
 	UDM, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	UDMStruct, err := TimeDecode.Decode(UDM, time.RFC3339)
+	UDMStruct, err := util.Decode(UDM, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -110,7 +110,7 @@ func getAusfInfo() map[string]models.AusfInfo {
 	filter := bson.M{"nfType": "AUSF"}
 
 	AUSF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	AUSFStruct, err := TimeDecode.Decode(AUSF, time.RFC3339)
+	AUSFStruct, err := util.Decode(AUSF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -134,7 +134,7 @@ func getAmfInfo() map[string]models.AmfInfo {
 	filter := bson.M{"nfType": "AMF"}
 
 	AMF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	AMFStruct, err := TimeDecode.Decode(AMF, time.RFC3339)
+	AMFStruct, err := util.Decode(AMF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -158,7 +158,7 @@ func getSmfInfo() map[string]models.SmfInfo {
 	filter := bson.M{"nfType": "SMF"}
 
 	SMF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	SMFStruct, err := TimeDecode.Decode(SMF, time.RFC3339)
+	SMFStruct, err := util.Decode(SMF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -182,7 +182,7 @@ func getUpfInfo() map[string]models.UpfInfo {
 	filter := bson.M{"nfType": "UPF"}
 
 	UPF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	UPFStruct, err := TimeDecode.Decode(UPF, time.RFC3339)
+	UPFStruct, err := util.Decode(UPF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -206,7 +206,7 @@ func getPcfInfo() map[string]models.PcfInfo {
 	filter := bson.M{"nfType": "PCF"}
 
 	PCF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	PCFStruct, err := TimeDecode.Decode(PCF, time.RFC3339)
+	PCFStruct, err := util.Decode(PCF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -230,7 +230,7 @@ func getBsfInfo() map[string]models.BsfInfo {
 	filter := bson.M{"nfType": "BSF"}
 
 	BSF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	BSFStruct, err := TimeDecode.Decode(BSF, time.RFC3339)
+	BSFStruct, err := util.Decode(BSF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}
@@ -254,7 +254,7 @@ func getChfInfo() map[string]models.ChfInfo {
 	filter := bson.M{"nfType": "CHF"}
 
 	CHF, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
-	CHFStruct, err := TimeDecode.Decode(CHF, time.RFC3339)
+	CHFStruct, err := util.Decode(CHF, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}

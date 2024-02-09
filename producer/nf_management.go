@@ -16,11 +16,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/omec-project/TimeDecode"
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
@@ -260,7 +260,7 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 	dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 
 	// nfProfile data for response
-	nfProfiles, err := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
+	nfProfiles, err := util.Decode(nfProfilesRaw, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Warnln("Time decode error: ", err)
 		problemDetails = &models.ProblemDetails{
@@ -323,7 +323,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 			nf,
 		}
 
-		nfProfiles, decodeErr := TimeDecode.Decode(nfProfilesRaw, time.RFC3339)
+		nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
 		if decodeErr != nil {
 			logger.ManagementLog.Info(decodeErr.Error())
 		}
