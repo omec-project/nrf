@@ -28,9 +28,9 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/util"
+	mongoDBLibLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
-	mongoDBLibLogger "github.com/omec-project/util/logger"
 )
 
 type NRF struct{}
