@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+# SPDX-FileCopyrightText: 2024 Intel Corporation
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -8,17 +9,22 @@ FROM golang:1.22.0-bookworm AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
-RUN apt-get update && apt-get -y install apt-transport-https ca-certificates
-RUN apt-get update
-RUN apt-get -y install gcc cmake autoconf libtool pkg-config libmnl-dev libyaml-dev
-RUN apt-get clean
+RUN apt-get update && \
+    apt-get -y install --no-install-recommends \
+    apt-transport-https \
+    ca-certificates \
+    gcc \
+    cmake \
+    autoconf \
+    libtool \
+    pkg-config \
+    libmnl-dev \
+    libyaml-dev && \
+    apt-get clean
 
-
-RUN cd $GOPATH/src && mkdir -p nrf
-COPY . $GOPATH/src/nrf
-
-RUN cd $GOPATH/src/nrf \
-    && make all
+WORKDIR $GOPATH/src/nrf
+COPY . .
+RUN make all
 
 FROM alpine:3.19 as nrf
 
@@ -27,13 +33,13 @@ LABEL description="ONF open source 5G Core Network" \
 
 ARG DEBUG_TOOLS
 
-# Install debug tools ~ 100MB (if DEBUG_TOOLS is set to true)
-RUN apk update && apk add -U vim strace net-tools curl netcat-openbsd bind-tools bash
+# Install debug tools ~ 50MB (if DEBUG_TOOLS is set to true)
+RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
+        apk update && apk add --no-cache -U vim strace net-tools curl netcat-openbsd bind-tools bash; \
+        fi
 
 # Set working dir
-WORKDIR /free5gc
-RUN mkdir -p nrf/
+WORKDIR /free5gc/nrf
 
 # Copy executable and default certs
-COPY --from=builder /go/src/nrf/bin/* ./nrf
-WORKDIR /free5gc/nrf
+COPY --from=builder /go/src/nrf/bin/* .
