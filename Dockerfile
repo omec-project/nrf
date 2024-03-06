@@ -5,7 +5,7 @@
 #
 
 
-FROM golang:1.22.0-bookworm AS builder
+FROM golang:1.22.1-bookworm AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
