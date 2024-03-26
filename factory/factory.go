@@ -40,11 +40,14 @@ func InitConfigFactory(f string) error {
 		if yamlErr := yaml.Unmarshal(content, &NrfConfig); yamlErr != nil {
 			return yamlErr
 		}
+		if NrfConfig.Configuration.WebuiUri == "" {
+			NrfConfig.Configuration.WebuiUri = "webui:9876"
+		}
 		initLog.Infof("DefaultPlmnId Mnc %v , Mcc %v \n", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			commChannel := client.ConfigWatcher()
+			commChannel := client.ConfigWatcher(NrfConfig.Configuration.WebuiUri)
 			ManagedByConfigPod = true
 			go NrfConfig.updateConfig(commChannel)
 		}
