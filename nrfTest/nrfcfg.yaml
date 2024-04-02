@@ -1,5 +1,6 @@
-// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
-// SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+# SPDX-License-Identifier: Apache-2.0
+
 info:
   version: 1.0.0
   description: NRF initial local configuration
@@ -7,7 +8,6 @@ info:
 configuration:
   MongoDBName: free5gc # database name in MongoDB
   MongoDBUrl: mongodb://127.0.0.1:27017 # a valid URL of the mongodb
-  webuiUri: webui:9876 # a valid URI of Webui
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)
     registerIPv4: 127.0.0.10 # IP used to serve NFs or register to another NRF
