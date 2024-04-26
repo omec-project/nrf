@@ -27,6 +27,7 @@ import (
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
+	"github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
 	mongoDBLibLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
@@ -182,6 +183,8 @@ func (nrf *NRF) Start() {
 	accesstoken.AddService(router)
 	discovery.AddService(router)
 	management.AddService(router)
+
+	go metrics.InitMetrics()
 
 	nrf_context.InitNrfContext()
 
