@@ -86,8 +86,6 @@ github.com/montanaflynn/stats v0.6.6 h1:Duep6KMIDpY4Yo11iFsvyqJDyfzLF9+sndUKT+v6
 github.com/montanaflynn/stats v0.6.6/go.mod h1:etXPPgVO6n31NxCd9KQUMvCM+ve0ruNzt6R8Bnaayow=
 github.com/nbio/st v0.0.0-20140626010706-e9e8d9816f32 h1:W6apQkHrMkS0Muv8G/TipAy/FJl/rCYT0+EuS8+Z0z4=
 github.com/nbio/st v0.0.0-20140626010706-e9e8d9816f32/go.mod h1:9wM+0iRr9ahx58uYLpLIr5fm8diHn0JbqRycJi6w0Ms=
-github.com/omec-project/ausf v1.4.0 h1:kUI0H4nBWfEh8h4zWi+iGrf8TTE264VduIIQ2CmmCDY=
-github.com/omec-project/ausf v1.4.0/go.mod h1:5013dPKYkgFQsOCgTfR+pJU+IlwV5f3zC/UMgBPzgKk=
 github.com/omec-project/config5g v1.3.3 h1:VHhC6Plo+znCOZ5x1VFg83wGQLTSGPl9iftmSAShjkc=
 github.com/omec-project/config5g v1.3.3/go.mod h1:RBHRSYOudbWOqxFUWdNXjyxiAvljMyUYteC2jye5CaU=
 github.com/omec-project/http2_util v1.2.0 h1:ggQ1GjY2x6VRpKuRhZj0t9dh6eISY6LRBv4rlMD++8s=

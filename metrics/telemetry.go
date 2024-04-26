@@ -10,11 +10,11 @@ package metrics
 import (
 	"net/http"
 
-	"github.com/omec-project/ausf/logger"
+	"github.com/omec-project/nrf/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// InitMetrics initialises AUSF metrics
+// InitMetrics initialises NRF metrics
 func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
 	if err := http.ListenAndServe(":8080", nil); err != nil {
