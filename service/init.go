@@ -18,8 +18,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	"github.com/omec-project/http2_util"
-	"github.com/omec-project/logger_util"
 	"github.com/omec-project/nrf/accesstoken"
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
@@ -29,6 +27,8 @@ import (
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
+	"github.com/omec-project/util/http2_util"
+	logger_util "github.com/omec-project/util/logger"
 	mongoDBLibLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
