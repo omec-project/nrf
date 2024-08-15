@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/omec-project/config5g v1.4.2
-	github.com/omec-project/openapi v1.2.0
+	github.com/omec-project/openapi v1.2.1
 	github.com/omec-project/util v1.1.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/sirupsen/logrus v1.9.3
