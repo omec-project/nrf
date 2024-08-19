@@ -60,7 +60,7 @@ func CheckConfigVersion() error {
 	currentVersion := NrfConfig.GetVersion()
 
 	if currentVersion != NRF_EXPECTED_CONFIG_VERSION {
-		return fmt.Errorf("config version is [%s], but expected is [%s].",
+		return fmt.Errorf("config version is [%s], but expected is [%s]",
 			currentVersion, NRF_EXPECTED_CONFIG_VERSION)
 	}
 
