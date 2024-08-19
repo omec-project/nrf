@@ -28,8 +28,7 @@ import (
 	"github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/util/http2_util"
-	logger_util "github.com/omec-project/util/logger"
-	mongoDBLibLogger "github.com/omec-project/util/logger"
+	loggerUtil "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 )
@@ -146,17 +145,17 @@ func (nrf *NRF) setLogLevel() {
 	if factory.NrfConfig.Logger.MongoDBLibrary != nil {
 		if factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel != "" {
 			if level, err := logrus.ParseLevel(factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel); err != nil {
-				mongoDBLibLogger.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
+				loggerUtil.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel)
-				mongoDBLibLogger.SetLogLevel(logrus.InfoLevel)
+				loggerUtil.SetLogLevel(logrus.InfoLevel)
 			} else {
-				mongoDBLibLogger.SetLogLevel(level)
+				loggerUtil.SetLogLevel(level)
 			}
 		} else {
-			mongoDBLibLogger.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
-			mongoDBLibLogger.SetLogLevel(logrus.InfoLevel)
+			loggerUtil.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
+			loggerUtil.SetLogLevel(logrus.InfoLevel)
 		}
-		mongoDBLibLogger.SetReportCaller(factory.NrfConfig.Logger.MongoDBLibrary.ReportCaller)
+		loggerUtil.SetReportCaller(factory.NrfConfig.Logger.MongoDBLibrary.ReportCaller)
 	}
 }
 
@@ -174,11 +173,11 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (nrf *NRF) Start() {
-	initLog.Infoln("Server started")
+	initLog.Infoln("server started")
 	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl,
 		factory.NrfConfig.Configuration.MongoDBStreamEnable, factory.NrfConfig.Configuration.NfProfileExpiryEnable)
 
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := loggerUtil.NewGinWithLogrus(logger.GinLog)
 
 	accesstoken.AddService(router)
 	discovery.AddService(router)

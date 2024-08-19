@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/omec-project/nrf/logger"
-	. "github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/http2_util"
 	logger_util "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
@@ -35,7 +35,7 @@ func main() {
 		}
 		// Remove NL line feed, new line character
 		//requestBody = string(buf[:len(b uf)-1])*/
-		var ND NotificationData
+		var ND models.NotificationData
 
 		if err := c.ShouldBindJSON(&ND); err != nil {
 			log.Panic(err.Error())

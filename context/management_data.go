@@ -38,24 +38,24 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 	if nfprofile.NfInstanceId != "" {
 		nf.NfInstanceId = nfprofile.NfInstanceId
 	} else {
-		return fmt.Errorf("NfInstanceId field is required\n")
+		return fmt.Errorf("NfInstanceId field is required")
 	}
 
 	if nfprofile.NfType != "" {
 		nf.NfType = nfprofile.NfType
 	} else {
-		return fmt.Errorf("NfType field is required\n")
+		return fmt.Errorf("NfType field is required")
 	}
 
 	if nfprofile.NfStatus != "" {
 		nf.NfStatus = nfprofile.NfStatus
 	} else {
-		return fmt.Errorf("NfStatus field is required\n")
+		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if nfprofile.PlmnList == nil && factory.MinConfigAvailable == false && factory.ManagedByConfigPod == true {
+	if nfprofile.PlmnList == nil && !factory.MinConfigAvailable && factory.ManagedByConfigPod {
 		//logically NF should send PLMN else we need to wait for min config
-		return fmt.Errorf("PlmnList absent. Local default config not available. NFType - %v\n", nfprofile.NfType)
+		return fmt.Errorf("PlmnList absent. Local default config not available. NFType - %v", nfprofile.NfType)
 	}
 	// TODO : add plmn validation ??
 
@@ -89,9 +89,7 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 	// PlmnList
 	if nfprofile.PlmnList != nil {
 		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
-		for i := 0; i < len(*nfprofile.PlmnList); i++ {
-			a[i] = (*nfprofile.PlmnList)[i]
-		}
+		copy(a, *nfprofile.PlmnList)
 		nf.PlmnList = &a
 	} else {
 		nf.PlmnList = &[]models.PlmnId{
@@ -110,18 +108,14 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 	if nfprofile.Ipv4Addresses != nil {
 		// fmt.Println("NsiList")
 		a := make([]string, len(nfprofile.Ipv4Addresses))
-		for i := 0; i < len(nfprofile.Ipv4Addresses); i++ {
-			a[i] = (nfprofile.Ipv4Addresses)[i]
-		}
+		copy(a, nfprofile.Ipv4Addresses)
 		nf.Ipv4Addresses = a
 	}
 	// ipv6Addresses
 	if nfprofile.Ipv6Addresses != nil {
 		// fmt.Println("NsiList")
 		a := make([]string, len(nfprofile.Ipv6Addresses))
-		for i := 0; i < len(nfprofile.Ipv6Addresses); i++ {
-			a[i] = (nfprofile.Ipv6Addresses)[i]
-		}
+		copy(a, nfprofile.Ipv6Addresses)
 		nf.Ipv6Addresses = a
 	}
 }
@@ -131,9 +125,7 @@ func nnrfNFManagementOption(nf *models.NfProfile, nfprofile models.NfProfile) {
 	if nfprofile.SNssais != nil {
 		// fmt.Println("SNssais")
 		a := make([]models.Snssai, len(*nfprofile.SNssais))
-		for i := 0; i < len(*nfprofile.SNssais); i++ {
-			a[i] = (*nfprofile.SNssais)[i]
-		}
+		copy(a, *nfprofile.SNssais)
 		nf.SNssais = &a
 	}
 
@@ -141,33 +133,25 @@ func nnrfNFManagementOption(nf *models.NfProfile, nfprofile models.NfProfile) {
 	if nfprofile.NsiList != nil {
 		// fmt.Println("NsiList")
 		a := make([]string, len(nfprofile.NsiList))
-		for i := 0; i < len(nfprofile.NsiList); i++ {
-			a[i] = (nfprofile.NsiList)[i]
-		}
+		copy(a, nfprofile.NsiList)
 		nf.NsiList = a
 	}
 	// allowedPlmns
 	if nfprofile.AllowedPlmns != nil {
 		a := make([]models.PlmnId, len(*nfprofile.AllowedPlmns))
-		for i := 0; i < len(*nfprofile.AllowedPlmns); i++ {
-			a[i] = (*nfprofile.AllowedPlmns)[i]
-		}
+		copy(a, *nfprofile.AllowedPlmns)
 		nf.AllowedPlmns = &a
 	}
 	// allowedNfTypes
 	if nfprofile.AllowedNfTypes != nil {
 		a := make([]models.NfType, len(nfprofile.AllowedNfTypes))
-		for i := 0; i < len(nfprofile.AllowedNfTypes); i++ {
-			a[i] = (nfprofile.AllowedNfTypes)[i]
-		}
+		copy(a, nfprofile.AllowedNfTypes)
 		nf.AllowedNfTypes = a
 	}
 	// allowedNfDomains
 	if nfprofile.AllowedNfDomains != nil {
 		a := make([]string, len(nfprofile.AllowedNfDomains))
-		for i := 0; i < len(nfprofile.AllowedNfDomains); i++ {
-			a[i] = (nfprofile.AllowedNfDomains)[i]
-		}
+		copy(a, nfprofile.AllowedNfDomains)
 		nf.AllowedNfDomains = a
 	}
 
@@ -175,9 +159,7 @@ func nnrfNFManagementOption(nf *models.NfProfile, nfprofile models.NfProfile) {
 	if nfprofile.AllowedNssais != nil {
 		// fmt.Println("SNssais")
 		a := make([]models.Snssai, len(*nfprofile.AllowedNssais))
-		for i := 0; i < len(*nfprofile.AllowedNssais); i++ {
-			a[i] = (*nfprofile.AllowedNssais)[i]
-		}
+		copy(a, *nfprofile.AllowedNssais)
 		nf.AllowedNssais = &a
 	}
 	// Priority
@@ -423,9 +405,7 @@ func nnrfNFManagementOption(nf *models.NfProfile, nfprofile models.NfProfile) {
 	// nfServices
 	if nfprofile.NfServices != nil {
 		a := make([]models.NfService, len(*nfprofile.NfServices))
-		for i := 0; i < len(*nfprofile.NfServices); i++ {
-			a[i] = (*nfprofile.NfServices)[i]
-		}
+		copy(a, *nfprofile.NfServices)
 		nf.NfServices = &a
 	}
 	//
