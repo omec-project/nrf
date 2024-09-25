@@ -31,15 +31,15 @@ func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Respon
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
-	nfType, problemDetails := NFDeregisterProcedure(nfInstanceId)
+	problemDetails := NFDeregisterProcedure(nfInstanceId)
 
 	if problemDetails != nil {
 		logger.ManagementLog.Traceln("deregister failure")
-		stats.IncrementNrfRegistrationsStats("deregister", nfType, "FAILURE")
+		stats.IncrementNrfRegistrationsStats("deregister", "", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
 		logger.ManagementLog.Traceln("deregister Success")
-		stats.IncrementNrfRegistrationsStats("deregister", nfType, "SUCCESS")
+		stats.IncrementNrfRegistrationsStats("deregister", "", "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
@@ -263,7 +263,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 	return nil
 }
 
-func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *models.ProblemDetails) {
+func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemDetails) {
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
@@ -281,7 +281,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 			Cause:  "NOTIFICATION_ERROR",
 			Detail: err.Error(),
 		}
-		return "", problemDetails
+		return problemDetails
 	}
 
 	/* NF Down Notification to other instances of same NfType */
@@ -305,7 +305,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	filter = bson.M{"subscrCond.nfInstanceId": nfInstanceID}
 	dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
 
-	return string(nfProfiles[0].NfType), nil
+	return nil
 }
 
 func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
