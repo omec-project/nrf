@@ -20,6 +20,7 @@ import (
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
+	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
@@ -30,12 +31,15 @@ func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Respon
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
 
-	problemDetails := NFDeregisterProcedure(nfInstanceId)
+	nfType, problemDetails := NFDeregisterProcedure(nfInstanceId)
 
 	if problemDetails != nil {
-		logger.ManagementLog.Infoln("[NRF] Dergeister Success")
+		logger.ManagementLog.Traceln("deregister failure")
+		stats.IncrementNrfRegistrationsStats("deregister", nfType, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
+		logger.ManagementLog.Traceln("deregister Success")
+		stats.IncrementNrfRegistrationsStats("deregister", nfType, "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
@@ -65,9 +69,11 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 
 	if response != nil {
 		logger.ManagementLog.Traceln("register success")
+		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Traceln("register failed")
+		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
@@ -75,6 +81,7 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 		Cause:  "UNSPECIFIED",
 	}
 	logger.ManagementLog.Traceln("register failed")
+	stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -85,6 +92,7 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 
 	response := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if response != nil {
+		stats.IncrementNrfRegistrationsStats("update", fmt.Sprint(response["nfType"]), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
@@ -127,6 +135,7 @@ func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	subscriptionID := request.Params["subscriptionID"]
 
 	RemoveSubscriptionProcedure(subscriptionID)
+	stats.IncrementNrfSubscriptionsStats("remove", "NOT_SURE", "SUCCESS")
 
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
@@ -139,6 +148,7 @@ func HandleUpdateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	response := UpdateSubscriptionProcedure(subscriptionID, patchJSON)
 
 	if response != nil {
+		stats.IncrementNrfSubscriptionsStats("update", fmt.Sprint(response["reqNfType"]), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
@@ -152,9 +162,11 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	response, problemDetails := CreateSubscriptionProcedure(subscription)
 	if response != nil {
 		logger.ManagementLog.Traceln("CreateSubscription success")
+		stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusCreated, nil, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Traceln("CreateSubscription failed")
+		stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
@@ -162,6 +174,7 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 		Cause:  "UNSPECIFIED",
 	}
 	logger.ManagementLog.Traceln("CreateSubscription failed")
+	stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -250,7 +263,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 	return nil
 }
 
-func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemDetails) {
+func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *models.ProblemDetails) {
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
@@ -268,7 +281,7 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 			Cause:  "NOTIFICATION_ERROR",
 			Detail: err.Error(),
 		}
-		return problemDetails
+		return "", problemDetails
 	}
 
 	/* NF Down Notification to other instances of same NfType */
@@ -292,7 +305,7 @@ func NFDeregisterProcedure(nfInstanceID string) (problemDetails *models.ProblemD
 	filter = bson.M{"subscrCond.nfInstanceId": nfInstanceID}
 	dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
 
-	return nil
+	return string(nfProfiles[0].NfType), nil
 }
 
 func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
