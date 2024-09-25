@@ -7,6 +7,7 @@ package producer
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
+	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
@@ -35,14 +37,17 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
+		stats.IncrementNrfNfInstancesStats(fmt.Sprint(request.Query["requester-nf-type"][0]), fmt.Sprint(request.Query["target-nf-type"][0]), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
+		stats.IncrementNrfNfInstancesStats(fmt.Sprint(request.Query["requester-nf-type"][0]), fmt.Sprint(request.Query["target-nf-type"][0]), "SUCCESS")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
+	stats.IncrementNrfNfInstancesStats(fmt.Sprint(request.Query["requester-nf-type"][0]), fmt.Sprint(request.Query["target-nf-type"][0]), "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 

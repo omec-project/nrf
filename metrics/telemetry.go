@@ -37,7 +37,7 @@ func initNrfStats() *NrfStats {
 		nrfNfInstances: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "nrf_nf_instances",
 			Help: "Counter of total NRF instances queries",
-		}, []string{"target_nf_type", "result"}),
+		}, []string{"request_nf_type", "target_nf_type", "result"}),
 	}
 }
 
@@ -81,6 +81,6 @@ func IncrementNrfSubscriptionsStats(queryType, requestNfType, result string) {
 }
 
 // IncrementNrfNfInstancesStats increments number of total NRF queries
-func IncrementNrfNfInstancesStats(targetNfType, result string) {
-	nrfStats.nrfNfInstances.WithLabelValues(targetNfType, result).Inc()
+func IncrementNrfNfInstancesStats(requestNfType, targetNfType, result string) {
+	nrfStats.nrfNfInstances.WithLabelValues(requestNfType, targetNfType, result).Inc()
 }
