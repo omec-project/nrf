@@ -136,7 +136,7 @@ func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 
 	nfType := GetNfTypeBySubscriptionID(request.Params["subscriptionID"])
 	RemoveSubscriptionProcedure(subscriptionID)
-	stats.IncrementNrfSubscriptionsStats("remove", nfType, "SUCCESS")
+	stats.IncrementNrfSubscriptionsStats("unsubscribe", nfType, "SUCCESS")
 
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
