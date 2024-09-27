@@ -134,8 +134,9 @@ func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	logger.ManagementLog.Infoln("Handle RemoveSubscription")
 	subscriptionID := request.Params["subscriptionID"]
 
+	nfType := GetNfTypeBySubscriptionID(request.Params["subscriptionID"])
 	RemoveSubscriptionProcedure(subscriptionID)
-	stats.IncrementNrfSubscriptionsStats("remove", "NOT_SURE", "SUCCESS")
+	stats.IncrementNrfSubscriptionsStats("remove", nfType, "SUCCESS")
 
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
@@ -467,6 +468,16 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		logger.ManagementLog.Infoln("Location header: ", locationHeaderValue)
 		return header, putData, nil
 	}
+}
+
+func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
+	collName := "Subscriptions"
+	filter := bson.M{"subscriptionId": subscriptionID}
+	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if err != nil {
+		return "UNKNOWN_NF"
+	}
+	return fmt.Sprint(response["nfType"])
 }
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
