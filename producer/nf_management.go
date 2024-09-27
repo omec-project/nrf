@@ -269,7 +269,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *models.ProblemDetails) {
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
-
+	nfType = GetNfTypeByNfInstanceID(nfInstanceID)
 	nfProfilesRaw, _ := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	time.Sleep(time.Duration(1) * time.Second)
 
@@ -288,19 +288,21 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	}
 
 	/* NF Down Notification to other instances of same NfType */
-	sendNFDownNotification(nfProfiles[0], nfInstanceID)
+	if len(nfProfiles) != 0 {
+		sendNFDownNotification(nfProfiles[0], nfInstanceID)
 
-	uriList := nrf_context.GetNofificationUri(nfProfiles[0])
+		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
 
-	nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
-	// set info for NotificationData
-	Notification_event := models.NotificationEventType_DEREGISTERED
+		nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
+		// set info for NotificationData
+		Notification_event := models.NotificationEventType_DEREGISTERED
 
-	for _, uri := range uriList {
-		logger.ManagementLog.Infof("Status Notification Uri: %v", uri)
-		problemDetails = SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
-		if problemDetails != nil {
-			logger.ManagementLog.Infoln("Error in status notify ", problemDetails)
+		for _, uri := range uriList {
+			logger.ManagementLog.Infof("Status Notification Uri: %v", uri)
+			problemDetails = SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
+			if problemDetails != nil {
+				logger.ManagementLog.Infoln("Error in status notify ", problemDetails)
+			}
 		}
 	}
 
@@ -308,7 +310,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	filter = bson.M{"subscrCond.nfInstanceId": nfInstanceID}
 	dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
 
-	return string(nfProfiles[0].NfType), nil
+	return nfType, nil
 }
 
 func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
@@ -479,7 +481,23 @@ func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
 	if err != nil {
 		return "UNKNOWN_NF"
 	}
-	return fmt.Sprint(response["reqNfType"])
+	if response["reqNfType"] != nil {
+		return fmt.Sprint(response["reqNfType"])
+	}
+	return "UNKNOWN_NF"
+}
+
+func GetNfTypeByNfInstanceID(nfInstanceID string) (nfType string) {
+	collName := "NfProfile"
+	filter := bson.M{"nfInstanceId": nfInstanceID}
+	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if err != nil {
+		return "UNKNOWN_NF"
+	}
+	if response["nfType"] != nil {
+		return fmt.Sprint(response["nfType"])
+	}
+	return "UNKNOWN_NF"
 }
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
