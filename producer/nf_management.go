@@ -146,12 +146,14 @@ func HandleUpdateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	subscriptionID := request.Params["subscriptionID"]
 	patchJSON := request.Body.([]byte)
 
+	nfType := GetNfTypeBySubscriptionID(subscriptionID)
 	response := UpdateSubscriptionProcedure(subscriptionID, patchJSON)
 
 	if response != nil {
-		stats.IncrementNrfSubscriptionsStats("update", fmt.Sprint(response["reqNfType"]), "SUCCESS")
+		stats.IncrementNrfSubscriptionsStats("update", nfType, "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
+		stats.IncrementNrfSubscriptionsStats("update", nfType, "FAILURE")
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
@@ -477,7 +479,7 @@ func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
 	if err != nil {
 		return "UNKNOWN_NF"
 	}
-	return fmt.Sprint(response["nfType"])
+	return fmt.Sprint(response["reqNfType"])
 }
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
