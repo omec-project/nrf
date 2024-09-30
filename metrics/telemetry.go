@@ -58,7 +58,7 @@ func init() {
 	nrfStats = initNrfStats()
 
 	if err := nrfStats.register(); err != nil {
-		logger.InitLog.Panicln("NRF Stats register failed")
+		logger.InitLog.Errorln("NRF Stats register failed")
 	}
 }
 

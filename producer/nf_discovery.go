@@ -41,7 +41,7 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "SUCCESS")
+		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
