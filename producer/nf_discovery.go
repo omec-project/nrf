@@ -7,6 +7,7 @@ package producer
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
+	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
@@ -31,18 +33,22 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	logger.DiscoveryLog.Infoln("Handle NFDiscoveryRequest")
 
 	response, problemDetails := NFDiscoveryProcedure(request.Query)
+	requesterNfType, targetNfType := GetRequesterAndTargetNfTypeGivenQueryParameters(request.Query)
 	// Send Response
 	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
+		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
+		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
+	stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -2252,4 +2258,15 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	}
 
 	return filter
+}
+
+func GetRequesterAndTargetNfTypeGivenQueryParameters(queryParameters url.Values) (requesterNfType, targetNfType string) {
+	requesterNfType, targetNfType = "UNKNOWN_NF", "UNKNOWN_NF"
+	if queryParameters["requester-nf-type"] != nil {
+		requesterNfType = fmt.Sprint(queryParameters["requester-nf-type"][0])
+	}
+	if queryParameters["target-nf-type"] != nil {
+		targetNfType = fmt.Sprint(queryParameters["target-nf-type"][0])
+	}
+	return requesterNfType, targetNfType
 }
