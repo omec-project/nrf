@@ -48,7 +48,7 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "SUCCESS")
+	stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
