@@ -34,11 +34,11 @@ func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Respon
 	nfType, problemDetails := NFDeregisterProcedure(nfInstanceId)
 
 	if problemDetails != nil {
-		logger.ManagementLog.Traceln("deregister failure")
+		logger.ManagementLog.Debugln("deregister failure")
 		stats.IncrementNrfRegistrationsStats("deregister", nfType, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
-		logger.ManagementLog.Traceln("deregister Success")
+		logger.ManagementLog.Debugln("deregister Success")
 		stats.IncrementNrfRegistrationsStats("deregister", nfType, "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
@@ -68,11 +68,11 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 	header, response, problemDetails := NFRegisterProcedure(nfProfile)
 
 	if response != nil {
-		logger.ManagementLog.Traceln("register success")
+		logger.ManagementLog.Debugln("register success")
 		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
-		logger.ManagementLog.Traceln("register failed")
+		logger.ManagementLog.Debugln("register failed")
 		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
@@ -80,7 +80,7 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	logger.ManagementLog.Traceln("register failed")
+	logger.ManagementLog.Debugln("register failed")
 	stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
@@ -116,17 +116,17 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 
 	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
 	if response != nil {
-		logger.ManagementLog.Traceln("GetNFInstances success")
+		logger.ManagementLog.Debugln("GetNFInstances success")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		logger.ManagementLog.Traceln("GetNFInstances failed")
+		logger.ManagementLog.Debugln("GetNFInstances failed")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	logger.ManagementLog.Traceln("GetNFInstances failed")
+	logger.ManagementLog.Debugln("GetNFInstances failed")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -164,11 +164,11 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 
 	response, problemDetails := CreateSubscriptionProcedure(subscription)
 	if response != nil {
-		logger.ManagementLog.Traceln("CreateSubscription success")
+		logger.ManagementLog.Debugln("CreateSubscription success")
 		stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusCreated, nil, response)
 	} else if problemDetails != nil {
-		logger.ManagementLog.Traceln("CreateSubscription failed")
+		logger.ManagementLog.Debugln("CreateSubscription failed")
 		stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
@@ -176,7 +176,7 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	logger.ManagementLog.Traceln("CreateSubscription failed")
+	logger.ManagementLog.Debugln("CreateSubscription failed")
 	stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.ReqNfType), "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
@@ -388,7 +388,7 @@ func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{
 
 func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, response bson.M,
 	problemDetails *models.ProblemDetails) {
-	logger.ManagementLog.Traceln("[NRF] In NFRegisterProcedure")
+	logger.ManagementLog.Debugln("[NRF] In NFRegisterProcedure")
 	var nf models.NfProfile
 	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {

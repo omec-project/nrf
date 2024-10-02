@@ -6,8 +6,6 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +13,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/http2_util"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 )
 
@@ -26,7 +24,7 @@ var (
 )
 
 func main() {
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 
 	router.POST("", func(c *gin.Context) {
 		/*buf, err := c.GetRawData()
@@ -38,19 +36,19 @@ func main() {
 		var ND models.NotificationData
 
 		if err := c.ShouldBindJSON(&ND); err != nil {
-			log.Panic(err.Error())
+			logger.UtilLog.Panicln(err.Error())
 		}
-		fmt.Println(ND)
+		logger.UtilLog.Infoln(ND)
 		c.JSON(http.StatusNoContent, gin.H{})
 	})
 
 	srv, err := http2_util.NewServer(":30678", NrfLogPath, router)
 	if err != nil {
-		log.Panic(err.Error())
+		logger.UtilLog.Panicln(err.Error())
 	}
 
 	err2 := srv.ListenAndServeTLS(NrfPemPath, NrfKeyPath)
 	if err2 != nil && err2 != http.ErrServerClosed {
-		log.Panic(err2.Error())
+		logger.UtilLog.Panicln(err2.Error())
 	}
 }

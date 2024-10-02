@@ -9,7 +9,6 @@
 package util
 
 import (
-	"log"
 	"testing"
 	"time"
 
@@ -105,5 +104,5 @@ func TestDecode(t *testing.T) {
 		t.Log(err)
 	}
 
-	log.Printf("%+v", target)
+	t.Logf("%+v", target)
 }

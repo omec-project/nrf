@@ -5,8 +5,8 @@ package dbadapter
 
 import (
 	"context"
-	"log"
 
+	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/util/mongoapi"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -35,14 +35,14 @@ type MongoDBClient struct {
 }
 
 func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream) {
-	log.Println("iterate change stream for timeout")
+	logger.AppLog.Infoln("iterate change stream for timeout")
 	defer stream.Close(routineCtx)
 	for stream.Next(routineCtx) {
 		var data bson.M
 		if err := stream.Decode(&data); err != nil {
 			panic(err)
 		}
-		log.Println("iterate stream : ", data)
+		logger.AppLog.Infoln("iterate stream:", data)
 	}
 }
 
@@ -50,17 +50,17 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 	for {
 		MongoClient, _ := mongoapi.NewMongoClient(url, dbName)
 		if MongoClient != nil {
-			log.Println("MongoDB Connection Successful")
+			logger.AppLog.Infoln("MongoDB Connection Successful")
 			DBClient = MongoClient
 			break
 		} else {
-			log.Println("MongoDB Connection Failed")
+			logger.AppLog.Infoln("MongoDB Connection Failed")
 		}
 	}
 
 	db := DBClient.(*mongoapi.MongoClient)
 	if enableStream {
-		log.Println("MongoDB Change stream Enabled")
+		logger.AppLog.Infoln("MongoDB Change stream Enabled")
 		database := db.Client.Database(dbName)
 		NfProfileColl := database.Collection("NfProfile")
 		//create stream to monitor actions on the collection
@@ -75,12 +75,12 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 	}
 
 	if nfProfileExpiryEnable {
-		log.Println("NfProfile document expiry enabled")
+		logger.AppLog.Infoln("NfProfile document expiry enabled")
 		ret := db.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
 		if ret {
-			log.Println("TTL Index created for Field : expireAt in Collection : NfProfile")
+			logger.AppLog.Infoln("ttl Index created for Field : expireAt in Collection: NfProfile")
 		} else {
-			log.Println("TTL Index exists for Field : expireAt in Collection : NfProfile")
+			logger.AppLog.Infoln("ttl Index exists for Field : expireAt in Collection: NfProfile")
 		}
 	}
 	return DBClient
