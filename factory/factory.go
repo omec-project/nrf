@@ -12,11 +12,13 @@ package factory
 import (
 	"fmt"
 	"os"
+	"time"
 
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/connectivity"
 	"gopkg.in/yaml.v2"
 
-	"github.com/omec-project/config5g/proto/client"
 	"github.com/omec-project/nrf/logger"
 )
 
@@ -30,6 +32,11 @@ func init() {
 	initLog = logger.InitLog
 }
 
+// InitConfigFactory gets the NrfConfig and subscribes the config pod.
+// This observes the GRPC client availability and connection status in a loop.
+// When the GRPC server pod is restarted, GRPC connection status stuck in idle.
+// If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
+// then it closes the existing client start a new client.
 // TODO: Support configuration update from REST api
 func InitConfigFactory(f string) error {
 	if content, err := os.ReadFile(f); err != nil {
@@ -47,13 +54,50 @@ func InitConfigFactory(f string) error {
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			commChannel := client.ConfigWatcher(NrfConfig.Configuration.WebuiUri)
-			ManagedByConfigPod = true
-			go NrfConfig.updateConfig(commChannel)
+			var client ConfClient
+			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			UpdateConfig(client)
+			for {
+				if client != nil {
+					time.Sleep(time.Second * 20)
+					if client.GetConfigClientConn().GetState() != connectivity.Ready {
+						err := client.GetConfigClientConn().Close()
+						if err != nil {
+							initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+						}
+						client = nil
+						continue
+					}
+				} else {
+					client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+					UpdateConfig(client)
+					continue
+				}
+			}
 		}
 	}
-
 	return nil
+}
+
+// UpdateConfig connects the config pod GRPC server and subscribes the config changes
+// then updates NRF configuration
+func UpdateConfig(client ConfClient) {
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	for {
+		if client != nil {
+			stream = client.ConnectToGrpcServer()
+			if stream == nil {
+				time.Sleep(time.Second * 10)
+				continue
+			}
+			break
+		}
+
+	}
+	configChannel := client.PublishOnConfigChange(true, stream)
+	ManagedByConfigPod = true
+	go NrfConfig.updateConfig(configChannel)
+
 }
 
 func CheckConfigVersion() error {
