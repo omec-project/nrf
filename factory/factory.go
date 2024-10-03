@@ -13,18 +13,18 @@ import (
 	"fmt"
 	"os"
 
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 
 	"github.com/omec-project/config5g/proto/client"
 	"github.com/omec-project/nrf/logger"
-	"github.com/sirupsen/logrus"
 )
 
 var ManagedByConfigPod bool
 
 var NrfConfig Config
 
-var initLog *logrus.Entry
+var initLog *zap.SugaredLogger
 
 func init() {
 	initLog = logger.InitLog

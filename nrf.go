@@ -15,8 +15,8 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"go.uber.org/zap"
 
 	"github.com/omec-project/nrf/logger"
 	nrf_service "github.com/omec-project/nrf/service"
@@ -24,7 +24,7 @@ import (
 
 var NRF = &nrf_service.NRF{}
 
-var appLog *logrus.Entry
+var appLog *zap.SugaredLogger
 
 func init() {
 	appLog = logger.AppLog
@@ -65,7 +65,7 @@ func GetVersion() string {
 func main() {
 	app := cli.NewApp()
 	app.Name = "nrf"
-	fmt.Print(app.Name, "\n")
+	logger.InitLog.Infoln(app.Name)
 	appLog.Infoln("NRF version: ", GetVersion())
 	app.Usage = "-free5gccfg common configuration file -nrfcfg nrf configuration file"
 	app.Action = action

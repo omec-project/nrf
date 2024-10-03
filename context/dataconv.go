@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/omec-project/nrf/logger"
 )
 
 // Ipv6ToInt - Convert Ipv6 string to *bigInt
@@ -19,7 +21,7 @@ func Ipv6ToInt(ipv6 string) *big.Int {
 	ipv6 = ipv6 + "/32"
 	ip, _, err := net.ParseCIDR(ipv6)
 	if err != nil {
-		fmt.Println("Error", ip, err)
+		logger.UtilLog.Errorln("error", ip, err)
 	}
 	IPv6Int := big.NewInt(0)
 	IPv6Int.SetBytes(ip)
@@ -31,7 +33,7 @@ func Ipv4ToInt(ipv4 string) int64 {
 	ipv4 = ipv4 + "/24"
 	ip, _, err := net.ParseCIDR(ipv4)
 	if err != nil {
-		fmt.Println("Error", ip, err)
+		logger.UtilLog.Errorln("error", ip, err)
 	}
 	IPv4Int := big.NewInt(0)
 	IPv4Int.SetBytes(ip)

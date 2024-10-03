@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2024 Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -6,54 +7,69 @@
 package logger
 
 import (
-	"time"
-
-	formatter "github.com/antonfisher/nested-logrus-formatter"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
-	log            *logrus.Logger
-	AppLog         *logrus.Entry
-	InitLog        *logrus.Entry
-	CfgLog         *logrus.Entry
-	HandlerLog     *logrus.Entry
-	ManagementLog  *logrus.Entry
-	AccessTokenLog *logrus.Entry
-	DiscoveryLog   *logrus.Entry
-	GinLog         *logrus.Entry
-	GrpcLog        *logrus.Entry
-	UtilLog        *logrus.Entry
+	log            *zap.Logger
+	AppLog         *zap.SugaredLogger
+	InitLog        *zap.SugaredLogger
+	CfgLog         *zap.SugaredLogger
+	HandlerLog     *zap.SugaredLogger
+	ManagementLog  *zap.SugaredLogger
+	AccessTokenLog *zap.SugaredLogger
+	DiscoveryLog   *zap.SugaredLogger
+	GinLog         *zap.SugaredLogger
+	GrpcLog        *zap.SugaredLogger
+	UtilLog        *zap.SugaredLogger
+	atomicLevel    zap.AtomicLevel
 )
 
 func init() {
-	log = logrus.New()
-	log.SetReportCaller(false)
-
-	log.Formatter = &formatter.Formatter{
-		TimestampFormat: time.RFC3339,
-		TrimMessages:    true,
-		NoFieldsSpace:   true,
-		HideKeys:        true,
-		FieldsOrder:     []string{"component", "category"},
+	atomicLevel = zap.NewAtomicLevelAt(zap.InfoLevel)
+	config := zap.Config{
+		Level:            atomicLevel,
+		Development:      false,
+		Encoding:         "console",
+		EncoderConfig:    zap.NewProductionEncoderConfig(),
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
 	}
 
-	AppLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "App"})
-	InitLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "Init"})
-	CfgLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "CFG"})
-	HandlerLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "HDLR"})
-	ManagementLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "MGMT"})
-	AccessTokenLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "Token"})
-	DiscoveryLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "DSCV"})
-	GinLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GIN"})
-	GrpcLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "GRPC"})
-	UtilLog = log.WithFields(logrus.Fields{"component": "NRF", "category": "Util"})
+	config.EncoderConfig.TimeKey = "timestamp"
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.LevelKey = "level"
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	config.EncoderConfig.CallerKey = "caller"
+	config.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+	config.EncoderConfig.MessageKey = "message"
+	config.EncoderConfig.StacktraceKey = ""
+
+	var err error
+	log, err = config.Build()
+	if err != nil {
+		panic(err)
+	}
+
+	AppLog = log.Sugar().With("component", "NRF", "category", "App")
+	InitLog = log.Sugar().With("component", "NRF", "category", "Init")
+	CfgLog = log.Sugar().With("component", "NRF", "category", "CFG")
+	HandlerLog = log.Sugar().With("component", "NRF", "category", "HDLR")
+	ManagementLog = log.Sugar().With("component", "NRF", "category", "MGMT")
+	AccessTokenLog = log.Sugar().With("component", "NRF", "category", "Token")
+	DiscoveryLog = log.Sugar().With("component", "NRF", "category", "DSCV")
+	GinLog = log.Sugar().With("component", "NRF", "category", "GIN")
+	GrpcLog = log.Sugar().With("component", "NRF", "category", "GRPC")
+	UtilLog = log.Sugar().With("component", "NRF", "category", "Util")
 }
 
-func SetLogLevel(level logrus.Level) {
-	log.SetLevel(level)
+func GetLogger() *zap.Logger {
+	return log
 }
 
-func SetReportCaller(set bool) {
-	log.SetReportCaller(set)
+// SetLogLevel: set the log level (panic|fatal|error|warn|info|debug)
+func SetLogLevel(level zapcore.Level) {
+	InitLog.Infoln("set log level:", level)
+	atomicLevel.SetLevel(level)
 }

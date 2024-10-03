@@ -15,8 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/omec-project/nrf/accesstoken"
 	nrf_context "github.com/omec-project/nrf/context"
@@ -27,10 +28,10 @@ import (
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
+	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/util/http2_util"
-	loggerUtil "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
-	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 )
 
 type NRF struct{}
@@ -55,7 +56,7 @@ var nrfCLi = []cli.Flag{
 	},
 }
 
-var initLog *logrus.Entry
+var initLog *zap.SugaredLogger
 
 func init() {
 	initLog = logger.InitLog
@@ -98,64 +99,47 @@ func (nrf *NRF) setLogLevel() {
 
 	if factory.NrfConfig.Logger.NRF != nil {
 		if factory.NrfConfig.Logger.NRF.DebugLevel != "" {
-			level, err := logrus.ParseLevel(factory.NrfConfig.Logger.NRF.DebugLevel)
+			level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.NRF.DebugLevel)
 			if err != nil {
 				initLog.Warnf("NRF Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.NRF.DebugLevel)
-				logger.SetLogLevel(logrus.InfoLevel)
+				logger.SetLogLevel(zap.InfoLevel)
 			} else {
 				initLog.Infof("NRF Log level is set to [%s] level", level)
 				logger.SetLogLevel(level)
 			}
 		} else {
 			initLog.Infoln("NRF Log level not set. Default set to [info] level")
-			logger.SetLogLevel(logrus.InfoLevel)
+			logger.SetLogLevel(zap.InfoLevel)
 		}
-		logger.SetReportCaller(factory.NrfConfig.Logger.NRF.ReportCaller)
 	}
 
-	if factory.NrfConfig.Logger.PathUtil != nil {
-		if factory.NrfConfig.Logger.PathUtil.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.NrfConfig.Logger.PathUtil.DebugLevel); err != nil {
-				pathUtilLogger.PathLog.Warnf("PathUtil Log level [%s] is invalid, set to [info] level",
-					factory.NrfConfig.Logger.PathUtil.DebugLevel)
-				pathUtilLogger.SetLogLevel(logrus.InfoLevel)
-			} else {
-				pathUtilLogger.SetLogLevel(level)
-			}
-		} else {
-			pathUtilLogger.PathLog.Warnln("PathUtil Log level not set. Default set to [info] level")
-			pathUtilLogger.SetLogLevel(logrus.InfoLevel)
-		}
-		pathUtilLogger.SetReportCaller(factory.NrfConfig.Logger.PathUtil.ReportCaller)
-	}
-
-	/*if factory.NrfConfig.Logger.OpenApi != nil {
+	if factory.NrfConfig.Logger.OpenApi != nil {
 		if factory.NrfConfig.Logger.OpenApi.DebugLevel != "" {
-			if _, err := logrus.ParseLevel(factory.NrfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				logger.OpenapiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
+			if _, err := zapcore.ParseLevel(factory.NrfConfig.Logger.OpenApi.DebugLevel); err != nil {
+				openapiLogger.OpenapiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.OpenApi.DebugLevel)
+				logger.SetLogLevel(zap.InfoLevel)
 			}
 		} else {
-			logger.OpenapiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
+			openapiLogger.OpenapiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
+			logger.SetLogLevel(zap.InfoLevel)
 		}
-		logger.SetReportCaller(factory.NrfConfig.Logger.OpenApi.ReportCaller)
-	}*/
+	}
 
 	if factory.NrfConfig.Logger.MongoDBLibrary != nil {
 		if factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel); err != nil {
-				loggerUtil.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
+			if level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel); err != nil {
+				utilLogger.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
 					factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel)
-				loggerUtil.SetLogLevel(logrus.InfoLevel)
+				utilLogger.SetLogLevel(zap.InfoLevel)
 			} else {
-				loggerUtil.SetLogLevel(level)
+				utilLogger.SetLogLevel(level)
 			}
 		} else {
-			loggerUtil.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
-			loggerUtil.SetLogLevel(logrus.InfoLevel)
+			utilLogger.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
+			utilLogger.SetLogLevel(zap.InfoLevel)
 		}
-		loggerUtil.SetReportCaller(factory.NrfConfig.Logger.MongoDBLibrary.ReportCaller)
 	}
 }
 
@@ -177,7 +161,7 @@ func (nrf *NRF) Start() {
 	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl,
 		factory.NrfConfig.Configuration.MongoDBStreamEnable, factory.NrfConfig.Configuration.NfProfileExpiryEnable)
 
-	router := loggerUtil.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 
 	accesstoken.AddService(router)
 	discovery.AddService(router)
@@ -229,9 +213,9 @@ func (nrf *NRF) Start() {
 }
 
 func (nrf *NRF) Exec(c *cli.Context) error {
-	initLog.Traceln("args:", c.String("nrfcfg"))
+	initLog.Debugln("args:", c.String("nrfcfg"))
 	args := nrf.FilterCli(c)
-	initLog.Traceln("filter: ", args)
+	initLog.Debugln("filter:", args)
 	command := exec.Command("./nrf", args...)
 
 	if err := nrf.Initialize(c); err != nil {
@@ -247,7 +231,7 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 	go func() {
 		in := bufio.NewScanner(stdout)
 		for in.Scan() {
-			fmt.Println(in.Text())
+			initLog.Infoln(in.Text())
 		}
 		wg.Done()
 	}()
@@ -258,19 +242,19 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 	}
 	go func() {
 		in := bufio.NewScanner(stderr)
-		fmt.Println("NRF log start")
+		initLog.Infoln("NRF log start")
 		for in.Scan() {
-			fmt.Println(in.Text())
+			initLog.Infoln(in.Text())
 		}
 		wg.Done()
 	}()
 
 	go func() {
-		fmt.Println("NRF  start")
+		initLog.Infoln("NRF start")
 		if err = command.Start(); err != nil {
-			fmt.Printf("NRF Start error: %v", err)
+			initLog.Infof("NRF Start error: %v", err)
 		}
-		fmt.Println("NRF  end")
+		initLog.Infoln("NRF end")
 		wg.Done()
 	}()
 
@@ -280,7 +264,6 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 }
 
 func (nrf *NRF) Terminate() {
-	logger.InitLog.Infof("Terminating NRF...")
-
-	logger.InitLog.Infof("NRF terminated")
+	logger.InitLog.Infoln("terminating NRF...")
+	logger.InitLog.Infoln("NRF terminated")
 }

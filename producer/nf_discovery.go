@@ -90,7 +90,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 
 	// Build Query Filter
 	var filter bson.M = buildFilter(queryParameters)
-	logger.DiscoveryLog.Traceln("Query filter: ", filter)
+	logger.DiscoveryLog.Debugln("query filter:", filter)
 
 	// Use the filter to find documents
 	nfProfilesRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
@@ -264,9 +264,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 				targetPlmnBsonM := bson.M{}
 				err = bson.Unmarshal(targetPlmnByteArray, &targetPlmnBsonM)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnBsonM: ", err)
+					logger.DiscoveryLog.Errorln("unmarshal error in targetPlmnBsonM:", err)
 				}
-				logger.DiscoveryLog.Traceln("temp target Plmn:", temptargetPlmn)
+				logger.DiscoveryLog.Debugln("temp target Plmn:", temptargetPlmn)
 
 				targetPlmnListBsonArray = append(targetPlmnListBsonArray, bson.M{"plmnList": bson.M{"$elemMatch": targetPlmnBsonM}})
 			}
