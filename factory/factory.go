@@ -56,24 +56,7 @@ func InitConfigFactory(f string) error {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 			var client ConfClient
 			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
-			UpdateConfig(client)
-			for {
-				if client != nil {
-					time.Sleep(time.Second * 20)
-					if client.GetConfigClientConn().GetState() != connectivity.Ready {
-						err := client.GetConfigClientConn().Close()
-						if err != nil {
-							initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
-						}
-						client = nil
-						continue
-					}
-				} else {
-					client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
-					UpdateConfig(client)
-					continue
-				}
-			}
+			go UpdateConfig(client)
 		}
 	}
 	return nil
@@ -83,20 +66,35 @@ func InitConfigFactory(f string) error {
 // then updates NRF configuration
 func UpdateConfig(client ConfClient) {
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var configChannel chan *protos.NetworkSliceResponse
 	for {
 		if client != nil {
 			stream = client.ConnectToGrpcServer()
 			if stream == nil {
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Second * 30)
 				continue
 			}
-			break
+			time.Sleep(time.Second * 30)
+			if client.GetConfigClientConn().GetState() != connectivity.Ready {
+				err := client.GetConfigClientConn().Close()
+				if err != nil {
+					initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+				}
+				client = nil
+				continue
+			}
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				ManagedByConfigPod = true
+				go NrfConfig.updateConfig(configChannel)
+			}
+
+		} else {
+			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			continue
 		}
 
 	}
-	configChannel := client.PublishOnConfigChange(true, stream)
-	ManagedByConfigPod = true
-	go NrfConfig.updateConfig(configChannel)
 
 }
 
