@@ -54,8 +54,7 @@ func InitConfigFactory(f string) error {
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			var client ConfClient
-			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			client := ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			go UpdateConfig(client)
 		}
 	}
