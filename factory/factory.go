@@ -93,9 +93,7 @@ func UpdateConfig(client ConfClient) {
 			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			continue
 		}
-
 	}
-
 }
 
 func CheckConfigVersion() error {
