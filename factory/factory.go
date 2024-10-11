@@ -16,7 +16,6 @@ import (
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/connectivity"
 	"gopkg.in/yaml.v2"
 
 	"github.com/omec-project/nrf/logger"
@@ -54,8 +53,11 @@ func InitConfigFactory(f string) error {
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			client := ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
-			go UpdateConfig(client)
+			client, err := ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			if err != nil {
+				go UpdateConfig(client)
+			}
+			return err
 		}
 	}
 	return nil
@@ -65,22 +67,24 @@ func InitConfigFactory(f string) error {
 // then updates NRF configuration
 func UpdateConfig(client ConfClient) {
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
 	var configChannel chan *protos.NetworkSliceResponse
 	for {
 		if client != nil {
-			stream = client.ConnectToGrpcServer()
-			if stream == nil {
-				time.Sleep(time.Second * 30)
-				continue
-			}
-			time.Sleep(time.Second * 30)
-			if client.GetConfigClientConn().GetState() != connectivity.Ready {
-				err := client.GetConfigClientConn().Close()
-				if err != nil {
-					initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+			stream, err = client.CheckGrpcConnectivity()
+			if err != nil {
+				initLog.Errorf("%v", err)
+				if stream != nil {
+					time.Sleep(time.Second * 30)
+					continue
+				} else {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					continue
 				}
-				client = nil
-				continue
 			}
 			if configChannel == nil {
 				configChannel = client.PublishOnConfigChange(true, stream)
@@ -89,7 +93,10 @@ func UpdateConfig(client ConfClient) {
 			}
 
 		} else {
-			client = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			client, err = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			if err != nil {
+				initLog.Errorf("%+v", err)
+			}
 			continue
 		}
 	}
