@@ -49,13 +49,12 @@ func InitConfigFactory(f string) error {
 		if NrfConfig.Configuration.WebuiUri == "" {
 			NrfConfig.Configuration.WebuiUri = "webui:9876"
 		}
-		initLog.Infof("DefaultPlmnId Mnc %v , Mcc %v \n", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
-		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-		if roc == "true" {
+		initLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
+		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 			client, err := ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			if err != nil {
-				go UpdateConfig(client)
+				go updateConfig(client)
 			}
 			return err
 		}
@@ -63,9 +62,9 @@ func InitConfigFactory(f string) error {
 	return nil
 }
 
-// UpdateConfig connects the config pod GRPC server and subscribes the config changes
+// updateConfig connects the config pod GRPC server and subscribes the config changes
 // then updates NRF configuration
-func UpdateConfig(client ConfClient) {
+func updateConfig(client ConfClient) {
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
 	var err error
 	var configChannel chan *protos.NetworkSliceResponse

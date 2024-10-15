@@ -20,7 +20,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/omec-project/nrf/accesstoken"
-	nrf_context "github.com/omec-project/nrf/context"
+	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/discovery"
 	"github.com/omec-project/nrf/factory"
@@ -169,7 +169,7 @@ func (nrf *NRF) Start() {
 
 	go metrics.InitMetrics()
 
-	nrf_context.InitNrfContext()
+	nrfContext.InitNrfContext()
 
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
@@ -181,8 +181,7 @@ func (nrf *NRF) Start() {
 		os.Exit(0)
 	}()
 
-	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-	if roc == "true" {
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 	} else {
 		initLog.Infoln("Use helm chart config ")
