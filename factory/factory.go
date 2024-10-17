@@ -14,11 +14,11 @@ import (
 	"os"
 	"time"
 
+	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
+	"github.com/omec-project/nrf/logger"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
-
-	"github.com/omec-project/nrf/logger"
 )
 
 var ManagedByConfigPod bool
@@ -52,7 +52,7 @@ func InitConfigFactory(f string) error {
 		initLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
 		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			client, err := ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			client, err := grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			if err != nil {
 				go updateConfig(client)
 			}
@@ -64,7 +64,7 @@ func InitConfigFactory(f string) error {
 
 // updateConfig connects the config pod GRPC server and subscribes the config changes
 // then updates NRF configuration
-func updateConfig(client ConfClient) {
+func updateConfig(client grpcClient.ConfClient) {
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
 	var err error
 	var configChannel chan *protos.NetworkSliceResponse
@@ -92,7 +92,7 @@ func updateConfig(client ConfClient) {
 			}
 
 		} else {
-			client, err = ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			client, err = grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			if err != nil {
 				initLog.Errorf("%+v", err)
 			}

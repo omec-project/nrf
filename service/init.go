@@ -184,7 +184,7 @@ func (nrf *NRF) Start() {
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 	} else {
-		initLog.Infoln("Use helm chart config ")
+		initLog.Infoln("Use helm chart config")
 	}
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	initLog.Infof("Binding addr: [%s]", bindAddr)
