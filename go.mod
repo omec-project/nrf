@@ -2,15 +2,13 @@ module github.com/omec-project/nrf
 
 go 1.21
 
-replace github.com/omec-project/config5g => /home/gatici/omec/config5g
-
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/omec-project/config5g v1.5.1
+	github.com/omec-project/config5g v1.5.3
 	github.com/omec-project/openapi v1.3.1
 	github.com/omec-project/util v1.2.3
 	github.com/prometheus/client_golang v1.20.5
