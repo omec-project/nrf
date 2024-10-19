@@ -12,12 +12,13 @@ package factory
 import (
 	"fmt"
 	"os"
+	"time"
 
+	grpcClient "github.com/omec-project/config5g/proto/client"
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
+	"github.com/omec-project/nrf/logger"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
-
-	"github.com/omec-project/config5g/proto/client"
-	"github.com/omec-project/nrf/logger"
 )
 
 var ManagedByConfigPod bool
@@ -30,6 +31,11 @@ func init() {
 	initLog = logger.InitLog
 }
 
+// InitConfigFactory gets the NrfConfig and subscribes the config pod.
+// This observes the GRPC client availability and connection status in a loop.
+// When the GRPC server pod is restarted, GRPC connection status stuck in idle.
+// If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
+// then it closes the existing client start a new client.
 // TODO: Support configuration update from REST api
 func InitConfigFactory(f string) error {
 	if content, err := os.ReadFile(f); err != nil {
@@ -43,17 +49,56 @@ func InitConfigFactory(f string) error {
 		if NrfConfig.Configuration.WebuiUri == "" {
 			NrfConfig.Configuration.WebuiUri = "webui:9876"
 		}
-		initLog.Infof("DefaultPlmnId Mnc %v , Mcc %v \n", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
-		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-		if roc == "true" {
+		initLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
+		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			commChannel := client.ConfigWatcher(NrfConfig.Configuration.WebuiUri)
-			ManagedByConfigPod = true
-			go NrfConfig.updateConfig(commChannel)
+			client, err := grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			if err != nil {
+				go updateConfig(client)
+			}
+			return err
 		}
 	}
-
 	return nil
+}
+
+// updateConfig connects the config pod GRPC server and subscribes the config changes
+// then updates NRF configuration
+func updateConfig(client grpcClient.ConfClient) {
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
+	var configChannel chan *protos.NetworkSliceResponse
+	for {
+		if client != nil {
+			stream, err = client.CheckGrpcConnectivity()
+			if err != nil {
+				initLog.Errorf("%v", err)
+				if stream != nil {
+					time.Sleep(time.Second * 30)
+					continue
+				} else {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					continue
+				}
+			}
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				ManagedByConfigPod = true
+				go NrfConfig.updateConfig(configChannel)
+			}
+
+		} else {
+			client, err = grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
+			if err != nil {
+				initLog.Errorf("%+v", err)
+			}
+			continue
+		}
+	}
 }
 
 func CheckConfigVersion() error {
