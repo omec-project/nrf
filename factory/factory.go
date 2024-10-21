@@ -17,19 +17,12 @@ import (
 	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/nrf/logger"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
 
 var ManagedByConfigPod bool
 
 var NrfConfig Config
-
-var initLog *zap.SugaredLogger
-
-func init() {
-	initLog = logger.InitLog
-}
 
 // InitConfigFactory gets the NrfConfig and subscribes the config pod.
 // This observes the GRPC client availability and connection status in a loop.
@@ -49,9 +42,9 @@ func InitConfigFactory(f string) error {
 		if NrfConfig.Configuration.WebuiUri == "" {
 			NrfConfig.Configuration.WebuiUri = "webui:9876"
 		}
-		initLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
+		logger.InitLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
 		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-			initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
+			logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 			client, err := grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			if err != nil {
 				go updateConfig(client)
@@ -72,14 +65,14 @@ func updateConfig(client grpcClient.ConfClient) {
 		if client != nil {
 			stream, err = client.CheckGrpcConnectivity()
 			if err != nil {
-				initLog.Errorf("%v", err)
+				logger.InitLog.Errorf("%v", err)
 				if stream != nil {
 					time.Sleep(time.Second * 30)
 					continue
 				} else {
 					err = client.GetConfigClientConn().Close()
 					if err != nil {
-						initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+						logger.InitLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
 					}
 					client = nil
 					continue
@@ -94,7 +87,7 @@ func updateConfig(client grpcClient.ConfClient) {
 		} else {
 			client, err = grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
 			if err != nil {
-				initLog.Errorf("%+v", err)
+				logger.InitLog.Errorf("%+v", err)
 			}
 			continue
 		}

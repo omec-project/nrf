@@ -13,10 +13,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/urfave/cli"
-	"go.uber.org/zap"
 
 	"github.com/omec-project/nrf/logger"
 	nrf_service "github.com/omec-project/nrf/service"
@@ -24,55 +22,16 @@ import (
 
 var NRF = &nrf_service.NRF{}
 
-var appLog *zap.SugaredLogger
-
-func init() {
-	appLog = logger.AppLog
-}
-
-var (
-	VERSION     string
-	BUILD_TIME  string
-	COMMIT_HASH string
-	COMMIT_TIME string
-)
-
-func GetVersion() string {
-	if VERSION != "" {
-		return fmt.Sprintf(
-			"\n\tfree5GC version: %s"+
-				"\n\tbuild time:      %s"+
-				"\n\tcommit hash:     %s"+
-				"\n\tcommit time:     %s"+
-				"\n\tgo version:      %s %s/%s",
-			VERSION,
-			BUILD_TIME,
-			COMMIT_HASH,
-			COMMIT_TIME,
-			runtime.Version(),
-			runtime.GOOS,
-			runtime.GOARCH,
-		)
-	} else {
-		return fmt.Sprintf(
-			"\n\tNot specify ldflags (which link version) during go build\n\tgo version: %s %s/%s",
-			runtime.Version(),
-			runtime.GOOS,
-			runtime.GOARCH,
-		)
-	}
-}
 func main() {
 	app := cli.NewApp()
 	app.Name = "nrf"
 	logger.InitLog.Infoln(app.Name)
-	appLog.Infoln("NRF version: ", GetVersion())
 	app.Usage = "-free5gccfg common configuration file -nrfcfg nrf configuration file"
 	app.Action = action
 	app.Flags = NRF.GetCliCmd()
 
 	if err := app.Run(os.Args); err != nil {
-		appLog.Errorf("NRF Run Error: %v", err)
+		logger.AppLog.Errorf("NRF Run Error: %v", err)
 	}
 }
 
