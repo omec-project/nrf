@@ -133,7 +133,7 @@ func (c *Config) GetSbiUri() string {
 	return c.GetSbiScheme() + "://" + c.GetSbiRegisterAddr()
 }
 
-func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
+func (c *Config) UpdateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
 	for rsp := range commChannel {
 		logger.GrpcLog.Infoln("Received updateConfig in the nrf app : ", rsp)
 		for _, ns := range rsp.NetworkSlice {
