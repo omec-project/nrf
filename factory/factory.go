@@ -40,9 +40,6 @@ func InitConfigFactory(f string) error {
 			NrfConfig.Configuration.WebuiUri = "webui:9876"
 		}
 		logger.InitLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
-		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-			logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-		}
 	}
 	return nil
 }
