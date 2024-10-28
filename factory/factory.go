@@ -12,10 +12,7 @@ package factory
 import (
 	"fmt"
 	"os"
-	"time"
 
-	grpcClient "github.com/omec-project/config5g/proto/client"
-	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/nrf/logger"
 	"gopkg.in/yaml.v2"
 )
@@ -43,55 +40,8 @@ func InitConfigFactory(f string) error {
 			NrfConfig.Configuration.WebuiUri = "webui:9876"
 		}
 		logger.InitLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
-		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-			logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			client, err := grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
-			if err != nil {
-				go updateConfig(client)
-			}
-			return err
-		}
 	}
 	return nil
-}
-
-// updateConfig connects the config pod GRPC server and subscribes the config changes
-// then updates NRF configuration
-func updateConfig(client grpcClient.ConfClient) {
-	var stream protos.ConfigService_NetworkSliceSubscribeClient
-	var err error
-	var configChannel chan *protos.NetworkSliceResponse
-	for {
-		if client != nil {
-			stream, err = client.CheckGrpcConnectivity()
-			if err != nil {
-				logger.InitLog.Errorf("%v", err)
-				if stream != nil {
-					time.Sleep(time.Second * 30)
-					continue
-				} else {
-					err = client.GetConfigClientConn().Close()
-					if err != nil {
-						logger.InitLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
-					}
-					client = nil
-					continue
-				}
-			}
-			if configChannel == nil {
-				configChannel = client.PublishOnConfigChange(true, stream)
-				ManagedByConfigPod = true
-				go NrfConfig.updateConfig(configChannel)
-			}
-
-		} else {
-			client, err = grpcClient.ConnectToConfigServer(NrfConfig.Configuration.WebuiUri)
-			if err != nil {
-				logger.InitLog.Errorf("%+v", err)
-			}
-			continue
-		}
-	}
 }
 
 func CheckConfigVersion() error {
