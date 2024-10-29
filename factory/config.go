@@ -60,10 +60,15 @@ type PlmnSupportItem struct {
 
 type Sbi struct {
 	Scheme       string `yaml:"scheme"`
+	TLS          *TLS   `yaml:"tls"`
 	RegisterIPv4 string `yaml:"registerIPv4,omitempty"` // IP that is serviced or registered at another NRF.
-	// IPv6Addr  string `yaml:"ipv6Addr,omitempty"`
-	BindingIPv4 string `yaml:"bindingIPv4,omitempty"` // IP used to run the server in the node.
-	Port        int    `yaml:"port,omitempty"`
+	BindingIPv4  string `yaml:"bindingIPv4,omitempty"`  // IP used to run the server in the node.
+	Port         int    `yaml:"port,omitempty"`
+}
+
+type TLS struct {
+	PEM string `yaml:"pem,omitempty"`
+	Key string `yaml:"key,omitempty"`
 }
 
 var MinConfigAvailable bool
@@ -96,7 +101,7 @@ func (c *Config) GetSbiBindingAddr() string {
 	}
 	if c.Configuration.Sbi.BindingIPv4 != "" {
 		if bindIPv4 := os.Getenv(c.Configuration.Sbi.BindingIPv4); bindIPv4 != "" {
-			logger.CfgLog.Infof("Parsing ServerIPv4 [%s] from ENV Variable", bindIPv4)
+			logger.CfgLog.Infof("parsing ServerIPv4 [%s] from ENV Variable", bindIPv4)
 			bindAddr = bindIPv4 + ":"
 		} else {
 			bindAddr = c.Configuration.Sbi.BindingIPv4 + ":"
@@ -135,21 +140,21 @@ func (c *Config) GetSbiUri() string {
 
 func (c *Config) UpdateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
 	for rsp := range commChannel {
-		logger.GrpcLog.Infoln("Received updateConfig in the nrf app : ", rsp)
+		logger.GrpcLog.Infoln("received updateConfig in the nrf app: ", rsp)
 		for _, ns := range rsp.NetworkSlice {
-			logger.GrpcLog.Infoln("Network Slice Name ", ns.Name)
+			logger.GrpcLog.Infoln("Network Slice Name", ns.Name)
 			if ns.Site != nil {
-				logger.GrpcLog.Infoln("Network Slice has site name present ")
+				logger.GrpcLog.Infoln("Network Slice has site name present")
 				site := ns.Site
-				logger.GrpcLog.Infoln("Site name ", site.SiteName)
+				logger.GrpcLog.Infoln("Site name", site.SiteName)
 				if site.Plmn != nil {
-					logger.GrpcLog.Infoln("Plmn mcc ", site.Plmn.Mcc)
+					logger.GrpcLog.Infoln("Plmn mcc", site.Plmn.Mcc)
 					plmn := PlmnSupportItem{}
 					plmn.PlmnId.Mnc = site.Plmn.Mnc
 					plmn.PlmnId.Mcc = site.Plmn.Mcc
 					NrfConfig.Configuration.PlmnSupportList = append(NrfConfig.Configuration.PlmnSupportList, plmn)
 				} else {
-					logger.GrpcLog.Infoln("Plmn not present in the message ")
+					logger.GrpcLog.Infoln("Plmn not present in the message")
 				}
 
 			}

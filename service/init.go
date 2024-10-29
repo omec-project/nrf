@@ -217,8 +217,8 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 
 func (nrf *NRF) Start() {
 	initLog.Infoln("server started")
-	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl,
-		factory.NrfConfig.Configuration.MongoDBStreamEnable, factory.NrfConfig.Configuration.NfProfileExpiryEnable)
+	config := factory.NrfConfig.Configuration
+	dbadapter.ConnectToDBClient(config.MongoDBName, config.MongoDBUrl, config.MongoDBStreamEnable, config.NfProfileExpiryEnable)
 
 	router := utilLogger.NewGinWithZap(logger.GinLog)
 
@@ -243,26 +243,26 @@ func (nrf *NRF) Start() {
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 	} else {
-		initLog.Infoln("Use helm chart config")
+		initLog.Infoln("use helm chart config")
 	}
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
-	initLog.Infof("Binding addr: [%s]", bindAddr)
+	initLog.Infof("binding addr: [%s]", bindAddr)
 	server, err := http2_util.NewServer(bindAddr, util.NrfLogPath, router)
 
 	if server == nil {
-		initLog.Errorf("Initialize HTTP server failed: %+v", err)
+		initLog.Errorf("initialize HTTP server failed: %+v", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnf("Initialize HTTP server: +%v", err)
+		initLog.Warnf("initialize HTTP server: +%v", err)
 	}
 
 	serverScheme := factory.NrfConfig.GetSbiScheme()
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
-		err = server.ListenAndServeTLS(util.NrfPemPath, util.NrfKeyPath)
+		err = server.ListenAndServeTLS(config.Sbi.TLS.PEM, config.Sbi.TLS.Key)
 	}
 
 	if err != nil {
@@ -322,6 +322,6 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 }
 
 func (nrf *NRF) Terminate() {
-	logger.InitLog.Infoln("terminating NRF...")
+	logger.InitLog.Infoln("terminating NRF")
 	logger.InitLog.Infoln("NRF terminated")
 }
