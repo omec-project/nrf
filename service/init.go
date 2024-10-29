@@ -243,19 +243,19 @@ func (nrf *NRF) Start() {
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 	} else {
-		initLog.Infoln("Use helm chart config")
+		initLog.Infoln("use helm chart config")
 	}
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
-	initLog.Infof("Binding addr: [%s]", bindAddr)
+	initLog.Infof("binding addr: [%s]", bindAddr)
 	server, err := http2_util.NewServer(bindAddr, util.NrfLogPath, router)
 
 	if server == nil {
-		initLog.Errorf("Initialize HTTP server failed: %+v", err)
+		initLog.Errorf("initialize HTTP server failed: %+v", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnf("Initialize HTTP server: +%v", err)
+		initLog.Warnf("initialize HTTP server: +%v", err)
 	}
 
 	serverScheme := factory.NrfConfig.GetSbiScheme()
@@ -322,6 +322,6 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 }
 
 func (nrf *NRF) Terminate() {
-	logger.InitLog.Infoln("terminating NRF...")
+	logger.InitLog.Infoln("terminating NRF")
 	logger.InitLog.Infoln("NRF terminated")
 }
