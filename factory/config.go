@@ -60,10 +60,16 @@ type PlmnSupportItem struct {
 
 type Sbi struct {
 	Scheme       string `yaml:"scheme"`
+	TLS          *TLS   `yaml:"tls"`
 	RegisterIPv4 string `yaml:"registerIPv4,omitempty"` // IP that is serviced or registered at another NRF.
 	// IPv6Addr  string `yaml:"ipv6Addr,omitempty"`
 	BindingIPv4 string `yaml:"bindingIPv4,omitempty"` // IP used to run the server in the node.
 	Port        int    `yaml:"port,omitempty"`
+}
+
+type TLS struct {
+	PEM string `yaml:"pem,omitempty"`
+	Key string `yaml:"key,omitempty"`
 }
 
 var MinConfigAvailable bool

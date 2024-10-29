@@ -262,7 +262,7 @@ func (nrf *NRF) Start() {
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
-		err = server.ListenAndServeTLS(util.NrfPemPath, util.NrfKeyPath)
+		err = server.ListenAndServeTLS(factory.NrfConfig.Configuration.Sbi.TLS.PEM, factory.NrfConfig.Configuration.Sbi.TLS.Key)
 	}
 
 	if err != nil {
