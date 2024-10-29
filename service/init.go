@@ -217,8 +217,8 @@ func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
 
 func (nrf *NRF) Start() {
 	initLog.Infoln("server started")
-	dbadapter.ConnectToDBClient(factory.NrfConfig.Configuration.MongoDBName, factory.NrfConfig.Configuration.MongoDBUrl,
-		factory.NrfConfig.Configuration.MongoDBStreamEnable, factory.NrfConfig.Configuration.NfProfileExpiryEnable)
+	config := factory.NrfConfig.Configuration
+	dbadapter.ConnectToDBClient(config.MongoDBName, config.MongoDBUrl, config.MongoDBStreamEnable, config.NfProfileExpiryEnable)
 
 	router := utilLogger.NewGinWithZap(logger.GinLog)
 
@@ -262,7 +262,7 @@ func (nrf *NRF) Start() {
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
-		err = server.ListenAndServeTLS(factory.NrfConfig.Configuration.Sbi.TLS.PEM, factory.NrfConfig.Configuration.Sbi.TLS.Key)
+		err = server.ListenAndServeTLS(config.Sbi.TLS.PEM, config.Sbi.TLS.Key)
 	}
 
 	if err != nil {
