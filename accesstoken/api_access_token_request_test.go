@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"net/http"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -27,8 +26,7 @@ import (
 func TestAccessTokenRequest(t *testing.T) {
 	// run accesstoken Server Routine
 	go func() {
-		sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
-		kl, _ := os.OpenFile(sslLog, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		kl, _ := os.OpenFile("/home/sslkey.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		router := accesstoken.NewRouter()
 
 		server := http.Server{
@@ -39,7 +37,7 @@ func TestAccessTokenRequest(t *testing.T) {
 
 			Handler: router,
 		}
-		_ = server.ListenAndServeTLS(factory.NrfConfig.Configuration.Sbi.TLS.PEM, factory.NrfConfig.Configuration.Sbi.TLS.Key)
+		_ = server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key")
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
 
