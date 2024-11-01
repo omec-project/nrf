@@ -6,7 +6,7 @@ info:
   description: NRF initial local configuration
 
 configuration:
-  MongoDBName: free5gc # database name in MongoDB
+  MongoDBName: aether # database name in MongoDB
   MongoDBUrl: mongodb://127.0.0.1:27017 # a valid URL of the mongodb
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)

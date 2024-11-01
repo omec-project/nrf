@@ -26,12 +26,13 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "nrf"
 	logger.InitLog.Infoln(app.Name)
-	app.Usage = "-free5gccfg common configuration file -nrfcfg nrf configuration file"
+	app.Usage = "Network Repository Function"
+	app.UsageText = "nrf -cfg <nrf_config_file.conf>"
 	app.Action = action
 	app.Flags = NRF.GetCliCmd()
 
 	if err := app.Run(os.Args); err != nil {
-		logger.AppLog.Errorf("NRF Run Error: %v", err)
+		logger.AppLog.Fatalf("NRF run error: %v", err)
 	}
 }
 

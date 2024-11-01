@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
-	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/Nnrf_AccessToken"
 	"github.com/omec-project/openapi/models"
 )
@@ -27,7 +27,8 @@ import (
 func TestAccessTokenRequest(t *testing.T) {
 	// run accesstoken Server Routine
 	go func() {
-		kl, _ := os.OpenFile(util.NrfLogPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
+		kl, _ := os.OpenFile(sslLog, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		router := accesstoken.NewRouter()
 
 		server := http.Server{
@@ -38,12 +39,12 @@ func TestAccessTokenRequest(t *testing.T) {
 
 			Handler: router,
 		}
-		_ = server.ListenAndServeTLS(util.NrfPemPath, util.NrfKeyPath)
+		_ = server.ListenAndServeTLS(factory.NrfConfig.Configuration.Sbi.TLS.PEM, factory.NrfConfig.Configuration.Sbi.TLS.Key)
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
 
 	// connect to mongoDB
-	dbadapter.ConnectToDBClient("free5gc", "mongodb://140.113.214.205:30030", false, false)
+	dbadapter.ConnectToDBClient("aether", "mongodb://140.113.214.205:30030", false, false)
 
 	// Set client and set url
 	configuration := Nnrf_AccessToken.NewConfiguration()

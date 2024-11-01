@@ -16,15 +16,6 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/util/path_util"
-)
-
-// Path of HTTP2 key and log file
-
-var (
-	NrfLogPath = path_util.Free5gcPath("free5gc/nrfsslkey.log")
-	NrfPemPath = path_util.Free5gcPath("free5gc/support/TLS/nrf.pem")
-	NrfKeyPath = path_util.Free5gcPath("free5gc/support/TLS/nrf.key")
 )
 
 func MarshToJsonString(v interface{}) (result []string) {
@@ -34,7 +25,7 @@ func MarshToJsonString(v interface{}) (result []string) {
 		for i := 0; i < val.Len(); i++ {
 			tmp, err := json.Marshal(val.Index(i).Interface())
 			if err != nil {
-				logger.UtilLog.Errorf("Marshal error: %+v", err)
+				logger.UtilLog.Errorf("marshal error: %+v", err)
 			}
 
 			result = append(result, string(tmp))
@@ -42,7 +33,7 @@ func MarshToJsonString(v interface{}) (result []string) {
 	} else {
 		tmp, err := json.Marshal(v)
 		if err != nil {
-			logger.UtilLog.Errorf("Marshal error: %+v", err)
+			logger.UtilLog.Errorf("marshal error: %+v", err)
 		}
 
 		result = append(result, string(tmp))

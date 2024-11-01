@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -29,11 +30,9 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
-	"github.com/omec-project/nrf/util"
 	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/omec-project/util/path_util"
 )
 
 type NRF struct{}
@@ -41,7 +40,7 @@ type NRF struct{}
 type (
 	// Config information.
 	Config struct {
-		nrfcfg string
+		cfg string
 	}
 )
 
@@ -49,12 +48,9 @@ var config Config
 
 var nrfCLi = []cli.Flag{
 	cli.StringFlag{
-		Name:  "free5gccfg",
-		Usage: "common config file",
-	},
-	cli.StringFlag{
-		Name:  "nrfcfg",
-		Usage: "config file",
+		Name:     "cfg",
+		Usage:    "nrf config file",
+		Required: true,
 	},
 }
 
@@ -70,18 +66,17 @@ func (*NRF) GetCliCmd() (flags []cli.Flag) {
 
 func (nrf *NRF) Initialize(c *cli.Context) error {
 	config = Config{
-		nrfcfg: c.String("nrfcfg"),
+		cfg: c.String("cfg"),
 	}
 
-	if config.nrfcfg != "" {
-		if err := factory.InitConfigFactory(config.nrfcfg); err != nil {
-			return err
-		}
-	} else {
-		DefaultNrfConfigPath := path_util.Free5gcPath("free5gc/config/nrfcfg.yaml")
-		if err := factory.InitConfigFactory(DefaultNrfConfigPath); err != nil {
-			return err
-		}
+	absPath, err := filepath.Abs(config.cfg)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
+	}
+
+	if err := factory.InitConfigFactory(absPath); err != nil {
+		return err
 	}
 
 	nrf.setLogLevel()
@@ -89,6 +84,8 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
+
+	factory.NrfConfig.CfgLocation = absPath
 
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
@@ -240,14 +237,10 @@ func (nrf *NRF) Start() {
 		os.Exit(0)
 	}()
 
-	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-	} else {
-		initLog.Infoln("use helm chart config")
-	}
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	initLog.Infof("binding addr: [%s]", bindAddr)
-	server, err := http2_util.NewServer(bindAddr, util.NrfLogPath, router)
+	sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
+	server, err := http2_util.NewServer(bindAddr, sslLog, router)
 
 	if server == nil {
 		initLog.Errorf("initialize HTTP server failed: %+v", err)
@@ -271,10 +264,10 @@ func (nrf *NRF) Start() {
 }
 
 func (nrf *NRF) Exec(c *cli.Context) error {
-	initLog.Debugln("args:", c.String("nrfcfg"))
+	initLog.Debugln("args:", c.String("cfg"))
 	args := nrf.FilterCli(c)
 	initLog.Debugln("filter:", args)
-	command := exec.Command("./nrf", args...)
+	command := exec.Command("nrf", args...)
 
 	if err := nrf.Initialize(c); err != nil {
 		return err
@@ -310,7 +303,7 @@ func (nrf *NRF) Exec(c *cli.Context) error {
 	go func() {
 		initLog.Infoln("NRF start")
 		if err = command.Start(); err != nil {
-			initLog.Infof("NRF Start error: %v", err)
+			initLog.Infof("NRF start error: %v", err)
 		}
 		initLog.Infoln("NRF end")
 		wg.Done()
