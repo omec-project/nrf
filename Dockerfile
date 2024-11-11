@@ -5,7 +5,7 @@
 #
 
 
-FROM golang:1.23.2-bookworm AS builder
+FROM golang:1.23.3-bookworm AS builder
 
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
