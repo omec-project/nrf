@@ -87,15 +87,32 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle UpdateNFInstanceRequest")
 	nfInstanceID := request.Params["nfInstanceID"]
-	patchJSON := request.Body.([]byte)
-
-	response := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
-	if response != nil {
-		stats.IncrementNrfRegistrationsStats("update", fmt.Sprint(response["nfType"]), "SUCCESS")
-		return httpwrapper.NewResponse(http.StatusOK, nil, response)
-	} else {
-		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
+	if nfInstanceID == "" {
+		logger.ManagementLog.Errorln("nfInstanceID is missing")
+		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Missing nfInstanceID"})
 	}
+	patchJSON, ok := request.Body.([]byte)
+	if !ok {
+		logger.ManagementLog.Errorln("Invalid body format")
+		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Invalid body format"})
+	}
+	response, err := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
+	if err != nil {
+		logger.ManagementLog.Errorln("UpdateNFInstanceProcedure failed:", err)
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure failed"})
+	}
+	if response == nil {
+		logger.ManagementLog.Errorln("Received nil response after update procedure")
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
+	}
+	nfType, ok := response["nfType"].(string)
+	if !ok {
+		logger.ManagementLog.Warnln("Response missing 'nfType' or wrong format")
+		nfType = "unknown"
+	}
+	stats.IncrementNrfRegistrationsStats("update", nfType, "SUCCESS")
+	return httpwrapper.NewResponse(http.StatusOK, nil, response)
+
 }
 
 func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -330,53 +347,59 @@ func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
 	}
 }
 
-func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}) {
+func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}, err error) {
+	// Validation for NF Instance ID
+	if nfInstanceID == "" {
+		logger.ManagementLog.Errorln("NF Instance ID is required")
+		return nil, fmt.Errorf("NF Instance ID is required")
+	}
 	collName := "NfProfile"
 	filter := bson.M{"nfInstanceId": nfInstanceID}
 
-	err := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
-	if err == nil {
-		nf, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
-
-		nfProfilesRaw := []map[string]interface{}{
-			nf,
-		}
-
-		nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
-		if decodeErr != nil {
-			logger.ManagementLog.Info(decodeErr.Error())
-		}
-
-		// Update expiry time for document.
-		// Currently we are using 3 times the hearbeat timer as the expiry time interval.
-		// We should update it to be configurable : TBD
-		if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
-			timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
-			nf["expireAt"] = timein
-		}
-		// dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
-		if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf); ok {
-			logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
-		} else {
-			logger.ManagementLog.Infof("nf profile [%s] update failed", nfProfiles[0].NfType)
-		}
-
-		// set info for NotificationData
-		// Notification not required so commenting it
-		/* Notification_event := models.NotificationEventType_PROFILE_CHANGED
-		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
-
-		nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
-
-		for _, uri := range uriList {
-			SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
-		}*/
-
-		return nf
-	} else {
-		logger.ManagementLog.Errorln("Marshal error in UpdateNFInstanceProcedure: ", err)
-		return nil
+	// Patch the existing NF Instance
+	patchError := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
+	if patchError != nil {
+		logger.ManagementLog.Errorln("Patch error in UpdateNFInstanceProcedure: ", patchError)
+		return nil, fmt.Errorf("patch error: %v", patchError)
 	}
+	// Get the updated NF Instance
+	nf, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if getErr != nil || nf == nil {
+		logger.ManagementLog.Errorln("Failed to get NF instance: ", getErr)
+		return nil, fmt.Errorf("failed to get NF instance: %v", getErr)
+	}
+
+	nfProfilesRaw := []map[string]interface{}{nf}
+
+	// Decode NF instance
+	nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
+	if decodeErr != nil {
+		logger.ManagementLog.Errorln("Decoding error: ", decodeErr)
+		return nil, fmt.Errorf("decoding error: %v", decodeErr)
+	}
+
+	if len(nfProfiles) == 0 {
+		// Handle empty decoded profiles case
+		logger.ManagementLog.Errorln("decoded NF profiles are empty")
+		return nil, fmt.Errorf("decoded NF profiles are empty")
+	}
+
+	// Update expiry time if enabled
+	// Currently we are using 3 times the hearbeat timer as the expiry time interval.
+	// We should update it to be configurable : TBD
+	if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
+		nf["expireAt"] = timein
+	}
+	// Put the updated NF instance
+	_, putErr := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf)
+	if putErr != nil {
+		logger.ManagementLog.Errorf("nf profile [%s] update failed: %v", nfProfiles[0].NfType, putErr)
+		return nil, fmt.Errorf("NF profile update is failed: %v", putErr)
+	}
+
+	logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
+	return nf, nil
 }
 
 func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{}) {
