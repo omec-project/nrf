@@ -222,7 +222,7 @@ linters:
     # - noctx
     - dogsled
     # - bodyclose
-    # - asciicheck
+    - asciicheck
     # - stylecheck
     # - unparam
     # - wsl
