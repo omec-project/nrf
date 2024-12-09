@@ -359,13 +359,13 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Patch the existing NF Instance
 	patchError := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
 	if patchError != nil {
-		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure: ", patchError)
+		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure:", patchError)
 		return nil, fmt.Errorf("patch error: %v", patchError)
 	}
 	// Get the updated NF Instance
 	nf, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if getErr != nil || nf == nil {
-		logger.ManagementLog.Errorln("failed to get NF instance: ", getErr)
+		logger.ManagementLog.Errorln("failed to get NF instance:", getErr)
 		return nil, fmt.Errorf("failed to get NF instance: %v", getErr)
 	}
 
@@ -374,7 +374,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Decode NF instance
 	nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
 	if decodeErr != nil {
-		logger.ManagementLog.Errorln("decoding error: ", decodeErr)
+		logger.ManagementLog.Errorln("decoding error:", decodeErr)
 		return nil, fmt.Errorf("decoding error: %v", decodeErr)
 	}
 
