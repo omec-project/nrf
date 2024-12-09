@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"

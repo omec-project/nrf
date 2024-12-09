@@ -201,29 +201,29 @@ linters:
     - gofmt
     - govet
     # - errcheck
-    - staticcheck
     - unused
-    # - gosimple
+    - gosimple
+    - ineffassign
     - typecheck
     # Additional
     # - lll
     - godox
-    # - gomnd
+    # - mnd
     # - goconst
     # - gocognit
     # - nestif
     - gomodguard
     - nakedret
-    # - gci
+    - gci
     - misspell
-    # - gofumpt
-    # - whitespace
+    - gofumpt
+    - whitespace
     - unconvert
     - predeclared
     # - noctx
     - dogsled
     # - bodyclose
-    # - asciicheck
+    - asciicheck
     # - stylecheck
     # - unparam
     # - wsl
@@ -287,5 +287,5 @@ severity:
   # Only affects out formats that support setting severity information.
   rules:
     - linters:
-        - gomnd
+      - gomnd
       severity: ignore

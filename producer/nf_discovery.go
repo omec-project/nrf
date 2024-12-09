@@ -16,9 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
@@ -26,6 +23,8 @@ import (
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -53,7 +52,8 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 }
 
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,
-	problemDetails *models.ProblemDetails) {
+	problemDetails *models.ProblemDetails,
+) {
 	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
 		problemDetails := &models.ProblemDetails{
 			Title:  "Invalid Parameter",

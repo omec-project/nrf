@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	jwt "github.com/golang-jwt/jwt"
-
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
@@ -37,7 +36,8 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 }
 
 func AccessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp,
-	errResponse *models.AccessTokenErr) {
+	errResponse *models.AccessTokenErr,
+) {
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
 
 	var expiration int32 = 1000
