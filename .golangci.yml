@@ -203,6 +203,7 @@ linters:
     # - errcheck
     - unused
     - gosimple
+    - ineffassign
     - typecheck
     # Additional
     # - lll
