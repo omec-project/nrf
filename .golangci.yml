@@ -207,7 +207,7 @@ linters:
     # Additional
     # - lll
     - godox
-    # - gomnd
+    # - mnd
     # - goconst
     # - gocognit
     # - nestif
