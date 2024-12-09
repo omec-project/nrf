@@ -181,7 +181,8 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 }
 
 func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (response bson.M,
-	problemDetails *models.ProblemDetails) {
+	problemDetails *models.ProblemDetails,
+) {
 	subscription.SubscriptionId = nrf_context.SetsubscriptionId()
 
 	tmp, err := json.Marshal(subscription)
@@ -231,7 +232,8 @@ func RemoveSubscriptionProcedure(subscriptionID string) {
 }
 
 func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.UriList,
-	problemDetail *models.ProblemDetails) {
+	problemDetail *models.ProblemDetails,
+) {
 	// nfType := c.Query("nf-type")
 	// limit, err := strconv.Atoi(c.Query("limit"))
 	collName := "urilist"
@@ -352,7 +354,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 			timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
 			nf["expireAt"] = timein
 		}
-		//dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
+		// dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, jsonStr)
 		if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf); ok {
 			logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
 		} else {
@@ -386,7 +388,8 @@ func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{
 }
 
 func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, response bson.M,
-	problemDetails *models.ProblemDetails) {
+	problemDetails *models.ProblemDetails,
+) {
 	logger.ManagementLog.Debugln("[NRF] In NFRegisterProcedure")
 	var nf models.NfProfile
 	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
@@ -415,7 +418,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		logger.ManagementLog.Errorln("Unmarshal error in NFRegisterProcedure: ", err)
 	}
 
-	//set db info
+	// set db info
 	collName := "NfProfile"
 	nfInstanceId := nf.NfInstanceId
 	filter := bson.M{"nfInstanceId": nfInstanceId}
@@ -500,7 +503,8 @@ func GetNfTypeByNfInstanceID(nfInstanceID string) (nfType string) {
 }
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
-	url string) *models.ProblemDetails {
+	url string,
+) *models.ProblemDetails {
 	// Set client and set url
 	configuration := Nnrf_NFManagement.NewConfiguration()
 	// url = fmt.Sprintf("%s%s", url, "/notification")

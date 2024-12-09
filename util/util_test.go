@@ -16,7 +16,7 @@ import (
 )
 
 func TestDecode(t *testing.T) {
-	//Set time
+	// Set time
 	date := time.Now()
 	dateFormat, _ := time.Parse(time.RFC3339, date.Format(time.RFC3339))
 
@@ -95,7 +95,7 @@ func TestDecode(t *testing.T) {
 		},
 	}
 
-	var source = []map[string]interface{}{
+	source := []map[string]interface{}{
 		testData1,
 	}
 

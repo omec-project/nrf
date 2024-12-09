@@ -63,14 +63,14 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		logger.AppLog.Infoln("MongoDB Change stream Enabled")
 		database := db.Client.Database(dbName)
 		NfProfileColl := database.Collection("NfProfile")
-		//create stream to monitor actions on the collection
+		// create stream to monitor actions on the collection
 		NfProfStream, err := NfProfileColl.Watch(context.TODO(), mongo.Pipeline{})
 		if err != nil {
 			panic(err)
 		}
 		routineCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		//run routine to get messages from stream
+		// run routine to get messages from stream
 		go iterateChangeStream(routineCtx, NfProfStream)
 	}
 
@@ -93,6 +93,7 @@ func (db *MongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[s
 func (db *MongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
 	return db.MongoClient.RestfulAPIGetMany(collName, filter)
 }
+
 func (db *MongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool {
 	return db.MongoClient.RestfulAPIPutOneTimeout(collName, filter, putData, timeout, timeField)
 }
@@ -132,6 +133,7 @@ func (db *MongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.
 func (db *MongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) (bool, error) {
 	return db.MongoClient.RestfulAPIPost(collName, filter, postData)
 }
+
 func (db *MongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, postDataArray []interface{}) error {
 	return db.MongoClient.RestfulAPIPostMany(collName, filter, postDataArray)
 }
