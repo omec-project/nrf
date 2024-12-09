@@ -18,10 +18,6 @@ import (
 
 	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
-	"github.com/urfave/cli"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
 	"github.com/omec-project/nrf/accesstoken"
 	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
@@ -33,6 +29,9 @@ import (
 	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
+	"github.com/urfave/cli"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type NRF struct{}

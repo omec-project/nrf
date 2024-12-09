@@ -213,7 +213,7 @@ linters:
     # - nestif
     - gomodguard
     - nakedret
-    # - gci
+    - gci
     - misspell
     # - gofumpt
     # - whitespace

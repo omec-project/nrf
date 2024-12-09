@@ -10,12 +10,11 @@ import (
 	"time"
 
 	"github.com/mitchellh/mapstructure"
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/models"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func GetNrfInfo() *models.NrfInfo {

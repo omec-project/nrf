@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/antihax/optional"
-
 	"github.com/omec-project/nrf/accesstoken"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"

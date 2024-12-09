@@ -14,10 +14,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/urfave/cli"
-
 	"github.com/omec-project/nrf/logger"
 	nrf_service "github.com/omec-project/nrf/service"
+	"github.com/urfave/cli"
 )
 
 var NRF = &nrf_service.NRF{}

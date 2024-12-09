@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/mitchellh/mapstructure"
-	"go.mongodb.org/mongo-driver/bson"
-
 	nrf_context "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
@@ -25,6 +23,7 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {

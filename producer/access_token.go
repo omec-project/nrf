@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	jwt "github.com/golang-jwt/jwt"
-
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
