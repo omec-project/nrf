@@ -125,7 +125,7 @@ func HTTPRegisterNFInstance(c *gin.Context) {
 	}
 }
 
-// UpdateNFInstance - Update NF Instance profile
+// HTTPUpdateNFInstance Update NF Instance profile
 func HTTPUpdateNFInstance(c *gin.Context) {
 	// step 1: retrieve http request body
 	requestBody, err := c.GetRawData()
@@ -152,7 +152,7 @@ func HTTPUpdateNFInstance(c *gin.Context) {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := models.ProblemDetails{
 			Status: http.StatusInternalServerError,
-			Cause:  "SYSTEM_FAILURE",
+			Cause:  "SERIALIZATION_FAILURE",
 			Detail: err.Error(),
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
