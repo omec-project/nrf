@@ -203,7 +203,7 @@ linters:
     # - errcheck
     - staticcheck
     - unused
-    # - gosimple
+    - gosimple
     - typecheck
     # Additional
     # - lll
@@ -287,5 +287,5 @@ severity:
   # Only affects out formats that support setting severity information.
   rules:
     - linters:
-        - gomnd
+      - gomnd
       severity: ignore
