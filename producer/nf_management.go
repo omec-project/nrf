@@ -91,11 +91,13 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		logger.ManagementLog.Errorln("nfInstanceID is missing")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Missing nfInstanceID"})
 	}
+
 	patchJSON, ok := request.Body.([]byte)
 	if !ok {
 		logger.ManagementLog.Errorln("invalid body format")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Invalid body format"})
 	}
+
 	response, err := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if err != nil {
 		logger.ManagementLog.Errorln("UpdateNFInstanceProcedure failed:", err)
@@ -105,11 +107,13 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		logger.ManagementLog.Errorln("received nil response after update procedure")
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
 	}
+
 	nfType, ok := response["nfType"].(string)
 	if !ok {
 		logger.ManagementLog.Warnln("response missing 'nfType' or wrong format")
 		nfType = "unknown"
 	}
+
 	stats.IncrementNrfRegistrationsStats("update", nfType, "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusOK, nil, response)
 
@@ -362,6 +366,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure:", patchError)
 		return nil, fmt.Errorf("patch error: %v", patchError)
 	}
+
 	// Get the updated NF Instance
 	nf, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if getErr != nil || nf == nil {
@@ -391,6 +396,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
 		nf["expireAt"] = timein
 	}
+
 	// Put the updated NF instance
 	_, putErr := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf)
 	if putErr != nil {
