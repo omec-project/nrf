@@ -93,7 +93,7 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 	}
 	patchJSON, ok := request.Body.([]byte)
 	if !ok {
-		logger.ManagementLog.Errorln("Invalid body format")
+		logger.ManagementLog.Errorln("invalid body format")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Invalid body format"})
 	}
 	response, err := UpdateNFInstanceProcedure(nfInstanceID, patchJSON)
@@ -102,12 +102,12 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure failed"})
 	}
 	if response == nil {
-		logger.ManagementLog.Errorln("Received nil response after update procedure")
+		logger.ManagementLog.Errorln("received nil response after update procedure")
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
 	}
 	nfType, ok := response["nfType"].(string)
 	if !ok {
-		logger.ManagementLog.Warnln("Response missing 'nfType' or wrong format")
+		logger.ManagementLog.Warnln("response missing 'nfType' or wrong format")
 		nfType = "unknown"
 	}
 	stats.IncrementNrfRegistrationsStats("update", nfType, "SUCCESS")
@@ -350,7 +350,7 @@ func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
 func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}, err error) {
 	// Validation for NF Instance ID
 	if nfInstanceID == "" {
-		logger.ManagementLog.Errorln("NF Instance ID is required")
+		logger.ManagementLog.Errorln("nf Instance ID is required")
 		return nil, fmt.Errorf("NF Instance ID is required")
 	}
 	collName := "NfProfile"
@@ -359,13 +359,13 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Patch the existing NF Instance
 	patchError := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
 	if patchError != nil {
-		logger.ManagementLog.Errorln("Patch error in UpdateNFInstanceProcedure: ", patchError)
+		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure: ", patchError)
 		return nil, fmt.Errorf("patch error: %v", patchError)
 	}
 	// Get the updated NF Instance
 	nf, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if getErr != nil || nf == nil {
-		logger.ManagementLog.Errorln("Failed to get NF instance: ", getErr)
+		logger.ManagementLog.Errorln("failed to get NF instance: ", getErr)
 		return nil, fmt.Errorf("failed to get NF instance: %v", getErr)
 	}
 
@@ -374,7 +374,7 @@ func UpdateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Decode NF instance
 	nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
 	if decodeErr != nil {
-		logger.ManagementLog.Errorln("Decoding error: ", decodeErr)
+		logger.ManagementLog.Errorln("decoding error: ", decodeErr)
 		return nil, fmt.Errorf("decoding error: %v", decodeErr)
 	}
 
