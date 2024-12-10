@@ -290,7 +290,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
-		logger.ManagementLog.Errorln("failed to delete NF profiles of type %s: %v\n", nfType, err)
+		logger.ManagementLog.Errorln("failed to delete NF profiles of type %s: %v", nfType, err)
 		problemDetails = &models.ProblemDetails{
 			Title:  "NF Profiles Deletion Failed",
 			Status: 500,
@@ -299,7 +299,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 		return problemDetails
 	}
 
-	logger.ManagementLog.Infoln("successfully deleted NF profiles of type %s\n", nfType)
+	logger.ManagementLog.Infoln("successfully deleted NF profiles of type %s", nfType)
 	return nil
 }
 
