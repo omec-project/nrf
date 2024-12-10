@@ -94,24 +94,24 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 
 	patchJSON, ok := request.Body.([]byte)
 	if !ok {
-		logger.ManagementLog.Errorln("Invalid body format")
+		logger.ManagementLog.Errorln("invalid body format")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Invalid body format"})
 	}
 
 	response, err := updateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if err != nil {
-		logger.ManagementLog.Errorln("UpdateNFInstanceProcedure failed:", err)
+		logger.ManagementLog.Errorln("updateNFInstanceProcedure failed:", err)
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure failed"})
 	}
 
 	if response == nil {
-		logger.ManagementLog.Errorln("Received nil response after update procedure")
+		logger.ManagementLog.Errorln("received nil response after update procedure")
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
 	}
 
 	nfType, ok := response["nfType"].(string)
 	if !ok {
-		logger.ManagementLog.Warnln("Response missing 'nfType' or wrong format")
+		logger.ManagementLog.Warnln("response missing 'nfType' or wrong format")
 		nfType = "unknown"
 	}
 
@@ -247,14 +247,14 @@ func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (respo
 func RemoveSubscriptionProcedure(subscriptionID string) {
 	collName := "Subscriptions"
 	filter := bson.M{"subscriptionId": subscriptionID}
-	logger.ManagementLog.Infoln("Removing SubscriptionId: ", subscriptionID)
+	logger.ManagementLog.Infoln("removing SubscriptionId: ", subscriptionID)
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
-		logger.ManagementLog.Errorf("Failed to remove subscription with ID %s: %v", subscriptionID, err)
+		logger.ManagementLog.Errorf("failed to remove subscription with ID %s: %v", subscriptionID, err)
 		return
 	}
-	logger.ManagementLog.Infof("Removed subscription with ID %s", subscriptionID)
+	logger.ManagementLog.Infof("removed subscription with ID %s", subscriptionID)
 }
 
 func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.UriList,
@@ -290,7 +290,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
-		logger.ManagementLog.Errorln("Failed to delete NF profiles of type %s: %v\n", nfType, err)
+		logger.ManagementLog.Errorln("failed to delete NF profiles of type %s: %v\n", nfType, err)
 		problemDetails = &models.ProblemDetails{
 			Title:  "NF Profiles Deletion Failed",
 			Status: 500,
@@ -299,7 +299,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 		return problemDetails
 	}
 
-	logger.ManagementLog.Infoln("Successfully deleted NF profiles of type %s\n", nfType)
+	logger.ManagementLog.Infoln("successfully deleted NF profiles of type %s\n", nfType)
 	return nil
 }
 
@@ -310,7 +310,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 
 	nfProfilesRaw, err := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	if err != nil {
-		logger.ManagementLog.Warnln("Error fetching NF profiles: ", err)
+		logger.ManagementLog.Warnln("error fetching NF profiles: ", err)
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "FETCH_ERROR",
@@ -323,7 +323,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 
 	deleteManyErr := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if deleteManyErr != nil {
-		logger.ManagementLog.Warnln("Error in deleting NF profiles: ", deleteManyErr)
+		logger.ManagementLog.Warnln("error in deleting NF profiles: ", deleteManyErr)
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "NF_DELETE_ERROR",
@@ -352,10 +352,10 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_DEREGISTERED
 		for _, uri := range uriList {
-			logger.ManagementLog.Infof("Status Notification Uri: %v", uri)
+			logger.ManagementLog.Infof("status Notification Uri: %v", uri)
 			problemDetails = SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
 			if problemDetails != nil {
-				logger.ManagementLog.Infoln("Error in status notify ", problemDetails)
+				logger.ManagementLog.Infoln("error in status notify ", problemDetails)
 			}
 		}
 	}
@@ -364,7 +364,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	filter = bson.M{"subscrCond.nfInstanceId": nfInstanceID}
 	deleteErr := dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
 	if deleteErr != nil {
-		logger.ManagementLog.Warnln("Error in deleting subscriptions: ", deleteErr)
+		logger.ManagementLog.Warnln("error in deleting subscriptions: ", deleteErr)
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "SUBSCRIPTION_DELETE_ERROR",
@@ -395,7 +395,7 @@ func sendNFDownNotification(nfProfile models.NfProfile, nfInstanceID string) {
 func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}, err error) {
 	// Validation for NF Instance ID
 	if nfInstanceID == "" {
-		logger.ManagementLog.Errorln("NF Instance ID is required")
+		logger.ManagementLog.Errorln("nf Instance ID is required")
 		return nil, fmt.Errorf("NF Instance ID is required")
 	}
 	collName := "NfProfile"
@@ -404,13 +404,13 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Patch the existing NF Instance
 	patchError := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
 	if patchError != nil {
-		logger.ManagementLog.Errorln("Patch error in UpdateNFInstanceProcedure: ", patchError)
+		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure: ", patchError)
 		return nil, fmt.Errorf("patch error: %v", patchError)
 	}
 	// Get the updated NF Instance
 	nf, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if getErr != nil || nf == nil {
-		logger.ManagementLog.Errorln("Failed to get NF instance: ", getErr)
+		logger.ManagementLog.Errorln("failed to get NF instance: ", getErr)
 		return nil, fmt.Errorf("failed to get NF instance: %v", getErr)
 	}
 
@@ -419,7 +419,7 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	// Decode NF instance
 	nfProfiles, decodeErr := util.Decode(nfProfilesRaw, time.RFC3339)
 	if decodeErr != nil {
-		logger.ManagementLog.Errorln("Decoding error: ", decodeErr)
+		logger.ManagementLog.Errorln("decoding error: ", decodeErr)
 		return nil, fmt.Errorf("decoding error: %v", decodeErr)
 	}
 
