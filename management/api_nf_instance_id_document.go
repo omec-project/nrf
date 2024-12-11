@@ -25,7 +25,7 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
-// DeregisterNFInstance - Deregisters a given NF Instance
+// HTTPDeregisterNFInstance - Deregisters a given NF Instance
 func HTTPDeregisterNFInstance(c *gin.Context) {
 	// parse nfInstanceId
 
@@ -48,7 +48,7 @@ func HTTPDeregisterNFInstance(c *gin.Context) {
 	}
 }
 
-// GetNFInstance - Read the profile of a given NF Instance
+// HTTPGetNFInstance - Read the profile of a given NF Instance
 func HTTPGetNFInstance(c *gin.Context) {
 	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["nfInstanceID"] = c.Params.ByName("nfInstanceID")
@@ -69,7 +69,7 @@ func HTTPGetNFInstance(c *gin.Context) {
 	}
 }
 
-// RegisterNFInstance - Register a new NF Instance
+// HTTPRegisterNFInstance - Register a new NF Instance
 func HTTPRegisterNFInstance(c *gin.Context) {
 	var nfprofile models.NfProfile
 
@@ -125,7 +125,7 @@ func HTTPRegisterNFInstance(c *gin.Context) {
 	}
 }
 
-// UpdateNFInstance - Update NF Instance profile
+// HTTPUpdateNFInstance Update NF Instance profile
 func HTTPUpdateNFInstance(c *gin.Context) {
 	// step 1: retrieve http request body
 	requestBody, err := c.GetRawData()
@@ -152,7 +152,7 @@ func HTTPUpdateNFInstance(c *gin.Context) {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := models.ProblemDetails{
 			Status: http.StatusInternalServerError,
-			Cause:  "SYSTEM_FAILURE",
+			Cause:  "SERIALIZATION_FAILURE",
 			Detail: err.Error(),
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
