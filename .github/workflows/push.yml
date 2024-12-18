@@ -164,12 +164,13 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
+          base: ${{ github.ref_name }}
           token: ${{ secrets.GH_OMEC_PAT }}
           commit-message: Update version
           committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           author: ${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>
           signoff: true
-          branch: version-update
+          branch: "chore/version-update"
           delete-branch: true
           title: Update version
           body: |
