@@ -31,7 +31,7 @@ profile from the database and returns it to the caller.
 - Subscription management callbacks to network functions.
 - NRF cache library which can be used by modules to avoid frequent queries to NRF
 
-Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/master/overview/3gpp-compliance-5g.html)
+Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
 
 ## Reach out to us thorugh
 
