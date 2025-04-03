@@ -253,9 +253,10 @@ func (nrf *NRF) Start() {
 	}
 
 	serverScheme := factory.NrfConfig.GetSbiScheme()
-	if serverScheme == "http" {
+	switch serverScheme {
+	case "http":
 		err = server.ListenAndServe()
-	} else if serverScheme == "https" {
+	case "https":
 		err = server.ListenAndServeTLS(config.Sbi.TLS.PEM, config.Sbi.TLS.Key)
 	}
 

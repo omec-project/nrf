@@ -658,8 +658,8 @@ func NnrfUriListLimit(originalUL *UriList, limit int) {
 
 	if limit < len(originalUL.Link.Item) {
 		var i int
-		var b *Links = new(Links)
-		var c []Item = make([]Item, limit)
+		b := new(Links)
+		c := make([]Item, limit)
 		for i = 0; i < limit; i++ {
 			c[i].Href = originalUL.Link.Item[i].Href
 		}
