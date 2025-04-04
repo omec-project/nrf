@@ -472,7 +472,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 	var i int
 	var b *Links
 	var flag bool
-	var c []Item
+	var c []models.Link
 	flag = true
 	b = new(Links)
 	size := len(location) + len(originalUL.Link.Item)
@@ -485,7 +485,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 	}
 
 	if flag {
-		c = make([]Item, size)
+		c = make([]models.Link, size)
 		for i = 0; i < len(originalUL.Link.Item); i++ {
 			c[i].Href = originalUL.Link.Item[i].Href
 		}
@@ -493,7 +493,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 			c[i].Href = location[i-len(originalUL.Link.Item)]
 		}
 	} else {
-		c = make([]Item, size-1)
+		c = make([]models.Link, size-1)
 		for i = 0; i < len(originalUL.Link.Item); i++ {
 			c[i].Href = originalUL.Link.Item[i].Href
 		}
@@ -658,8 +658,8 @@ func NnrfUriListLimit(originalUL *UriList, limit int) {
 
 	if limit < len(originalUL.Link.Item) {
 		var i int
-		var b *Links = new(Links)
-		var c []Item = make([]Item, limit)
+		b := new(Links)
+		c := make([]models.Link, limit)
 		for i = 0; i < limit; i++ {
 			c[i].Href = originalUL.Link.Item[i].Href
 		}
