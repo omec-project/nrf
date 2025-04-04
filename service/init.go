@@ -258,6 +258,9 @@ func (nrf *NRF) Start() {
 		err = server.ListenAndServe()
 	case "https":
 		err = server.ListenAndServeTLS(config.Sbi.TLS.PEM, config.Sbi.TLS.Key)
+	default:
+		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
+		return
 	}
 
 	if err != nil {
