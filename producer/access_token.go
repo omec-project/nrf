@@ -8,7 +8,7 @@ package producer
 import (
 	"net/http"
 
-	jwt "github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/util/httpwrapper"
@@ -51,7 +51,7 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 		Aud:            request.TargetNfInstanceId, // nfInstanceId of service producer
 		Scope:          request.Scope,              // TODO: the name of the NF services for which the
 		Exp:            expiration,                 //       access_token is authorized for use
-		StandardClaims: jwt.StandardClaims{},
+		RegisteredClaims: jwt.RegisteredClaims{},
 	}
 
 	mySigningKey := []byte("NRF") // AllYourBase
