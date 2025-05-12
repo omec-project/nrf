@@ -46,11 +46,11 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 
 	// Create AccessToken
 	accessTokenClaims := models.AccessTokenClaims{
-		Iss:            "1234567",                  // TODO: NF instance id of the NRF
-		Sub:            request.NfInstanceId,       // nfInstanceId of service consumer
-		Aud:            request.TargetNfInstanceId, // nfInstanceId of service producer
-		Scope:          request.Scope,              // TODO: the name of the NF services for which the
-		Exp:            expiration,                 //       access_token is authorized for use
+		Iss:              "1234567",                  // TODO: NF instance id of the NRF
+		Sub:              request.NfInstanceId,       // nfInstanceId of service consumer
+		Aud:              request.TargetNfInstanceId, // nfInstanceId of service producer
+		Scope:            request.Scope,              // TODO: the name of the NF services for which the
+		Exp:              expiration,                 //       access_token is authorized for use
 		RegisteredClaims: jwt.RegisteredClaims{},
 	}
 
