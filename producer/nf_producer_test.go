@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
@@ -88,14 +89,54 @@ func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, 
 	return true
 }
 
-func TestNFRegisterProcedure(t *testing.T) {
+func TestNFRegisterProcedurePlmnListFromNf(t *testing.T) {
 	dbadapter.DBClient = &MockMongoDBClient{}
+	plmnList := []models.PlmnId{
+		{
+			Mcc: "001",
+			Mnc: "01",
+		},
+	}
 	var nf models.NfProfile
 	nf.NfType = models.NfType_PCF
 	nf.NfInstanceId = uuid.New().String()
 	nf.NfStatus = models.NfStatus_REGISTERED
+	nf.PlmnList = &plmnList
 	_, _, err := producer.NFRegisterProcedure(nf)
 	if err != nil {
 		t.Errorf("testcase failed: %v", err)
+	}
+}
+
+func TestNFRegisterProcedureNoPlmnListFromNfAndNoLocalPlmnList(t *testing.T) {
+	dbadapter.DBClient = &MockMongoDBClient{}
+	var nf models.NfProfile
+	nf.NfType = models.NfType_AUSF
+	nf.NfInstanceId = uuid.New().String()
+	nf.NfStatus = models.NfStatus_REGISTERED
+	_, _, err := producer.NFRegisterProcedure(nf)
+	if err == nil {
+		t.Errorf("testcase failed: %v", err)
+	}
+}
+
+func TestNFRegisterProcedureNoPlmnListFromNfAndLocalPlmnList(t *testing.T) {
+	context.GetSelf().PlmnList = []models.PlmnId{
+		{
+			Mcc: "001",
+			Mnc: "01",
+		},
+	}
+	dbadapter.DBClient = &MockMongoDBClient{}
+	var nf models.NfProfile
+	nf.NfType = models.NfType_AUSF
+	nf.NfInstanceId = uuid.New().String()
+	nf.NfStatus = models.NfStatus_REGISTERED
+	_, data, err := producer.NFRegisterProcedure(nf)
+	if err != nil {
+		t.Errorf("testcase failed: %v", err)
+	}
+	if data["plmnList"] == nil {
+		t.Errorf("testcase failed. Expected %v not nil", data["plmnList"])
 	}
 }

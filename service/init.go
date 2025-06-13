@@ -16,16 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	grpcClient "github.com/omec-project/config5g/proto/client"
-	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/nrf/accesstoken"
-	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/discovery"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
+	"github.com/omec-project/nrf/polling"
 	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
@@ -83,69 +81,8 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
-
-	factory.NrfConfig.CfgLocation = absPath
-
-	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-		go manageGrpcClient(factory.NrfConfig.Configuration.WebuiUri)
-	}
-
+	go polling.PollNetworkConfig()
 	return nil
-}
-
-// manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
-// Then it updates NRF configuration.
-func manageGrpcClient(webuiUri string) {
-	var configChannel chan *protos.NetworkSliceResponse
-	var client grpcClient.ConfClient
-	var stream protos.ConfigService_NetworkSliceSubscribeClient
-	var err error
-	count := 0
-	for {
-		if client != nil {
-			if client.CheckGrpcConnectivity() != "READY" {
-				time.Sleep(time.Second * 30)
-				count++
-				if count > 5 {
-					err = client.GetConfigClientConn().Close()
-					if err != nil {
-						logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
-					}
-					client = nil
-					count = 0
-				}
-				logger.InitLog.Infoln("checking the connectivity readiness")
-				continue
-			}
-
-			if stream == nil {
-				stream, err = client.SubscribeToConfigServer()
-				if err != nil {
-					logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
-					continue
-				}
-			}
-
-			if configChannel == nil {
-				configChannel = client.PublishOnConfigChange(true, stream)
-				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
-				go factory.NrfConfig.UpdateConfig(configChannel)
-				logger.InitLog.Infoln("NRF updateConfig is triggered")
-			}
-
-			time.Sleep(time.Second * 5) // Fixes (avoids) 100% CPU utilization
-		} else {
-			client, err = grpcClient.ConnectToConfigServer(webuiUri)
-			stream = nil
-			configChannel = nil
-			logger.InitLog.Infoln("connecting to config server")
-			if err != nil {
-				logger.InitLog.Errorf("%+v", err)
-			}
-			continue
-		}
-	}
 }
 
 func (nrf *NRF) setLogLevel() {
@@ -225,8 +162,6 @@ func (nrf *NRF) Start() {
 	management.AddService(router)
 
 	go metrics.InitMetrics()
-
-	nrfContext.InitNrfContext()
 
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)

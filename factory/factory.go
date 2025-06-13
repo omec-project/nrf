@@ -11,37 +11,34 @@ package factory
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/omec-project/nrf/logger"
 	"gopkg.in/yaml.v2"
 )
 
-var ManagedByConfigPod bool
-
 var NrfConfig Config
 
 // InitConfigFactory gets the NrfConfig and subscribes the config pod.
-// This observes the GRPC client availability and connection status in a loop.
-// When the GRPC server pod is restarted, GRPC connection status stuck in idle.
-// If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
-// then it closes the existing client start a new client.
 // TODO: Support configuration update from REST api
 func InitConfigFactory(f string) error {
-	if content, err := os.ReadFile(f); err != nil {
+	content, err := os.ReadFile(f)
+	if err != nil {
 		return err
-	} else {
-		NrfConfig = Config{}
-
-		if yamlErr := yaml.Unmarshal(content, &NrfConfig); yamlErr != nil {
-			return yamlErr
-		}
-		if NrfConfig.Configuration.WebuiUri == "" {
-			NrfConfig.Configuration.WebuiUri = "webui:9876"
-		}
-		logger.InitLog.Infof("DefaultPlmnId Mnc %v, Mcc %v", NrfConfig.Configuration.DefaultPlmnId.Mnc, NrfConfig.Configuration.DefaultPlmnId.Mcc)
 	}
-	return nil
+	NrfConfig = Config{}
+
+	if yamlErr := yaml.Unmarshal(content, &NrfConfig); yamlErr != nil {
+		return yamlErr
+	}
+	if NrfConfig.Configuration.WebuiUri == "" {
+		NrfConfig.Configuration.WebuiUri = "http://webui:9876"
+		logger.CfgLog.Infof("webuiUri not set in configuration file. Using %v", NrfConfig.Configuration.WebuiUri)
+		return nil
+	}
+	err = validateWebuiUri(NrfConfig.Configuration.WebuiUri)
+	return err
 }
 
 func CheckConfigVersion() error {
@@ -54,5 +51,19 @@ func CheckConfigVersion() error {
 
 	logger.CfgLog.Infof("config version [%s]", currentVersion)
 
+	return nil
+}
+
+func validateWebuiUri(uri string) error {
+	parsedUrl, err := url.ParseRequestURI(uri)
+	if err != nil {
+		return err
+	}
+	if parsedUrl.Scheme != "http" && parsedUrl.Scheme != "https" {
+		return fmt.Errorf("unsupported scheme for webuiUri: %s", parsedUrl.Scheme)
+	}
+	if parsedUrl.Host == "" {
+		return fmt.Errorf("missing host in webuiUri")
+	}
 	return nil
 }

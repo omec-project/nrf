@@ -17,7 +17,7 @@ profile from the database and returns it to the caller.
 
 
 ## NRF block diagram
-![UDM Block Diagram](/docs/images/README-NRF.png)
+![NRF Block Diagram](/docs/images/README-NRF.png)
 
 ## Supported Features
 - Registration of Network Functions
@@ -32,6 +32,21 @@ profile from the database and returns it to the caller.
 - NRF cache library which can be used by modules to avoid frequent queries to NRF
 
 Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
+
+## Dynamic Network configuration (via webconsole)
+
+NRF polls the webconsole every 5 seconds to fetch the latest PLMN configuration.
+
+### Setting Up Polling
+
+Include the `webuiUri` of the webconsole in the configuration file
+```
+configuration:
+  ...
+  webuiUri: https://webui:5001 # or http://webui:5001
+  ...
+```
+The scheme (http:// or https://) must be explicitly specified.
 
 ## Reach out to us thorugh
 
