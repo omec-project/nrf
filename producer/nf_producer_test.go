@@ -5,6 +5,8 @@
 package producer_test
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -102,9 +104,15 @@ func TestNFRegisterProcedurePlmnListFromNf(t *testing.T) {
 	nf.NfInstanceId = uuid.New().String()
 	nf.NfStatus = models.NfStatus_REGISTERED
 	nf.PlmnList = &plmnList
-	_, _, err := producer.NFRegisterProcedure(nf)
+	_, data, err := producer.NFRegisterProcedure(nf)
 	if err != nil {
 		t.Errorf("testcase failed: %v", err)
+	}
+	rawNfPlmns, _ := json.Marshal(data["plmnList"])
+	var nfPlmns []models.PlmnId
+	json.Unmarshal(rawNfPlmns, &nfPlmns)
+	if !reflect.DeepEqual(nfPlmns, plmnList) {
+		t.Errorf("testcase failed. Expected %v, got %v", plmnList, nfPlmns)
 	}
 }
 
@@ -136,7 +144,41 @@ func TestNFRegisterProcedureNoPlmnListFromNfAndLocalPlmnList(t *testing.T) {
 	if err != nil {
 		t.Errorf("testcase failed: %v", err)
 	}
-	if data["plmnList"] == nil {
-		t.Errorf("testcase failed. Expected %v not nil", data["plmnList"])
+	rawNfPlmns, _ := json.Marshal(data["plmnList"])
+	var nfPlmns []models.PlmnId
+	json.Unmarshal(rawNfPlmns, &nfPlmns)
+	if !reflect.DeepEqual(nfPlmns, context.GetSelf().PlmnList) {
+		t.Errorf("testcase failed. Expected %v, got %v", context.GetSelf().PlmnList, nfPlmns)
+	}
+}
+
+func TestNFRegisterProcedurePlmnListFromNfAndDifferentLocalPlmnList(t *testing.T) {
+	context.GetSelf().PlmnList = []models.PlmnId{
+		{
+			Mcc: "999",
+			Mnc: "99",
+		},
+	}
+	nfPlmnList := []models.PlmnId{
+		{
+			Mcc: "001",
+			Mnc: "01",
+		},
+	}
+	dbadapter.DBClient = &MockMongoDBClient{}
+	var nf models.NfProfile
+	nf.NfType = models.NfType_AUSF
+	nf.NfInstanceId = uuid.New().String()
+	nf.NfStatus = models.NfStatus_REGISTERED
+	nf.PlmnList = &nfPlmnList
+	_, data, err := producer.NFRegisterProcedure(nf)
+	if err != nil {
+		t.Errorf("testcase failed: %v", err)
+	}
+	rawNfPlmns, _ := json.Marshal(data["plmnList"])
+	var nfPlmns []models.PlmnId
+	json.Unmarshal(rawNfPlmns, &nfPlmns)
+	if !reflect.DeepEqual(nfPlmns, nfPlmnList) {
+		t.Errorf("testcase failed. Expected %v, got %v", context.GetSelf().PlmnList, nfPlmns)
 	}
 }
