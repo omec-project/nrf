@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/omec-project/nrf/accesstoken"
+	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/discovery"
 	"github.com/omec-project/nrf/factory"
@@ -162,6 +163,8 @@ func (nrf *NRF) Start() {
 	management.AddService(router)
 
 	go metrics.InitMetrics()
+
+	context.Init()
 
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)

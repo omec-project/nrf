@@ -91,94 +91,115 @@ func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, 
 	return true
 }
 
-func TestNFRegisterProcedurePlmnListFromNf(t *testing.T) {
-	dbadapter.DBClient = &MockMongoDBClient{}
-	plmnList := []models.PlmnId{
+func TestNFRegisterProcedureSuccess(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		nrfPlmnList               []models.PlmnId
+		nfPlmnList                *[]models.PlmnId
+		expectedNfProfilePlmnList *[]models.PlmnId
+	}{
 		{
-			Mcc: "001",
-			Mnc: "01",
+			name: "NF with no provided PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			nfPlmnList: nil,
+			expectedNfProfilePlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
+			name: "NF with provided PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "999",
+					Mnc: "99",
+				},
+			},
+			nfPlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			expectedNfProfilePlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
+			name:        "NF with provided PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			expectedNfProfilePlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
 		},
 	}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_PCF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
-	nf.PlmnList = &plmnList
-	_, data, err := producer.NFRegisterProcedure(nf)
-	if err != nil {
-		t.Errorf("testcase failed: %v", err)
-	}
-	rawNfPlmns, _ := json.Marshal(data["plmnList"])
-	var nfPlmns []models.PlmnId
-	json.Unmarshal(rawNfPlmns, &nfPlmns)
-	if !reflect.DeepEqual(nfPlmns, plmnList) {
-		t.Errorf("testcase failed. Expected %v, got %v", plmnList, nfPlmns)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			context.GetSelf().PlmnList = tc.nrfPlmnList
+			dbadapter.DBClient = &MockMongoDBClient{}
+			var nf models.NfProfile
+			nf.NfType = models.NfType_AUSF
+			nf.NfInstanceId = uuid.New().String()
+			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.PlmnList = tc.nfPlmnList
+			_, data, err := producer.NFRegisterProcedure(nf)
+			if err != nil {
+				t.Errorf("failed to register NF: %v", err)
+			}
+			rawNfPlmns, _ := json.Marshal(data["plmnList"])
+			var nfPlmns []models.PlmnId
+			json.Unmarshal(rawNfPlmns, &nfPlmns)
+			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, &nfPlmns) {
+				t.Errorf("Expected %v, got %v", tc.expectedNfProfilePlmnList, nfPlmns)
+			}
+		})
 	}
 }
 
-func TestNFRegisterProcedureNoPlmnListFromNfAndNoLocalPlmnList(t *testing.T) {
-	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_AUSF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
-	_, _, err := producer.NFRegisterProcedure(nf)
-	if err == nil {
-		t.Errorf("testcase failed: %v", err)
-	}
-}
-
-func TestNFRegisterProcedureNoPlmnListFromNfAndLocalPlmnList(t *testing.T) {
-	context.GetSelf().PlmnList = []models.PlmnId{
+func TestNFRegisterProcedureFailure(t *testing.T) {
+	testCases := []struct {
+		name        string
+		nrfPlmnList []models.PlmnId
+		nfPlmnList  *[]models.PlmnId
+	}{
 		{
-			Mcc: "001",
-			Mnc: "01",
+			name:        "NF with no provided PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList:  nil,
 		},
 	}
-	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_AUSF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
-	_, data, err := producer.NFRegisterProcedure(nf)
-	if err != nil {
-		t.Errorf("testcase failed: %v", err)
-	}
-	rawNfPlmns, _ := json.Marshal(data["plmnList"])
-	var nfPlmns []models.PlmnId
-	json.Unmarshal(rawNfPlmns, &nfPlmns)
-	if !reflect.DeepEqual(nfPlmns, context.GetSelf().PlmnList) {
-		t.Errorf("testcase failed. Expected %v, got %v", context.GetSelf().PlmnList, nfPlmns)
-	}
-}
-
-func TestNFRegisterProcedurePlmnListFromNfAndDifferentLocalPlmnList(t *testing.T) {
-	context.GetSelf().PlmnList = []models.PlmnId{
-		{
-			Mcc: "999",
-			Mnc: "99",
-		},
-	}
-	nfPlmnList := []models.PlmnId{
-		{
-			Mcc: "001",
-			Mnc: "01",
-		},
-	}
-	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_AUSF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
-	nf.PlmnList = &nfPlmnList
-	_, data, err := producer.NFRegisterProcedure(nf)
-	if err != nil {
-		t.Errorf("testcase failed: %v", err)
-	}
-	rawNfPlmns, _ := json.Marshal(data["plmnList"])
-	var nfPlmns []models.PlmnId
-	json.Unmarshal(rawNfPlmns, &nfPlmns)
-	if !reflect.DeepEqual(nfPlmns, nfPlmnList) {
-		t.Errorf("testcase failed. Expected %v, got %v", context.GetSelf().PlmnList, nfPlmns)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			context.GetSelf().PlmnList = tc.nrfPlmnList
+			dbadapter.DBClient = &MockMongoDBClient{}
+			var nf models.NfProfile
+			nf.NfType = models.NfType_AUSF
+			nf.NfInstanceId = uuid.New().String()
+			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.PlmnList = tc.nfPlmnList
+			_, data, err := producer.NFRegisterProcedure(nf)
+			if err == nil {
+				t.Errorf("Expected error, got: %v", data)
+			}
+		})
 	}
 }

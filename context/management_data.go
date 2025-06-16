@@ -53,7 +53,7 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if nfprofile.PlmnList == nil && nrfContext.PlmnList == nil {
+	if nfprofile.PlmnList == nil && len(nrfContext.PlmnList) == 0 {
 		// logically NF should send PLMN else we need to wait for config from webconsole
 		return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
 	}
