@@ -115,6 +115,22 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			},
 		},
 		{
+			name: "NF with provided empty PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			nfPlmnList: &[]models.PlmnId{},
+			expectedNfProfilePlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
 			name: "NF with provided PLMNs and NRF with PLMNs",
 			nrfPlmnList: []models.PlmnId{
 				{
@@ -191,6 +207,11 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 			name:        "NF with no provided PLMNs and NRF with no PLMNs",
 			nrfPlmnList: []models.PlmnId{},
 			nfPlmnList:  nil,
+		},
+		{
+			name:        "NF with provided empty PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList:  &[]models.PlmnId{},
 		},
 	}
 	for _, tc := range testCases {

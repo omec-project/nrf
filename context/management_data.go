@@ -53,9 +53,11 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if nfprofile.PlmnList == nil && len(nrfContext.PlmnList) == 0 {
-		// logically NF should send PLMN else we need to wait for config from webconsole
-		return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
+	if len(nrfContext.PlmnList) == 0 {
+		if nfprofile.PlmnList == nil || len(*nfprofile.PlmnList) == 0 {
+			// logically NF should send PLMN else we need to wait for config from webconsole
+			return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
+		}
 	}
 
 	nnrfNFManagementCondition(nf, nfprofile)
@@ -85,7 +87,7 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 	logger.ManagementLog.Infof("HeartBeat Timer value: %v sec", nf.HeartBeatTimer)
 
 	// PlmnList
-	if nfprofile.PlmnList != nil {
+	if nfprofile.PlmnList != nil && len(*nfprofile.PlmnList) != 0 {
 		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
 		copy(a, *nfprofile.PlmnList)
 		nf.PlmnList = &a
