@@ -96,7 +96,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 		name                      string
 		nrfPlmnList               []models.PlmnId
 		nfPlmnList                *[]models.PlmnId
-		expectedNfProfilePlmnList *[]models.PlmnId
+		expectedNfProfilePlmnList []models.PlmnId
 	}{
 		{
 			name: "NF with no provided PLMNs and NRF with PLMNs",
@@ -107,7 +107,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 				},
 			},
 			nfPlmnList: nil,
-			expectedNfProfilePlmnList: &[]models.PlmnId{
+			expectedNfProfilePlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
 					Mnc: "01",
@@ -128,7 +128,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
-			expectedNfProfilePlmnList: &[]models.PlmnId{
+			expectedNfProfilePlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
 					Mnc: "01",
@@ -144,7 +144,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
-			expectedNfProfilePlmnList: &[]models.PlmnId{
+			expectedNfProfilePlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
 					Mnc: "01",
@@ -154,6 +154,12 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			originalDBClient := dbadapter.DBClient
+			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			defer func() {
+				dbadapter.DBClient = originalDBClient
+				context.GetSelf().PlmnList = originalNrfContextPlmnList
+			}()
 			context.GetSelf().PlmnList = tc.nrfPlmnList
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile
@@ -168,7 +174,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			rawNfPlmns, _ := json.Marshal(data["plmnList"])
 			var nfPlmns []models.PlmnId
 			json.Unmarshal(rawNfPlmns, &nfPlmns)
-			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, &nfPlmns) {
+			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, nfPlmns) {
 				t.Errorf("Expected %v, got %v", tc.expectedNfProfilePlmnList, nfPlmns)
 			}
 		})
@@ -189,6 +195,12 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			originalDBClient := dbadapter.DBClient
+			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			defer func() {
+				dbadapter.DBClient = originalDBClient
+				context.GetSelf().PlmnList = originalNrfContextPlmnList
+			}()
 			context.GetSelf().PlmnList = tc.nrfPlmnList
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile

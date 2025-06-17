@@ -16,18 +16,17 @@ import (
 )
 
 type NRFContext struct {
-	NrfNfProfile     models.NfProfile
-	Nrf_NfInstanceID string
-	PlmnList         []models.PlmnId
+	NrfNfProfile models.NfProfile
+	PlmnList     []models.PlmnId
 }
 
 var nrfContext NRFContext
 
 func Init() {
-	InitNrfContext(&nrfContext)
+	initNrfContext(&nrfContext)
 }
 
-func InitNrfContext(context *NRFContext) {
+func initNrfContext(context *NRFContext) {
 	config := factory.NrfConfig
 	logger.InitLog.Infof("nrfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration

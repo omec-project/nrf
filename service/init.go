@@ -82,6 +82,11 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
+
+	factory.NrfConfig.CfgLocation = absPath
+
+	context.Init()
+
 	go polling.PollNetworkConfig()
 	return nil
 }
@@ -163,8 +168,6 @@ func (nrf *NRF) Start() {
 	management.AddService(router)
 
 	go metrics.InitMetrics()
-
-	context.Init()
 
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
