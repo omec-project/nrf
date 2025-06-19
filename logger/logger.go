@@ -21,8 +21,9 @@ var (
 	AccessTokenLog *zap.SugaredLogger
 	DiscoveryLog   *zap.SugaredLogger
 	GinLog         *zap.SugaredLogger
-	GrpcLog        *zap.SugaredLogger
 	UtilLog        *zap.SugaredLogger
+	PollConfigLog  *zap.SugaredLogger
+	ContextLog     *zap.SugaredLogger
 	atomicLevel    zap.AtomicLevel
 )
 
@@ -60,8 +61,9 @@ func init() {
 	AccessTokenLog = log.Sugar().With("component", "NRF", "category", "Token")
 	DiscoveryLog = log.Sugar().With("component", "NRF", "category", "DSCV")
 	GinLog = log.Sugar().With("component", "NRF", "category", "GIN")
-	GrpcLog = log.Sugar().With("component", "NRF", "category", "GRPC")
 	UtilLog = log.Sugar().With("component", "NRF", "category", "Util")
+	PollConfigLog = log.Sugar().With("component", "NRF", "category", "PollConfig")
+	ContextLog = log.Sugar().With("component", "NRF", "category", "ctx")
 }
 
 func GetLogger() *zap.Logger {

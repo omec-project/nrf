@@ -15,24 +15,31 @@ import (
 	"github.com/omec-project/openapi/models"
 )
 
-var (
-	NrfNfProfile     models.NfProfile
-	Nrf_NfInstanceID string
-)
+type NRFContext struct {
+	NrfNfProfile models.NfProfile
+	PlmnList     []models.PlmnId
+}
 
-func InitNrfContext() {
+var nrfContext NRFContext
+
+func Init() {
+	initNrfContext(&nrfContext)
+}
+
+func initNrfContext(context *NRFContext) {
 	config := factory.NrfConfig
 	logger.InitLog.Infof("nrfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
 
-	NrfNfProfile.NfInstanceId = uuid.New().String()
-	NrfNfProfile.NfType = models.NfType_NRF
-	NrfNfProfile.NfStatus = models.NfStatus_REGISTERED
+	context.NrfNfProfile.NfInstanceId = uuid.New().String()
+	context.NrfNfProfile.NfType = models.NfType_NRF
+	context.NrfNfProfile.NfStatus = models.NfStatus_REGISTERED
 
 	serviceNameList := configuration.ServiceNameList
-
+	context.PlmnList = []models.PlmnId{}
 	NFServices := InitNFService(serviceNameList, config.Info.Version)
-	NrfNfProfile.NfServices = &NFServices
+	context.NrfNfProfile.NfServices = &NFServices
+	logger.ContextLog.Infoln("nrf context:", context)
 }
 
 func InitNFService(srvNameList []string, version string) []models.NfService {
@@ -63,4 +70,8 @@ func InitNFService(srvNameList []string, version string) []models.NfService {
 		}
 	}
 	return NFServices
+}
+
+func GetSelf() *NRFContext {
+	return &nrfContext
 }

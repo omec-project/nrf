@@ -53,11 +53,12 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if nfprofile.PlmnList == nil && !factory.MinConfigAvailable && factory.ManagedByConfigPod {
-		// logically NF should send PLMN else we need to wait for min config
-		return fmt.Errorf("PlmnList absent. Local default config not available. NFType - %v", nfprofile.NfType)
+	if len(nrfContext.PlmnList) == 0 {
+		if nfprofile.PlmnList == nil || len(*nfprofile.PlmnList) == 0 {
+			// logically NF should send PLMN else we need to wait for config from webconsole
+			return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
+		}
 	}
-	// TODO : add plmn validation ??
 
 	nnrfNFManagementCondition(nf, nfprofile)
 	nnrfNFManagementOption(nf, nfprofile)
@@ -83,17 +84,18 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 		factory.NrfConfig.Configuration.NfKeepAliveTime = 60
 	}
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
-	logger.ManagementLog.Infof("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
+	logger.ManagementLog.Infof("HeartBeat Timer value: %v sec", nf.HeartBeatTimer)
 
 	// PlmnList
-	if nfprofile.PlmnList != nil {
+	if nfprofile.PlmnList != nil && len(*nfprofile.PlmnList) != 0 {
 		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
 		copy(a, *nfprofile.PlmnList)
 		nf.PlmnList = &a
 	} else {
-		nf.PlmnList = &[]models.PlmnId{
-			factory.NrfConfig.Configuration.DefaultPlmnId,
-		}
+		// NF did not provide PlmnList. Use local PlmnList
+		plmnList := make([]models.PlmnId, len(nrfContext.PlmnList))
+		copy(plmnList, nrfContext.PlmnList)
+		nf.PlmnList = &plmnList
 	}
 	// fqdn
 	if nfprofile.Fqdn != "" {

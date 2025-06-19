@@ -5,9 +5,12 @@
 package producer_test
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
@@ -88,14 +91,148 @@ func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, 
 	return true
 }
 
-func TestNFRegisterProcedure(t *testing.T) {
-	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_PCF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
-	_, _, err := producer.NFRegisterProcedure(nf)
-	if err != nil {
-		t.Errorf("testcase failed: %v", err)
+func TestNFRegisterProcedureSuccess(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		nrfPlmnList               []models.PlmnId
+		nfPlmnList                *[]models.PlmnId
+		expectedNfProfilePlmnList []models.PlmnId
+	}{
+		{
+			name: "NF with no provided PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			nfPlmnList: nil,
+			expectedNfProfilePlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
+			name: "NF with provided empty PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			nfPlmnList: &[]models.PlmnId{},
+			expectedNfProfilePlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
+			name: "NF with provided PLMNs and NRF with PLMNs",
+			nrfPlmnList: []models.PlmnId{
+				{
+					Mcc: "999",
+					Mnc: "99",
+				},
+			},
+			nfPlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			expectedNfProfilePlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+		{
+			name:        "NF with provided PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList: &[]models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+			expectedNfProfilePlmnList: []models.PlmnId{
+				{
+					Mcc: "001",
+					Mnc: "01",
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalDBClient := dbadapter.DBClient
+			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			defer func() {
+				dbadapter.DBClient = originalDBClient
+				context.GetSelf().PlmnList = originalNrfContextPlmnList
+			}()
+			context.GetSelf().PlmnList = tc.nrfPlmnList
+			dbadapter.DBClient = &MockMongoDBClient{}
+			var nf models.NfProfile
+			nf.NfType = models.NfType_AUSF
+			nf.NfInstanceId = uuid.New().String()
+			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.PlmnList = tc.nfPlmnList
+			_, data, err := producer.NFRegisterProcedure(nf)
+			if err != nil {
+				t.Errorf("failed to register NF: %v", err)
+			}
+			rawNfPlmns, _ := json.Marshal(data["plmnList"])
+			var nfPlmns []models.PlmnId
+			json.Unmarshal(rawNfPlmns, &nfPlmns)
+			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, nfPlmns) {
+				t.Errorf("Expected %v, got %v", tc.expectedNfProfilePlmnList, nfPlmns)
+			}
+		})
+	}
+}
+
+func TestNFRegisterProcedureFailure(t *testing.T) {
+	testCases := []struct {
+		name        string
+		nrfPlmnList []models.PlmnId
+		nfPlmnList  *[]models.PlmnId
+	}{
+		{
+			name:        "NF with no provided PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList:  nil,
+		},
+		{
+			name:        "NF with provided empty PLMNs and NRF with no PLMNs",
+			nrfPlmnList: []models.PlmnId{},
+			nfPlmnList:  &[]models.PlmnId{},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalDBClient := dbadapter.DBClient
+			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			defer func() {
+				dbadapter.DBClient = originalDBClient
+				context.GetSelf().PlmnList = originalNrfContextPlmnList
+			}()
+			context.GetSelf().PlmnList = tc.nrfPlmnList
+			dbadapter.DBClient = &MockMongoDBClient{}
+			var nf models.NfProfile
+			nf.NfType = models.NfType_AUSF
+			nf.NfInstanceId = uuid.New().String()
+			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.PlmnList = tc.nfPlmnList
+			_, data, err := producer.NFRegisterProcedure(nf)
+			if err == nil {
+				t.Errorf("Expected error, got: %v", data)
+			}
+		})
 	}
 }
