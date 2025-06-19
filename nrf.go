@@ -11,18 +11,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/omec-project/nrf/logger"
 	nrf_service "github.com/omec-project/nrf/service"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 )
 
 var NRF = &nrf_service.NRF{}
 
 func main() {
-	app := cli.NewApp()
+	app := &cli.Command{}
 	app.Name = "nrf"
 	logger.InitLog.Infoln(app.Name)
 	app.Usage = "Network Repository Function"
@@ -30,12 +31,12 @@ func main() {
 	app.Action = action
 	app.Flags = NRF.GetCliCmd()
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		logger.AppLog.Fatalf("NRF run error: %v", err)
 	}
 }
 
-func action(c *cli.Context) error {
+func action(ctx context.Context, c *cli.Command) error {
 	if err := NRF.Initialize(c); err != nil {
 		logger.CfgLog.Errorf("%+v", err)
 		return fmt.Errorf("failed to initialize")

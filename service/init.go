@@ -29,7 +29,7 @@ import (
 	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -46,7 +46,7 @@ type (
 var config Config
 
 var nrfCLi = []cli.Flag{
-	cli.StringFlag{
+	&cli.StringFlag{
 		Name:     "cfg",
 		Usage:    "nrf config file",
 		Required: true,
@@ -63,7 +63,7 @@ func (*NRF) GetCliCmd() (flags []cli.Flag) {
 	return nrfCLi
 }
 
-func (nrf *NRF) Initialize(c *cli.Context) error {
+func (nrf *NRF) Initialize(c *cli.Command) error {
 	config = Config{
 		cfg: c.String("cfg"),
 	}
@@ -200,9 +200,9 @@ func (nrf *NRF) setLogLevel() {
 	}
 }
 
-func (nrf *NRF) FilterCli(c *cli.Context) (args []string) {
+func (nrf *NRF) FilterCli(c *cli.Command) (args []string) {
 	for _, flag := range nrf.GetCliCmd() {
-		name := flag.GetName()
+		name := flag.Names()[0]
 		value := fmt.Sprint(c.Generic(name))
 		if value == "" {
 			continue
@@ -268,7 +268,7 @@ func (nrf *NRF) Start() {
 	}
 }
 
-func (nrf *NRF) Exec(c *cli.Context) error {
+func (nrf *NRF) Exec(c *cli.Command) error {
 	initLog.Debugln("args:", c.String("cfg"))
 	args := nrf.FilterCli(c)
 	initLog.Debugln("filter:", args)
