@@ -85,7 +85,7 @@ func (nrf *NRF) Initialize(c *cli.Context) error {
 
 	factory.NrfConfig.CfgLocation = absPath
 
-	context.Init()
+	context.InitNrfContext()
 
 	go polling.PollNetworkConfig()
 	return nil

@@ -171,12 +171,12 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			originalDBClient := dbadapter.DBClient
-			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			originalNrfContextPlmnList := context.PlmnList
 			defer func() {
 				dbadapter.DBClient = originalDBClient
-				context.GetSelf().PlmnList = originalNrfContextPlmnList
+				context.PlmnList = originalNrfContextPlmnList
 			}()
-			context.GetSelf().PlmnList = tc.nrfPlmnList
+			context.PlmnList = tc.nrfPlmnList
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile
 			nf.NfType = models.NfType_AUSF
@@ -217,12 +217,12 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			originalDBClient := dbadapter.DBClient
-			originalNrfContextPlmnList := context.GetSelf().PlmnList
+			originalNrfContextPlmnList := context.PlmnList
 			defer func() {
 				dbadapter.DBClient = originalDBClient
-				context.GetSelf().PlmnList = originalNrfContextPlmnList
+				context.PlmnList = originalNrfContextPlmnList
 			}()
-			context.GetSelf().PlmnList = tc.nrfPlmnList
+			context.PlmnList = tc.nrfPlmnList
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile
 			nf.NfType = models.NfType_AUSF

@@ -31,7 +31,6 @@ const (
 // PollNetworkConfig makes a HTTP GET request to the webconsole and updates the network configuration
 func PollNetworkConfig() {
 	interval := INITIAL_POLLING_INTERVAL
-	nrfContext := nrfContext.GetSelf()
 
 	for {
 		time.Sleep(interval)
@@ -43,7 +42,7 @@ func PollNetworkConfig() {
 		}
 		logger.PollConfigLog.Infoln("configuration polled successfully")
 		interval = INITIAL_POLLING_INTERVAL
-		handlePolledPlmnConfig(nrfContext, newPlmnConfig)
+		handlePolledPlmnConfig(newPlmnConfig)
 	}
 }
 
@@ -90,7 +89,7 @@ func fetchPlmnConfig() ([]models.PlmnId, error) {
 	}
 }
 
-func handlePolledPlmnConfig(nrfContext *nrfContext.NRFContext, newPlmnConfig []models.PlmnId) {
+func handlePolledPlmnConfig(newPlmnConfig []models.PlmnId) {
 	if reflect.DeepEqual(nrfContext.PlmnList, newPlmnConfig) {
 		logger.PollConfigLog.Debugln("PLMN config did not change")
 		return

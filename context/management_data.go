@@ -53,7 +53,7 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if len(nrfContext.PlmnList) == 0 {
+	if len(PlmnList) == 0 {
 		if nfprofile.PlmnList == nil || len(*nfprofile.PlmnList) == 0 {
 			// logically NF should send PLMN else we need to wait for config from webconsole
 			return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
@@ -93,8 +93,8 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 		nf.PlmnList = &a
 	} else {
 		// NF did not provide PlmnList. Use local PlmnList
-		plmnList := make([]models.PlmnId, len(nrfContext.PlmnList))
-		copy(plmnList, nrfContext.PlmnList)
+		plmnList := make([]models.PlmnId, len(PlmnList))
+		copy(plmnList, PlmnList)
 		nf.PlmnList = &plmnList
 	}
 	// fqdn
