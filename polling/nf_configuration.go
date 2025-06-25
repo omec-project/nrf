@@ -37,7 +37,7 @@ func PollNetworkConfig() {
 		newPlmnConfig, err := fetchPlmnConfig()
 		if err != nil {
 			interval = minDuration(interval*time.Duration(POLLING_BACKOFF_FACTOR), POLLING_MAX_BACKOFF)
-			logger.PollConfigLog.Errorf("error polling network configuration. Will retry in %v: ", interval, err)
+			logger.PollConfigLog.Errorf("error polling network configuration. Will retry in %v: %s", interval, err)
 			continue
 		}
 		logger.PollConfigLog.Infoln("configuration polled successfully")

@@ -92,6 +92,8 @@ func TestFetchPlmnConfig(t *testing.T) {
 				w.WriteHeader(tc.statusCode)
 				_, _ = w.Write([]byte(tc.responseBody))
 			}
+			origFactoryNrfConfig := factory.NrfConfig
+			defer func() { factory.NrfConfig = origFactoryNrfConfig }()
 			server := httptest.NewServer(http.HandlerFunc(handler))
 			defer server.Close()
 

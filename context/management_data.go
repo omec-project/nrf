@@ -93,9 +93,9 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 		nf.PlmnList = &a
 	} else {
 		// NF did not provide PlmnList. Use local PlmnList
-		plmnList := make([]models.PlmnId, len(PlmnList))
-		copy(plmnList, PlmnList)
-		nf.PlmnList = &plmnList
+		nfPlmnList := make([]models.PlmnId, len(PlmnList))
+		copy(nfPlmnList, PlmnList)
+		nf.PlmnList = &nfPlmnList
 	}
 	// fqdn
 	if nfprofile.Fqdn != "" {
