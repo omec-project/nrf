@@ -20,8 +20,7 @@ import (
 
 var NrfConfig Config
 
-// InitConfigFactory gets the NrfConfig and subscribes the config pod.
-// TODO: Support configuration update from REST api
+// InitConfigFactory gets the NrfConfig and sets the REST API endpoint used to fetch the configuration from.
 func InitConfigFactory(f string) error {
 	content, err := os.ReadFile(f)
 	if err != nil {

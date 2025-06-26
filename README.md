@@ -35,9 +35,13 @@ Compliance of the 5G Network functions can be found at [5G Compliance](https://d
 
 ## Dynamic Network configuration (via webconsole)
 
-NRF polls the webconsole every 5 seconds to fetch the latest PLMN configuration.
+NRF fetches the latest PLMN configuration from webconsole whenever a network function registers without providing
+a list of supported PLMNs.
+If a network function does not provide a list of supported PLMNs and NRF does not fetch any PLMN from webconsole (or
+webconsole is unreachable), registration fails.
+If a network function provides a list of supported PLMNs, it is registered without NRF fetching the configuration from webconsole.
 
-### Setting Up Polling
+### Setting Up PLMN configuration fetch
 
 Include the `webuiUri` of the webconsole in the configuration file
 ```
@@ -48,7 +52,7 @@ configuration:
 ```
 The scheme (http:// or https://) must be explicitly specified.
 
-## Reach out to us thorugh
+## Reach out to us through
 
 1. #sdcore-dev channel in [ONF Community Slack](https://onf-community.slack.com/)
 2. Raise Github issues
