@@ -38,7 +38,7 @@ Compliance of the 5G Network functions can be found at [5G Compliance](https://d
 
 NRF fetches the latest PLMN configuration from webconsole whenever a network function registers without providing
 a list of supported PLMNs.
-If a network function does not provide a list of supported PLMNs and NRF does not fetch any PLMN from webconsole (or
+If a network function does not provide a list of supported PLMNs and NRF is not able to fetch any PLMN from webconsole (or
 webconsole is unreachable), registration fails.
 If a network function provides a list of supported PLMNs, it is registered without NRF fetching the configuration from webconsole.
 

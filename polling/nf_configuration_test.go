@@ -84,6 +84,7 @@ func TestFetchPlmnConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			originalNrfConfig := factory.NrfConfig
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				accept := r.Header.Get("Accept")
 				assert.Equal(t, "application/json", accept)
@@ -93,9 +94,16 @@ func TestFetchPlmnConfig(t *testing.T) {
 				_, _ = w.Write([]byte(tc.responseBody))
 			}
 			server := httptest.NewServer(http.HandlerFunc(handler))
-			defer server.Close()
-
-			fetchedConfig, err := FetchPlmnConfig(server.URL)
+			defer func() {
+				factory.NrfConfig = originalNrfConfig
+				server.Close()
+			}()
+			factory.NrfConfig = factory.Config{
+				Configuration: &factory.Configuration{
+					WebuiUri: server.URL,
+				},
+			}
+			fetchedConfig, err := FetchPlmnConfig()
 
 			if tc.expectedError == "" {
 				if err != nil {

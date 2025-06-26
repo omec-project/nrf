@@ -24,10 +24,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const (
-	NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
-	PLMNCONFIG_ENDPOINT       = "/nfconfig/plmn"
-)
+const NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
 
 // Generates a random int between 0 and 99
 func GenerateRandomNumber() (int, error) {
@@ -58,12 +55,9 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	nfPlmnList, err := handleNfPlmnList(nfprofile.PlmnList)
+	nfPlmnList, err := buildNfProfilePlmnList(nfprofile.PlmnList)
 	if err != nil {
-		return fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
-	}
-	if len(nfPlmnList) == 0 {
-		return fmt.Errorf("PLMN config not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
+		return err
 	}
 
 	nnrfNFManagementCondition(nf, nfprofile, nfPlmnList)
@@ -72,15 +66,18 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 	return nil
 }
 
-func handleNfPlmnList(nfPlmnList *[]models.PlmnId) ([]models.PlmnId, error) {
+func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnId, error) {
 	// NF provided a list of supported PLMNs
-	if nfPlmnList != nil && len(*nfPlmnList) != 0 {
-		return *nfPlmnList, nil
+	if nfProvidedPlmnList != nil && len(*nfProvidedPlmnList) != 0 {
+		return *nfProvidedPlmnList, nil
 	} else {
 		// NF did not provide supported PLMNs: fetch from webconsole
-		supportedPlmnList, err := polling.FetchPlmnConfig(factory.NrfConfig.Configuration.WebuiUri + PLMNCONFIG_ENDPOINT)
+		supportedPlmnList, err := polling.FetchPlmnConfig()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
+		}
+		if len(supportedPlmnList) == 0 {
+			return nil, fmt.Errorf("PLMN config not provided by NF and no local PLMN config available")
 		}
 		return supportedPlmnList, nil
 	}

@@ -14,14 +14,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/openapi/models"
 )
 
-var FetchPlmnConfig = func(endpoint string) ([]models.PlmnId, error) {
+const PLMNCONFIG_ENDPOINT = "/nfconfig/plmn"
+
+var FetchPlmnConfig = func() ([]models.PlmnId, error) {
+	plmnConfigEndpoint := factory.NrfConfig.Configuration.WebuiUri + PLMNCONFIG_ENDPOINT
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, plmnConfigEndpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -30,7 +34,7 @@ var FetchPlmnConfig = func(endpoint string) ([]models.PlmnId, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP GET %v failed: %w", endpoint, err)
+		return nil, fmt.Errorf("HTTP GET %v failed: %w", plmnConfigEndpoint, err)
 	}
 	defer resp.Body.Close()
 

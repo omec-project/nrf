@@ -177,14 +177,14 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var webconsoleCalled bool
+			webconsoleCalled := false
 			originalDBClient := dbadapter.DBClient
 			originalFetchPlmnConfig := polling.FetchPlmnConfig
 			defer func() {
 				dbadapter.DBClient = originalDBClient
 				polling.FetchPlmnConfig = originalFetchPlmnConfig
 			}()
-			polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+			polling.FetchPlmnConfig = func() ([]models.PlmnId, error) {
 				webconsoleCalled = true
 				return tc.nrfPlmnList, nil
 			}
@@ -237,7 +237,7 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 				dbadapter.DBClient = originalDBClient
 				polling.FetchPlmnConfig = originalFetchPlmnConfig
 			}()
-			polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+			polling.FetchPlmnConfig = func() ([]models.PlmnId, error) {
 				webconsoleCalled = true
 				return tc.nrfPlmnList, nil
 			}
@@ -265,7 +265,7 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 		dbadapter.DBClient = originalDBClient
 		polling.FetchPlmnConfig = originalFetchPlmnConfig
 	}()
-	polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+	polling.FetchPlmnConfig = func() ([]models.PlmnId, error) {
 		return nil, errors.New("http error")
 	}
 	dbadapter.DBClient = &MockMongoDBClient{}
