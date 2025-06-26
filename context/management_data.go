@@ -17,12 +17,16 @@ import (
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/polling"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
+const (
+	NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
+	PLMNCONFIG_ENDPOINT       = "/nfconfig/plmn"
+)
 
 // Generates a random int between 0 and 99
 func GenerateRandomNumber() (int, error) {
@@ -53,17 +57,32 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if len(PlmnList) == 0 {
-		if nfprofile.PlmnList == nil || len(*nfprofile.PlmnList) == 0 {
-			// logically NF should send PLMN else we need to wait for config from webconsole
-			return fmt.Errorf("PlmnList not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
-		}
+	nfPlmnList, err := handleNfPlmnList(nfprofile.PlmnList)
+	if err != nil {
+		return fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
+	}
+	if len(nfPlmnList) == 0 {
+		return fmt.Errorf("PLMN config not provided by NF and no local PLMN config available. NFType - %v", nfprofile.NfType)
 	}
 
-	nnrfNFManagementCondition(nf, nfprofile)
+	nnrfNFManagementCondition(nf, nfprofile, nfPlmnList)
 	nnrfNFManagementOption(nf, nfprofile)
 
 	return nil
+}
+
+func handleNfPlmnList(nfPlmnList *[]models.PlmnId) ([]models.PlmnId, error) {
+	// NF provided a list of supported PLMNs
+	if nfPlmnList != nil && len(*nfPlmnList) != 0 {
+		return *nfPlmnList, nil
+	} else {
+		// NF did not provide supported PLMNs: fetch from webconsole
+		supportedPlmnList, err := polling.FetchPlmnConfig(factory.NrfConfig.Configuration.WebuiUri + PLMNCONFIG_ENDPOINT)
+		if err != nil {
+			return nil, err
+		}
+		return supportedPlmnList, nil
+	}
 }
 
 func SetsubscriptionId() string {
@@ -74,7 +93,7 @@ func SetsubscriptionId() string {
 	return strconv.Itoa(x)
 }
 
-func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
+func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile, supportedPlmnList []models.PlmnId) {
 	// HeartBeatTimer
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
 		// setting 1day keepAliveTimer value
@@ -86,17 +105,7 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
 	logger.ManagementLog.Infof("HeartBeat Timer value: %v sec", nf.HeartBeatTimer)
 
-	// PlmnList
-	if nfprofile.PlmnList != nil && len(*nfprofile.PlmnList) != 0 {
-		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
-		copy(a, *nfprofile.PlmnList)
-		nf.PlmnList = &a
-	} else {
-		// NF did not provide PlmnList. Use local PlmnList
-		nfPlmnList := make([]models.PlmnId, len(PlmnList))
-		copy(nfPlmnList, PlmnList)
-		nf.PlmnList = &nfPlmnList
-	}
+	nf.PlmnList = &supportedPlmnList
 	// fqdn
 	if nfprofile.Fqdn != "" {
 		nf.Fqdn = nfprofile.Fqdn

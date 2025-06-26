@@ -92,17 +92,10 @@ func TestFetchPlmnConfig(t *testing.T) {
 				w.WriteHeader(tc.statusCode)
 				_, _ = w.Write([]byte(tc.responseBody))
 			}
-			origFactoryNrfConfig := factory.NrfConfig
-			defer func() { factory.NrfConfig = origFactoryNrfConfig }()
 			server := httptest.NewServer(http.HandlerFunc(handler))
 			defer server.Close()
 
-			factory.NrfConfig = factory.Config{
-				Configuration: &factory.Configuration{
-					WebuiUri: server.URL,
-				},
-			}
-			fetchedConfig, err := fetchPlmnConfig()
+			fetchedConfig, err := FetchPlmnConfig(server.URL)
 
 			if tc.expectedError == "" {
 				if err != nil {

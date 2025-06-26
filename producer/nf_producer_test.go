@@ -6,14 +6,15 @@ package producer_test
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/polling"
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi/models"
 	"go.mongodb.org/mongo-driver/bson"
@@ -97,6 +98,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 		nrfPlmnList               []models.PlmnId
 		nfPlmnList                *[]models.PlmnId
 		expectedNfProfilePlmnList []models.PlmnId
+		expectedWebconsoleCalled  bool
 	}{
 		{
 			name: "NF with no provided PLMNs and NRF with PLMNs",
@@ -113,6 +115,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
+			expectedWebconsoleCalled: true,
 		},
 		{
 			name: "NF with provided empty PLMNs and NRF with PLMNs",
@@ -129,6 +132,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
+			expectedWebconsoleCalled: true,
 		},
 		{
 			name: "NF with provided PLMNs and NRF with PLMNs",
@@ -150,6 +154,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
+			expectedWebconsoleCalled: false,
 		},
 		{
 			name:        "NF with provided PLMNs and NRF with no PLMNs",
@@ -166,17 +171,22 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
+			expectedWebconsoleCalled: false,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var webconsoleCalled bool
 			originalDBClient := dbadapter.DBClient
-			originalNrfContextPlmnList := context.PlmnList
+			originalFetchPlmnConfig := polling.FetchPlmnConfig
 			defer func() {
 				dbadapter.DBClient = originalDBClient
-				context.PlmnList = originalNrfContextPlmnList
+				polling.FetchPlmnConfig = originalFetchPlmnConfig
 			}()
-			context.PlmnList = tc.nrfPlmnList
+			polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+				webconsoleCalled = true
+				return tc.nrfPlmnList, nil
+			}
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile
 			nf.NfType = models.NfType_AUSF
@@ -192,6 +202,9 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			json.Unmarshal(rawNfPlmns, &nfPlmns)
 			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, nfPlmns) {
 				t.Errorf("Expected %v, got %v", tc.expectedNfProfilePlmnList, nfPlmns)
+			}
+			if tc.expectedWebconsoleCalled != webconsoleCalled {
+				t.Errorf("Expected webconsole calls: %v, got: %v", tc.expectedWebconsoleCalled, webconsoleCalled)
 			}
 		})
 	}
@@ -216,13 +229,17 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			webconsoleCalled := false
 			originalDBClient := dbadapter.DBClient
-			originalNrfContextPlmnList := context.PlmnList
+			originalFetchPlmnConfig := polling.FetchPlmnConfig
 			defer func() {
 				dbadapter.DBClient = originalDBClient
-				context.PlmnList = originalNrfContextPlmnList
+				polling.FetchPlmnConfig = originalFetchPlmnConfig
 			}()
-			context.PlmnList = tc.nrfPlmnList
+			polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+				webconsoleCalled = true
+				return tc.nrfPlmnList, nil
+			}
 			dbadapter.DBClient = &MockMongoDBClient{}
 			var nf models.NfProfile
 			nf.NfType = models.NfType_AUSF
@@ -233,6 +250,30 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 			if err == nil {
 				t.Errorf("Expected error, got: %v", data)
 			}
+			if !webconsoleCalled {
+				t.Error("Expected webconsole to be called, it was not")
+			}
 		})
+	}
+}
+
+func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	originalFetchPlmnConfig := polling.FetchPlmnConfig
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+		polling.FetchPlmnConfig = originalFetchPlmnConfig
+	}()
+	polling.FetchPlmnConfig = func(string) ([]models.PlmnId, error) {
+		return nil, errors.New("http error")
+	}
+	dbadapter.DBClient = &MockMongoDBClient{}
+	var nf models.NfProfile
+	nf.NfType = models.NfType_AUSF
+	nf.NfInstanceId = uuid.New().String()
+	nf.NfStatus = models.NfStatus_REGISTERED
+	_, data, err := producer.NFRegisterProcedure(nf)
+	if err == nil {
+		t.Errorf("Expected error, got: %v", data)
 	}
 }

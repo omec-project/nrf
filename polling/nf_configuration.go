@@ -11,47 +11,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 	"strings"
 	"time"
 
-	nrfContext "github.com/omec-project/nrf/context"
-	"github.com/omec-project/nrf/factory"
-	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 )
 
-const (
-	INITIAL_POLLING_INTERVAL = 5 * time.Second
-	POLLING_MAX_BACKOFF      = 40 * time.Second
-	POLLING_BACKOFF_FACTOR   = 2
-	POLLING_PATH             = "/nfconfig/plmn"
-)
-
-// PollNetworkConfig makes a HTTP GET request to the webconsole and updates the network configuration
-func PollNetworkConfig() {
-	interval := INITIAL_POLLING_INTERVAL
-
-	for {
-		time.Sleep(interval)
-		newPlmnConfig, err := fetchPlmnConfig()
-		if err != nil {
-			interval = minDuration(interval*time.Duration(POLLING_BACKOFF_FACTOR), POLLING_MAX_BACKOFF)
-			logger.PollConfigLog.Errorf("error polling network configuration. Will retry in %v: %s", interval, err)
-			continue
-		}
-		logger.PollConfigLog.Infoln("configuration polled successfully")
-		interval = INITIAL_POLLING_INTERVAL
-		handlePolledPlmnConfig(newPlmnConfig)
-	}
-}
-
-func fetchPlmnConfig() ([]models.PlmnId, error) {
-	pollingEndpoint := factory.NrfConfig.Configuration.WebuiUri + POLLING_PATH
+var FetchPlmnConfig = func(endpoint string) ([]models.PlmnId, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pollingEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -60,7 +30,7 @@ func fetchPlmnConfig() ([]models.PlmnId, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP GET %v failed: %w", pollingEndpoint, err)
+		return nil, fmt.Errorf("HTTP GET %v failed: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
 
@@ -87,20 +57,4 @@ func fetchPlmnConfig() ([]models.PlmnId, error) {
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-}
-
-func handlePolledPlmnConfig(newPlmnConfig []models.PlmnId) {
-	if reflect.DeepEqual(nrfContext.PlmnList, newPlmnConfig) {
-		logger.PollConfigLog.Debugln("PLMN config did not change")
-		return
-	}
-	nrfContext.PlmnList = newPlmnConfig
-	logger.PollConfigLog.Infof("PLMN config changed. New PLMN ID list: %v", nrfContext.PlmnList)
-}
-
-func minDuration(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
 }
