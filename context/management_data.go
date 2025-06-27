@@ -70,17 +70,16 @@ func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnI
 	// NF provided a list of supported PLMNs
 	if nfProvidedPlmnList != nil && len(*nfProvidedPlmnList) != 0 {
 		return *nfProvidedPlmnList, nil
-	} else {
-		// NF did not provide supported PLMNs: fetch from webconsole
-		supportedPlmnList, err := polling.FetchPlmnConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
-		}
-		if len(supportedPlmnList) == 0 {
-			return nil, fmt.Errorf("PLMN config not provided by NF and no local PLMN config available")
-		}
-		return supportedPlmnList, nil
 	}
+	// NF did not provide supported PLMNs: fetch from webconsole
+	supportedPlmnList, err := polling.FetchPlmnConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
+	}
+	if len(supportedPlmnList) == 0 {
+		return nil, fmt.Errorf("PLMN config not provided by NF and no local PLMN config available")
+	}
+	return supportedPlmnList, nil
 }
 
 func SetsubscriptionId() string {
