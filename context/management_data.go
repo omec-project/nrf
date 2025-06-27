@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Intel Corporation
+// SPDX-FileCopyrightText: 2025 Canonical Ltd
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -17,6 +18,7 @@ import (
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/polling"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"go.mongodb.org/mongo-driver/bson"
@@ -53,16 +55,31 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return fmt.Errorf("NfStatus field is required")
 	}
 
-	if nfprofile.PlmnList == nil && !factory.MinConfigAvailable && factory.ManagedByConfigPod {
-		// logically NF should send PLMN else we need to wait for min config
-		return fmt.Errorf("PlmnList absent. Local default config not available. NFType - %v", nfprofile.NfType)
+	nfPlmnList, err := buildNfProfilePlmnList(nfprofile.PlmnList)
+	if err != nil {
+		return err
 	}
-	// TODO : add plmn validation ??
 
-	nnrfNFManagementCondition(nf, nfprofile)
+	nnrfNFManagementCondition(nf, nfprofile, nfPlmnList)
 	nnrfNFManagementOption(nf, nfprofile)
 
 	return nil
+}
+
+func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnId, error) {
+	// NF provided a list of supported PLMNs
+	if nfProvidedPlmnList != nil && len(*nfProvidedPlmnList) != 0 {
+		return *nfProvidedPlmnList, nil
+	}
+	// NF did not provide supported PLMNs: fetch from webconsole
+	supportedPlmnList, err := polling.FetchPlmnConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
+	}
+	if len(supportedPlmnList) == 0 {
+		return nil, fmt.Errorf("PLMN config not provided by NF and no local PLMN config available")
+	}
+	return supportedPlmnList, nil
 }
 
 func SetsubscriptionId() string {
@@ -73,7 +90,7 @@ func SetsubscriptionId() string {
 	return strconv.Itoa(x)
 }
 
-func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
+func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile, supportedPlmnList []models.PlmnId) {
 	// HeartBeatTimer
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
 		// setting 1day keepAliveTimer value
@@ -83,18 +100,9 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile)
 		factory.NrfConfig.Configuration.NfKeepAliveTime = 60
 	}
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
-	logger.ManagementLog.Infof("HearBeat Timer value: %v sec", nf.HeartBeatTimer)
+	logger.ManagementLog.Infof("HeartBeat Timer value: %v sec", nf.HeartBeatTimer)
 
-	// PlmnList
-	if nfprofile.PlmnList != nil {
-		a := make([]models.PlmnId, len(*nfprofile.PlmnList))
-		copy(a, *nfprofile.PlmnList)
-		nf.PlmnList = &a
-	} else {
-		nf.PlmnList = &[]models.PlmnId{
-			factory.NrfConfig.Configuration.DefaultPlmnId,
-		}
-	}
+	nf.PlmnList = &supportedPlmnList
 	// fqdn
 	if nfprofile.Fqdn != "" {
 		nf.Fqdn = nfprofile.Fqdn
