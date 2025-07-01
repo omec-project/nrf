@@ -101,10 +101,10 @@ jobs:
           docker build -t "${IMAGE_NAME}:testing" .
 
           # save and import into containerd for RKE2
-          docker tag ausf:testing local/ausf:testing
-          docker save local/ausf:testing -o /tmp/ausf.tar
-          sudo ctr -n k8s.io images import /tmp/ausf.tar
-          sudo ctr -n k8s.io images ls | grep local/ausf:testing
+          docker tag ${IMAGE_NAME}:testing local/${IMAGE_NAME}:testing
+          docker save local/${IMAGE_NAME}:testing -o /tmp/${IMAGE_NAME}.tar
+          sudo ctr -n k8s.io images import /tmp/${IMAGE_NAME}.tar
+          sudo ctr -n k8s.io images ls | grep local/${IMAGE_NAME}:testing
 
           # patch K8s deployment
           kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=${IMAGE_NAME}:testing" -n aether-5gc
