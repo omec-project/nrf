@@ -109,7 +109,7 @@ jobs:
           
           # patch K8s deployment
           kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=docker.io/local/${IMAGE_NAME}:testing" -n aether-5gc
-          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" -p '{"spec":{"template":{"spec":{"containers":[{"name":"'${IMAGE_NAME}'","image":"docker.io/local/'${IMAGE_NAME}':testing","imagePullPolicy":"Never"}]}}}}'
+          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" -p '{"spec":{"template":{"spec":{"containers":[{"name":"'${IMAGE_NAME}'","image":"docker.io/local/'${IMAGE_NAME}':testing"}]}}}}'
 
       - name: Install GNBSIM
 
