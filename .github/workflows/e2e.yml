@@ -100,16 +100,16 @@ jobs:
 
           docker build -t "${IMAGE_NAME}:testing" .
 
+
           # save and import into containerd for RKE2
-          docker tag ${IMAGE_NAME}:testing local/${IMAGE_NAME}:testing
-          docker save local/${IMAGE_NAME}:testing -o /tmp/${IMAGE_NAME}.tar
+          docker tag ${IMAGE_NAME}:testing docker.io/local/${IMAGE_NAME}:testing
+          docker save docker.io/local/${IMAGE_NAME}:testing -o /tmp/${IMAGE_NAME}.tar
           sudo ctr -n k8s.io images import /tmp/${IMAGE_NAME}.tar
           sudo ctr -n k8s.io images ls | grep local/${IMAGE_NAME}:testing
-
+          
           # patch K8s deployment
-          kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=local/${IMAGE_NAME}:testing" -n aether-5gc
-          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" \
-          -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"${IMAGE_NAME}\",\"image\":\"local/${IMAGE_NAME}:testing\",\"imagePullPolicy\":\"Never\"}]}}}}"
+          kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=docker.io/local/${IMAGE_NAME}:testing" -n aether-5gc
+          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" -p '{"spec":{"template":{"spec":{"containers":[{"name":"'${IMAGE_NAME}'","image":"docker.io/local/'${IMAGE_NAME}':testing","imagePullPolicy":"Never"}]}}}}'
 
       - name: Install GNBSIM
 
