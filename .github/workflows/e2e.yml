@@ -107,11 +107,12 @@ jobs:
           sudo ctr -n k8s.io images ls | grep local/${IMAGE_NAME}:testing
 
           # patch K8s deployment
-          kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=${IMAGE_NAME}:testing" -n aether-5gc
+          kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=local/${IMAGE_NAME}:testing" -n aether-5gc
           kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" \
-            -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"${IMAGE_NAME}\",\"image\":\"${IMAGE_NAME}:testing\",\"imagePullPolicy\":\"Never\"}]}}}}"
+          -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"${IMAGE_NAME}\",\"image\":\"local/${IMAGE_NAME}:testing\",\"imagePullPolicy\":\"Never\"}]}}}}"
 
       - name: Install GNBSIM
+
         working-directory: aether-onramp
         run: |
           set -e
