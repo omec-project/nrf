@@ -55,5 +55,5 @@ The scheme (http:// or https://) must be explicitly specified.
 
 ## Reach out to us through
 
-1. #sdcore-dev channel in [ONF Community Slack](https://onf-community.slack.com/)
+1. #sdcore-dev channel in [ONF Community Slack](https://aether5g-project.slack.com/)
 2. Raise Github issues

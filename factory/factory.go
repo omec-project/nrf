@@ -21,7 +21,8 @@ import (
 
 var NrfConfig Config
 
-// InitConfigFactory gets the NrfConfig and sets the REST API endpoint used to fetch the configuration from.
+// InitConfigFactory gets the NrfConfig and sets the REST API endpoint used to
+// fetch the configuration from.
 func InitConfigFactory(f string) error {
 	content, err := os.ReadFile(f)
 	if err != nil {
@@ -33,7 +34,7 @@ func InitConfigFactory(f string) error {
 		return yamlErr
 	}
 	if NrfConfig.Configuration.WebuiUri == "" {
-		NrfConfig.Configuration.WebuiUri = "http://webui:9876"
+		NrfConfig.Configuration.WebuiUri = "http://webui:5001"
 		logger.CfgLog.Infof("webuiUri not set in configuration file. Using %v", NrfConfig.Configuration.WebuiUri)
 		return nil
 	}
@@ -62,7 +63,7 @@ func validateWebuiUri(uri string) error {
 	if parsedUrl.Scheme != "http" && parsedUrl.Scheme != "https" {
 		return fmt.Errorf("unsupported scheme for webuiUri: %s", parsedUrl.Scheme)
 	}
-	if parsedUrl.Host == "" {
+	if parsedUrl.Hostname() == "" {
 		return fmt.Errorf("missing host in webuiUri")
 	}
 	return nil

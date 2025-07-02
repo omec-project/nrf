@@ -347,7 +347,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	// NF Down Notification to other instances of same NfType
 	if len(nfProfiles) != 0 {
 		sendNFDownNotification(nfProfiles[0], nfInstanceID)
-		uriList := nrfContext.GetNofificationUri(nfProfiles[0])
+		uriList := nrfContext.GetNotificationUri(nfProfiles[0])
 		nfInstanceUri := nrfContext.GetNfInstanceURI(nfInstanceID)
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_DEREGISTERED
@@ -506,7 +506,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	// Update NF Profile case
 	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
-		uriList := nrfContext.GetNofificationUri(nf)
+		uriList := nrfContext.GetNotificationUri(nf)
 
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_PROFILE_CHANGED
@@ -525,7 +525,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		return header, putData, nil
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("Create NF Profile ", nfProfile.NfType)
-		uriList := nrfContext.GetNofificationUri(nf)
+		uriList := nrfContext.GetNotificationUri(nf)
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_REGISTERED
 		nfInstanceUri := locationHeaderValue

@@ -60,7 +60,8 @@ func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile)
 		return err
 	}
 
-	nnrfNFManagementCondition(nf, nfprofile, nfPlmnList)
+	nnrfNFManagementCondition(nf, nfprofile)
+	nf.PlmnList = &nfPlmnList
 	nnrfNFManagementOption(nf, nfprofile)
 
 	return nil
@@ -90,7 +91,7 @@ func SetsubscriptionId() string {
 	return strconv.Itoa(x)
 }
 
-func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile, supportedPlmnList []models.PlmnId) {
+func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
 	// HeartBeatTimer
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
 		// setting 1day keepAliveTimer value
@@ -102,7 +103,6 @@ func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile,
 	nf.HeartBeatTimer = factory.NrfConfig.Configuration.NfKeepAliveTime
 	logger.ManagementLog.Infof("HeartBeat Timer value: %v sec", nf.HeartBeatTimer)
 
-	nf.PlmnList = &supportedPlmnList
 	// fqdn
 	if nfprofile.Fqdn != "" {
 		nf.Fqdn = nfprofile.Fqdn
@@ -508,7 +508,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 	UL.Link = *b
 }
 
-func GetNofificationUri(nfProfile models.NfProfile) []string {
+func GetNotificationUri(nfProfile models.NfProfile) []string {
 	var uriList []string
 
 	// nfTypeCond

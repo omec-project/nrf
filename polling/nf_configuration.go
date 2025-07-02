@@ -18,10 +18,10 @@ import (
 	"github.com/omec-project/openapi/models"
 )
 
-const PLMNCONFIG_ENDPOINT = "/nfconfig/plmn"
+const PlmnConfigEndpoint = "/nfconfig/plmn"
 
 var FetchPlmnConfig = func() ([]models.PlmnId, error) {
-	plmnConfigEndpoint := factory.NrfConfig.Configuration.WebuiUri + PLMNCONFIG_ENDPOINT
+	plmnConfigEndpoint := factory.NrfConfig.Configuration.WebuiUri + PlmnConfigEndpoint
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
