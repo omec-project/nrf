@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2025 Canonical Ltd
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -13,7 +14,6 @@ import (
 	"os"
 	"strconv"
 
-	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 	utilLogger "github.com/omec-project/util/logger"
@@ -42,16 +42,14 @@ type Info struct {
 }
 
 type Configuration struct {
-	Sbi                   *Sbi              `yaml:"sbi,omitempty"`
-	MongoDBName           string            `yaml:"MongoDBName"`
-	MongoDBUrl            string            `yaml:"MongoDBUrl"`
-	WebuiUri              string            `yaml:"webuiUri"`
-	DefaultPlmnId         models.PlmnId     `yaml:"DefaultPlmnId"`
-	ServiceNameList       []string          `yaml:"serviceNameList,omitempty"`
-	PlmnSupportList       []PlmnSupportItem `yaml:"plmnSupportList,omitempty"`
-	NfKeepAliveTime       int32             `yaml:"nfKeepAliveTime,omitempty"`
-	MongoDBStreamEnable   bool              `yaml:"mongoDBStreamEnable"`
-	NfProfileExpiryEnable bool              `yaml:"nfProfileExpiryEnable"`
+	Sbi                   *Sbi     `yaml:"sbi,omitempty"`
+	MongoDBName           string   `yaml:"MongoDBName"`
+	MongoDBUrl            string   `yaml:"MongoDBUrl"`
+	WebuiUri              string   `yaml:"webuiUri"`
+	ServiceNameList       []string `yaml:"serviceNameList,omitempty"`
+	NfKeepAliveTime       int32    `yaml:"nfKeepAliveTime,omitempty"`
+	MongoDBStreamEnable   bool     `yaml:"mongoDBStreamEnable"`
+	NfProfileExpiryEnable bool     `yaml:"nfProfileExpiryEnable"`
 }
 
 type PlmnSupportItem struct {
@@ -71,8 +69,6 @@ type TLS struct {
 	PEM string `yaml:"pem,omitempty"`
 	Key string `yaml:"key,omitempty"`
 }
-
-var MinConfigAvailable bool
 
 func (c *Config) GetVersion() string {
 	if c.Info != nil && c.Info.Version != "" {
@@ -137,30 +133,4 @@ func (c *Config) GetSbiRegisterAddr() string {
 
 func (c *Config) GetSbiUri() string {
 	return c.GetSbiScheme() + "://" + c.GetSbiRegisterAddr()
-}
-
-func (c *Config) UpdateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
-	for rsp := range commChannel {
-		logger.GrpcLog.Infoln("received updateConfig in the nrf app: ", rsp)
-		for _, ns := range rsp.NetworkSlice {
-			logger.GrpcLog.Infoln("Network Slice Name", ns.Name)
-			if ns.Site != nil {
-				logger.GrpcLog.Infoln("Network Slice has site name present")
-				site := ns.Site
-				logger.GrpcLog.Infoln("Site name", site.SiteName)
-				if site.Plmn != nil {
-					logger.GrpcLog.Infoln("Plmn mcc", site.Plmn.Mcc)
-					plmn := PlmnSupportItem{}
-					plmn.PlmnId.Mnc = site.Plmn.Mnc
-					plmn.PlmnId.Mcc = site.Plmn.Mcc
-					NrfConfig.Configuration.PlmnSupportList = append(NrfConfig.Configuration.PlmnSupportList, plmn)
-				} else {
-					logger.GrpcLog.Infoln("Plmn not present in the message")
-				}
-			}
-		}
-		logger.GrpcLog.Infoln("minimum config Available")
-		MinConfigAvailable = true
-	}
-	return true
 }

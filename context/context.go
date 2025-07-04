@@ -15,10 +15,7 @@ import (
 	"github.com/omec-project/openapi/models"
 )
 
-var (
-	NrfNfProfile     models.NfProfile
-	Nrf_NfInstanceID string
-)
+var NrfNfProfile models.NfProfile
 
 func InitNrfContext() {
 	config := factory.NrfConfig
@@ -30,7 +27,6 @@ func InitNrfContext() {
 	NrfNfProfile.NfStatus = models.NfStatus_REGISTERED
 
 	serviceNameList := configuration.ServiceNameList
-
 	NFServices := InitNFService(serviceNameList, config.Info.Version)
 	NrfNfProfile.NfServices = &NFServices
 }
