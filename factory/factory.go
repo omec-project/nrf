@@ -30,8 +30,8 @@ func InitConfigFactory(f string) error {
 	}
 	NrfConfig = Config{}
 
-	if yamlErr := yaml.Unmarshal(content, &NrfConfig); yamlErr != nil {
-		return yamlErr
+	if err = yaml.Unmarshal(content, &NrfConfig); err != nil {
+		return err
 	}
 	if NrfConfig.Configuration.WebuiUri == "" {
 		NrfConfig.Configuration.WebuiUri = "http://webui:5001"

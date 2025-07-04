@@ -73,10 +73,12 @@ func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnI
 		return *nfProvidedPlmnList, nil
 	}
 	// NF did not provide supported PLMNs: fetch from webconsole
+	logger.ManagementLog.Warnln("PLMN config not provided by NF, using supported PLMNs from webconsole")
 	supportedPlmnList, err := polling.FetchPlmnConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch PLMN config from webconsole: %v", err)
 	}
+	logger.ManagementLog.Debugf("Fetched PLMN list from webconsole: %+v", supportedPlmnList)
 	if len(supportedPlmnList) == 0 {
 		return nil, fmt.Errorf("PLMN config not provided by NF and no local PLMN config available")
 	}
