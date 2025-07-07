@@ -109,7 +109,8 @@ jobs:
           
           # patch K8s deployment
           kubectl set image deployment/"${IMAGE_NAME}" "${IMAGE_NAME}=docker.io/local/${IMAGE_NAME}:testing" -n aether-5gc
-          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" -p '{"spec":{"template":{"spec":{"containers":[{"name":"'${IMAGE_NAME}'","image":"docker.io/local/'${IMAGE_NAME}':testing"}]}}}}'
+          kubectl -n aether-5gc patch deployment "${IMAGE_NAME}" -p '{"spec":{"template":{"spec":{"containers":[{"name":"'${IMAGE_NAME}'","image":"docker.io/local/'${IMAGE_NAME}':testing",\"imagePullPolicy\":\"Never\"}]}}}}'
+          kubectl rollout restart deployment "${IMAGE_NAME}" -n aether-5gc      
 
       - name: Install GNBSIM
 
@@ -139,16 +140,17 @@ jobs:
         if: always()
         run: |
           set -ex
-          mkdir -p pod-logs
+          mkdir -p logs
+          kubectl get events -A --sort-by='.lastTimestamp' > logs/events.txt
+          kubectl get pods -n aether-5gc -o wide > logs/pods-summary.txt
           for pod in $(kubectl get pods -n aether-5gc -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl logs -n aether-5gc "$pod" > "pod-logs/${pod}.log" 2>&1 || true
-            echo "Collected logs for $pod"
+            kubectl logs -n aether-5gc "$pod" > "logs/${pod}.log" 2>&1 || true
           done
 
       - name: Upload pod logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aether-5gc-pod-logs
-          path: pod-logs/
+          name: aether-5gc-logs
+          path: logs/
 
