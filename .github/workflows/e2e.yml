@@ -120,6 +120,7 @@ jobs:
                   "containers": [
                     {
                       "name": "${IMAGE_NAME}",
+                      "image": "local/${IMAGE_NAME}:testing",
                       "imagePullPolicy": "Never"
                     }
                   ]
