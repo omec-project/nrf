@@ -133,6 +133,7 @@ jobs:
           }
           EOF
           )"
+          # Restart deployment
           kubectl rollout restart deployment "${IMAGE_NAME}" -n aether-5gc      
 
       - name: Install GNBSIM
