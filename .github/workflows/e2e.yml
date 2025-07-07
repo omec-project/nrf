@@ -83,7 +83,6 @@ jobs:
       - name: Patch K8s Deployment to attach local image
         run: |
           set -ex
-
           REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
           REPO_URL="https://github.com/omec-project/${REPO_NAME}"
   
