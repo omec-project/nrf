@@ -86,7 +86,7 @@ jobs:
           REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
           REPO_URL="https://github.com/omec-project/${REPO_NAME}"
           NAMESPACE="aether-5gc"
-  
+          
           git clone ${REPO_URL} ${REPO_NAME} && cd ${REPO_NAME}
 
           if [[ "${GITHUB_REF}" == refs/pull/* ]]; then
@@ -105,10 +105,10 @@ jobs:
           fi
 
           docker build -t "${IMAGE_NAME}:testing" .
-               
+          
           # Save and import Docker image into containerd (used by RKE2) because RKE2 does not use Docker runtime.
           TMP_DIR="${RUNNER_TEMP:-/tmp}"
-          docker save "${IMAGE_NAME}:testing" -o /tmp/${IMAGE_NAME}.tar
+          docker save "${IMAGE_NAME}:testing" -o "${TMP_DIR}/${IMAGE_NAME}.tar"
           sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import "${TMP_DIR}/${IMAGE_NAME}.tar"
           sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images ls | grep "${IMAGE_NAME}:testing"
 
@@ -120,7 +120,7 @@ jobs:
                 "spec": {
                   "containers": [
                     {
-                      "name": "nrf",
+                      "name": "${IMAGE_NAME}",
                       "image": "docker.io/library/${IMAGE_NAME}:testing",
                       "imagePullPolicy": "Never"
                     }
@@ -133,7 +133,6 @@ jobs:
           )"
 
       - name: Install GNBSIM
-
         working-directory: aether-onramp
         run: |
           set -e
