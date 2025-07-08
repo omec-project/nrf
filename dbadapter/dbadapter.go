@@ -29,6 +29,11 @@ type DBInterface interface {
 
 var DBClient DBInterface = nil
 
+var ttlIndexStatusMap = map[bool]string{
+	true:  "created",
+	false: "exists",
+}
+
 type MongoDBClient struct {
 	mongoapi.MongoClient
 }
@@ -76,7 +81,7 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 	if nfProfileExpiryEnable {
 		logger.AppLog.Infoln("NfProfile document expiry enabled")
 		ttlIndexCreated := db.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
-		ttlIndexStatus := map[bool]string{true: "created", false: "exists"}[ttlIndexCreated]
+		ttlIndexStatus := ttlIndexStatusMap[ttlIndexCreated]
 		logger.AppLog.Infof("ttl Index %s for field 'expireAt' in collection 'NfProfile'", ttlIndexStatus)
 	}
 	return DBClient
