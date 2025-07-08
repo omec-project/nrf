@@ -119,7 +119,7 @@ jobs:
                   "containers": [
                     {
                       "name": "nrf",
-                      "image": "local/${IMAGE_NAME}:testing",
+                      "image": "${IMAGE_NAME}:testing",
                       "imagePullPolicy": "Never"
                     }
                   ]
