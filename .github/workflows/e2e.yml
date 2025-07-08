@@ -119,7 +119,7 @@ jobs:
                   "containers": [
                     {
                       "name": "nrf",
-                      "image": "${IMAGE_NAME}:testing",
+                      "image": "docker.io/library/${IMAGE_NAME}:testing",
                       "imagePullPolicy": "Never"
                     }
                   ]
