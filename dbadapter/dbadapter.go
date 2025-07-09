@@ -78,7 +78,7 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		ttlIndexCreated := db.RestfulAPICreateTTLIndex("NfProfile", 0, "expireAt")
 		ttlIndexStatus := "exists"
 		if ttlIndexCreated {
-		    ttlIndexStatus = "created"
+			ttlIndexStatus = "created"
 		}
 		logger.AppLog.Infof("ttl Index %s for field 'expireAt' in collection 'NfProfile'", ttlIndexStatus)
 	}
