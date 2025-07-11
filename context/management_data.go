@@ -37,23 +37,20 @@ func GenerateRandomNumber() (int, error) {
 }
 
 func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile) error {
-	if nfprofile.NfInstanceId != "" {
-		nf.NfInstanceId = nfprofile.NfInstanceId
-	} else {
+	if nfprofile.NfInstanceId == "" {
 		return fmt.Errorf("NfInstanceId field is required")
 	}
+	nf.NfInstanceId = nfprofile.NfInstanceId
 
-	if nfprofile.NfType != "" {
-		nf.NfType = nfprofile.NfType
-	} else {
+	if nfprofile.NfType == "" {
 		return fmt.Errorf("NfType field is required")
 	}
+	nf.NfType = nfprofile.NfType
 
-	if nfprofile.NfStatus != "" {
-		nf.NfStatus = nfprofile.NfStatus
-	} else {
+	if nfprofile.NfStatus == "" {
 		return fmt.Errorf("NfStatus field is required")
 	}
+	nf.NfStatus = nfprofile.NfStatus
 
 	nfPlmnList, err := buildNfProfilePlmnList(nfprofile.PlmnList)
 	if err != nil {
