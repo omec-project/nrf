@@ -1,4 +1,5 @@
 <!--
+SPDX-FileCopyrightText: 2025 Canonical Ltd
 SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 Copyright 2019 free5GC.org
 
@@ -17,7 +18,7 @@ profile from the database and returns it to the caller.
 
 
 ## NRF block diagram
-![UDM Block Diagram](/docs/images/README-NRF.png)
+![NRF Block Diagram](/docs/images/README-NRF.png)
 
 ## Supported Features
 - Registration of Network Functions
@@ -33,7 +34,26 @@ profile from the database and returns it to the caller.
 
 Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
 
-## Reach out to us thorugh
+## Dynamic Network configuration (via webconsole)
 
-1. #sdcore-dev channel in [ONF Community Slack](https://onf-community.slack.com/)
+NRF fetches the latest PLMN configuration from webconsole whenever a network function registers without providing
+a list of supported PLMNs.
+If a network function does not provide a list of supported PLMNs and NRF is not able to fetch any PLMN from webconsole (or
+webconsole is unreachable), registration fails.
+If a network function provides a list of supported PLMNs, it is registered without NRF fetching the configuration from webconsole.
+
+### Setting Up PLMN configuration fetch
+
+Include the `webuiUri` of the webconsole in the configuration file
+```
+configuration:
+  ...
+  webuiUri: https://webui:5001 # or http://webui:5001
+  ...
+```
+The scheme (http:// or https://) must be explicitly specified.
+
+## Reach out to us through
+
+1. #sdcore-dev channel in [ONF Community Slack](https://aether5g-project.slack.com/)
 2. Raise Github issues

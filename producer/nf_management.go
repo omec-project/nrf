@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/mitchellh/mapstructure"
-	nrf_context "github.com/omec-project/nrf/context"
+	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
@@ -204,7 +204,7 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 func CreateSubscriptionProcedure(subscription models.NrfSubscriptionData) (response bson.M,
 	problemDetails *models.ProblemDetails,
 ) {
-	subscription.SubscriptionId = nrf_context.SetsubscriptionId()
+	subscription.SubscriptionId = nrfContext.SetsubscriptionId()
 
 	tmp, err := json.Marshal(subscription)
 	if err != nil {
@@ -257,7 +257,7 @@ func RemoveSubscriptionProcedure(subscriptionID string) {
 	logger.ManagementLog.Infof("removed subscription with ID %s", subscriptionID)
 }
 
-func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.UriList,
+func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.UriList,
 	problemDetail *models.ProblemDetails,
 ) {
 	// nfType := c.Query("nf-type")
@@ -267,7 +267,7 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.Ur
 
 	UL, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	logger.ManagementLog.Infoln("UL: ", UL)
-	originalUL := &nrf_context.UriList{}
+	originalUL := &nrfContext.UriList{}
 	err := mapstructure.Decode(UL, originalUL)
 	if err != nil {
 		logger.ManagementLog.Errorln("Decode error in GetNFInstancesProcedure: ", err)
@@ -279,7 +279,7 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrf_context.Ur
 		}
 		return nil, problemDetail
 	}
-	nrf_context.NnrfUriListLimit(originalUL, limit)
+	nrfContext.NnrfUriListLimit(originalUL, limit)
 	// c.JSON(http.StatusOK, originalUL)
 	return originalUL, nil
 }
@@ -347,8 +347,8 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	// NF Down Notification to other instances of same NfType
 	if len(nfProfiles) != 0 {
 		sendNFDownNotification(nfProfiles[0], nfInstanceID)
-		uriList := nrf_context.GetNofificationUri(nfProfiles[0])
-		nfInstanceUri := nrf_context.GetNfInstanceURI(nfInstanceID)
+		uriList := nrfContext.GetNotificationUri(nfProfiles[0])
+		nfInstanceUri := nrfContext.GetNfInstanceURI(nfInstanceID)
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_DEREGISTERED
 		for _, uri := range uriList {
@@ -460,7 +460,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 ) {
 	logger.ManagementLog.Debugln("[NRF] In NFRegisterProcedure")
 	var nf models.NfProfile
-	err := nrf_context.NnrfNFManagementDataModel(&nf, nfProfile)
+	err := nrfContext.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {
 		logger.ManagementLog.Errorln("NfProfile Validation failed.", err)
 		str1 := fmt.Sprint(nfProfile.HeartBeatTimer)
@@ -473,7 +473,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	}
 
 	// make location header
-	locationHeaderValue := nrf_context.SetLocationHeader(nfProfile)
+	locationHeaderValue := nrfContext.SetLocationHeader(nfProfile)
 
 	// Marshal nf to bson
 	tmp, err := json.Marshal(nf)
@@ -506,7 +506,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 	// Update NF Profile case
 	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
-		uriList := nrf_context.GetNofificationUri(nf)
+		uriList := nrfContext.GetNotificationUri(nf)
 
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_PROFILE_CHANGED
@@ -525,7 +525,7 @@ func NFRegisterProcedure(nfProfile models.NfProfile) (header http.Header, respon
 		return header, putData, nil
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("Create NF Profile ", nfProfile.NfType)
-		uriList := nrf_context.GetNofificationUri(nf)
+		uriList := nrfContext.GetNotificationUri(nf)
 		// set info for NotificationData
 		Notification_event := models.NotificationEventType_REGISTERED
 		nfInstanceUri := locationHeaderValue
