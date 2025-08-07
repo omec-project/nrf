@@ -17,8 +17,8 @@ registration procedure. When the discovery API is called, NRF fetches a matching
 profile from the database and returns it to the caller.
 
 
-## NRF block diagram
-![NRF Block Diagram](/docs/images/README-NRF.png)
+## NRF flow diagram
+![NRF Flow Diagram](/docs/images/README-NRF.png)
 
 ## Supported Features
 - Registration of Network Functions
@@ -36,15 +36,15 @@ Compliance of the 5G Network functions can be found at [5G Compliance](https://d
 
 ## Dynamic Network configuration (via webconsole)
 
-NRF fetches the latest PLMN configuration from webconsole whenever a network function registers without providing
+NRF fetches the latest PLMN configuration from Webconsole whenever a network function registers without providing
 a list of supported PLMNs.
-If a network function does not provide a list of supported PLMNs and NRF is not able to fetch any PLMN from webconsole (or
-webconsole is unreachable), registration fails.
-If a network function provides a list of supported PLMNs, it is registered without NRF fetching the configuration from webconsole.
+If a network function does not provide a list of supported PLMNs and NRF is not able to fetch any PLMN from Webconsole (or
+Webconsole is unreachable), registration fails.
+If a network function provides a list of supported PLMNs, it is registered without NRF fetching the configuration from Webconsole.
 
 ### Setting Up PLMN configuration fetch
 
-Include the `webuiUri` of the webconsole in the configuration file
+Include the `webuiUri` of the Webconsole in the configuration file
 ```
 configuration:
   ...
