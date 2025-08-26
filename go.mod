@@ -12,7 +12,7 @@ require (
 	github.com/omec-project/util v1.5.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/stretchr/testify v1.11.0
-	github.com/urfave/cli/v3 v3.3.8
+	github.com/urfave/cli/v3 v3.4.1
 	go.mongodb.org/mongo-driver v1.17.4
 	go.uber.org/zap v1.27.0
 	gopkg.in/yaml.v2 v2.4.0
