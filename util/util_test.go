@@ -20,7 +20,7 @@ func TestDecode(t *testing.T) {
 	date := time.Now()
 	dateFormat, _ := time.Parse(time.RFC3339, date.Format(time.RFC3339))
 
-	testData1 := map[string]interface{}{
+	testData1 := map[string]any{
 		"NfInstanceId":   "0",
 		"NfType":         models.NfType_NRF,
 		"NfStatus":       models.NfStatus_REGISTERED,
@@ -80,7 +80,7 @@ func TestDecode(t *testing.T) {
 		"BsfInfo":              &models.BsfInfo{},
 		"ChfInfo":              &models.ChfInfo{},
 		"NrfInfo":              &models.NrfInfo{},
-		"CustomInfo":           &map[string]interface{}{},
+		"CustomInfo":           &map[string]any{},
 		"RecoveryTime":         &dateFormat,
 		"NfServicePersistence": true,
 		"NfServices": &[]models.NfService{
@@ -95,7 +95,7 @@ func TestDecode(t *testing.T) {
 		},
 	}
 
-	source := []map[string]interface{}{
+	source := []map[string]any{
 		testData1,
 	}
 
