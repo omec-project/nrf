@@ -12,14 +12,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strconv"
+	"time"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/polling"
-	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -466,7 +467,29 @@ func SetLocationHeader(nfprofile models.NfProfile) string {
 func setUriListByFilter(filter bson.M, uriList *[]string) {
 	filterNfTypeResultsRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
 	var filterNfTypeResults []models.NrfSubscriptionData
-	err := openapi.Convert(filterNfTypeResultsRaw, &filterNfTypeResults)
+	stringToDateTimeHook := func(
+		f reflect.Type,
+		t reflect.Type,
+		data any,
+	) (any, error) {
+		if t == reflect.TypeOf(time.Time{}) && f == reflect.TypeOf("") {
+			return time.Parse(time.RFC3339, data.(string))
+		}
+		return data, nil
+	}
+
+	config := mapstructure.DecoderConfig{
+		DecodeHook: stringToDateTimeHook,
+		Result:     &filterNfTypeResults,
+	}
+
+	decoder, err := mapstructure.NewDecoder(&config)
+	if err != nil {
+		logger.ManagementLog.Errorf("converter setup failed: %v", err)
+		return
+	}
+
+	err = decoder.Decode(filterNfTypeResultsRaw)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 	}

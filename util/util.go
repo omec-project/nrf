@@ -13,12 +13,12 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 )
 
-func MarshToJsonString(v interface{}) (result []string) {
+func MarshToJsonString(v any) (result []string) {
 	types := reflect.TypeOf(v)
 	val := reflect.ValueOf(v)
 	if types.Kind() == reflect.Slice {
@@ -42,15 +42,15 @@ func MarshToJsonString(v interface{}) (result []string) {
 }
 
 // Decode - Only support []map[string]interface to []models.NfProfile
-func Decode(source interface{}, format string) ([]models.NfProfile, error) {
+func Decode(source any, format string) ([]models.NfProfile, error) {
 	var target []models.NfProfile
 
 	// config mapstruct
 	stringToDateTimeHook := func(
 		f reflect.Type,
 		t reflect.Type,
-		data interface{},
-	) (interface{}, error) {
+		data any,
+	) (any, error) {
 		if t == reflect.TypeOf(time.Time{}) && f == reflect.TypeOf("") {
 			return time.Parse(format, data.(string))
 		}
