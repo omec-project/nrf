@@ -9,37 +9,12 @@
 package util
 
 import (
-	"encoding/json"
 	"reflect"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
 )
-
-func MarshToJsonString(v any) (result []string) {
-	types := reflect.TypeOf(v)
-	val := reflect.ValueOf(v)
-	if types.Kind() == reflect.Slice {
-		for i := 0; i < val.Len(); i++ {
-			tmp, err := json.Marshal(val.Index(i).Interface())
-			if err != nil {
-				logger.UtilLog.Errorf("marshal error: %+v", err)
-			}
-
-			result = append(result, string(tmp))
-		}
-	} else {
-		tmp, err := json.Marshal(v)
-		if err != nil {
-			logger.UtilLog.Errorf("marshal error: %+v", err)
-		}
-
-		result = append(result, string(tmp))
-	}
-	return
-}
 
 // Decode - Only support []map[string]interface to []models.NfProfile
 func Decode(source any, format string) ([]models.NfProfile, error) {
