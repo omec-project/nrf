@@ -19,7 +19,6 @@ import (
 
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/openapi/models"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestFetchPlmnConfig(t *testing.T) {
@@ -87,8 +86,9 @@ func TestFetchPlmnConfig(t *testing.T) {
 			originalNrfConfig := factory.NrfConfig
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				accept := r.Header.Get("Accept")
-				assert.Equal(t, "application/json", accept)
-
+				if accept != "application/json" {
+					t.Errorf("Accept header mismatch. got = %q, want = %q", accept, "application/json")
+				}
 				w.Header().Set("Content-Type", tc.contentType)
 				w.WriteHeader(tc.statusCode)
 				_, _ = w.Write([]byte(tc.responseBody))
