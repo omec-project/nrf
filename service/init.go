@@ -126,17 +126,17 @@ func (nrf *NRF) setLogLevel() {
 		}
 	}
 
-	if factory.NrfConfig.Logger.MongoDBLibrary != nil {
-		if factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel); err != nil {
-				utilLogger.AppLog.Warnf("MongoDBLibrary Log level [%s] is invalid, set to [info] level",
-					factory.NrfConfig.Logger.MongoDBLibrary.DebugLevel)
+	if factory.NrfConfig.Logger.Util != nil {
+		if factory.NrfConfig.Logger.Util.DebugLevel != "" {
+			if level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.Util.DebugLevel); err != nil {
+				utilLogger.UtilLog.Warnf("Util Log level [%s] is invalid, set to [info] level",
+					factory.NrfConfig.Logger.Util.DebugLevel)
 				utilLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				utilLogger.SetLogLevel(level)
 			}
 		} else {
-			utilLogger.AppLog.Warnln("MongoDBLibrary Log level not set. Default set to [info] level")
+			utilLogger.UtilLog.Warnln("Util Log level not set. Default set to [info] level")
 			utilLogger.SetLogLevel(zap.InfoLevel)
 		}
 	}
