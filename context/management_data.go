@@ -73,7 +73,7 @@ func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnI
 }
 
 func SetsubscriptionId() string {
-	return uuid.New().String()
+	return uuid.NewString()
 }
 
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
