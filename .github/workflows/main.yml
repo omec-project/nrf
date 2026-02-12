@@ -235,11 +235,19 @@ jobs:
             sudo ctr --address /run/k3s/containerd/containerd.sock --namespace "$ns" images ls | grep -i "${IMAGE_NAME}" || echo "  (no ${IMAGE_NAME} images found)"
           done
 
+          # Delete existing pods to ensure clean slate
+          echo "=== Deleting existing ${REPO_NAME} pods ==="
+          kubectl -n "$NAMESPACE" delete pods -l app="$REPO_NAME" --force --grace-period=0 || true
+          
+          # Wait for pods to be fully deleted
+          echo "=== Waiting for pods to terminate ==="
+          kubectl -n "$NAMESPACE" wait --for=delete pod -l app="$REPO_NAME" --timeout=60s || true
+          
           # Patch K8s deployment with imagePullPolicy Never
           echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
             {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"docker.io/library/${IMAGE_NAME}:testing\"},
-            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Never\"}
+            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"IfNotPresent\"}
           ]"
           
           echo "=== Verifying deployment patch ==="
