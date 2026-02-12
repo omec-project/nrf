@@ -141,7 +141,7 @@ jobs:
           sudo apt-get install -y conntrack socat ipset ebtables ansible-core
           sudo apt install -y sshpass python3-venv pipx make git
           pipx install --include-deps ansible
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH=$PATH:~/.local/bin
 
       - name: Generate SSH Key
         run: |
@@ -159,7 +159,7 @@ jobs:
         run: |
           set -e
           INTERFACE=$(ip route | awk '/default/ {print $5}')
-          IP_ADDR=$(ip -4 addr show "${INTERFACE}" | awk '/inet / {print $2}' | cut -d/ -f1)
+          IP_ADDR=$(ip -4 addr show ${INTERFACE} | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
           echo "Extracted IP: ${IP_ADDR}"
           echo "[all]" > aether-onramp/hosts.ini
           echo "node1 ansible_host=${IP_ADDR} ansible_user=runner ansible_ssh_private_key_file=~/.ssh/id_rsa" >> aether-onramp/hosts.ini
@@ -173,11 +173,8 @@ jobs:
           echo "node1" >> aether-onramp/hosts.ini
           sed -i "s/ens18/eth0/" aether-onramp/vars/main.yml
           sed -i "s/10.76.28.113/${IP_ADDR}/" aether-onramp/vars/main.yml
-          # Increase RKE2 install timeout from 300s to 600s for CI environment
           sed -i "s/300s/600s/" aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
-          # Remove the 'retries: 40' line that can cause issues with RKE2 installation
-          sed -i '/^ *retries: 40$/d' aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
-          # Increase 5G core Helm install timeout to 10m to avoid failures in CI where large images and slow networks exceed the default 2m30s timeout
+          sed -i '99d' aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
           sed -i "s/2m30s/10m/" aether-onramp/deps/5gc/roles/core/tasks/install.yml
 
       - name: Test aether-pingall
@@ -221,38 +218,38 @@ jobs:
 
           FULL_IMAGE_NAME="docker.io/library/${IMAGE_NAME}:testing"
           docker build -t "${FULL_IMAGE_NAME}" .
-          
+
           # Set up a local registry to serve the image
           echo "=== Starting local registry ==="
           docker run -d -p 5000:5000 --name registry registry:2
-          
+
           # Tag and push to local registry
           LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
           docker tag "${FULL_IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
           docker push "${LOCAL_IMAGE_NAME}"
-          
+
           echo "=== Verifying image in local registry ==="
           curl -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
 
           # Delete existing pods to ensure clean slate
           echo "=== Deleting existing ${REPO_NAME} pods ==="
           kubectl -n "$NAMESPACE" delete pods -l app="$REPO_NAME" --force --grace-period=0 || true
-          
+
           # Wait for pods to be fully deleted
           echo "=== Waiting for pods to terminate ==="
           kubectl -n "$NAMESPACE" wait --for=delete pod -l app="$REPO_NAME" --timeout=60s || true
-          
+
           # Patch K8s deployment to use local registry
           echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
             {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${LOCAL_IMAGE_NAME}\"},
             {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Always\"}
           ]"
-          
+
           echo "=== Verifying deployment patch ==="
           kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
           kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}{"\n"}'
-          
+
           echo "=== Waiting for pod to be ready ==="
           kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout=180s || {
             echo "=== Rollout failed, checking pod status ==="
@@ -285,26 +282,26 @@ jobs:
             echo "Failed to read summary.log from gnbsim-1 container."
             exit 1
           }
-          
+
           if [ -z "$status" ]; then
             echo "summary.log is missing or empty."
             exit 1
           fi
-          
+
           if ! echo "$status" | grep -q "Profile Status:"; then
             echo "summary.log does not contain expected 'Profile Status:' line."
             echo "summary.log contents:"
             echo "$status"
             exit 1
           fi
-          
+
           if echo "$status" | grep -q "Profile Status: FAIL"; then
             echo "Profile Status indicates failure."
             echo "summary.log contents:"
             echo "$status"
             exit 1
           fi
-          
+
           echo "Profile Status is successful."
           echo "summary.log contents:"
           echo "$status"
