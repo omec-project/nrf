@@ -73,7 +73,13 @@ func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnI
 }
 
 func SetsubscriptionId() string {
-	return uuid.NewString()
+	id, err := uuid.NewRandom()
+	if err != nil {
+		logger.ManagementLog.Errorf("failed to generate UUID for subscription ID: %v", err)
+		// Fallback to a time-based ID to avoid panicking and keep subscription creation non-fatal
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	return id.String()
 }
 
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
