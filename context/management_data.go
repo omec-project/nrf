@@ -8,15 +8,14 @@
 package context
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"reflect"
 	"strconv"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/google/uuid"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
@@ -26,16 +25,6 @@ import (
 )
 
 const NRF_NFINST_RES_URI_PREFIX = factory.NRF_NFM_RES_URI_PREFIX + "/nf-instances/"
-
-// Generates a random int between 0 and 99
-func GenerateRandomNumber() (int, error) {
-	maximum := big.NewInt(100)
-	randomNumber, err := rand.Int(rand.Reader, maximum)
-	if err != nil {
-		return 0, err
-	}
-	return int(randomNumber.Int64()), nil
-}
 
 func NnrfNFManagementDataModel(nf *models.NfProfile, nfprofile models.NfProfile) error {
 	if nfprofile.NfInstanceId == "" {
@@ -84,11 +73,7 @@ func buildNfProfilePlmnList(nfProvidedPlmnList *[]models.PlmnId) ([]models.PlmnI
 }
 
 func SetsubscriptionId() string {
-	x, err := GenerateRandomNumber()
-	if err != nil {
-		logger.ManagementLog.Error(err)
-	}
-	return strconv.Itoa(x)
+	return uuid.New().String()
 }
 
 func nnrfNFManagementCondition(nf *models.NfProfile, nfprofile models.NfProfile) {
