@@ -223,38 +223,31 @@ jobs:
           TMP_DIR="${RUNNER_TEMP:-/tmp}"
           docker save "${FULL_IMAGE_NAME}" -o "${TMP_DIR}/${IMAGE_NAME}.tar"
           
-          # Import using both ctr and crictl to ensure compatibility
-          echo "=== Importing image with ctr ==="
+          echo "=== Importing image into containerd ==="
           sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import "${TMP_DIR}/${IMAGE_NAME}.tar"
           
-          echo "=== Importing image with crictl ==="
-          sudo crictl --runtime-endpoint unix:///run/k3s/containerd/containerd.sock pull "docker.io/library/${IMAGE_NAME}:testing" 2>&1 || true
+          echo "=== Verifying image in containerd ==="
+          sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images ls | grep "${IMAGE_NAME}:testing"
           
-          # If crictl pull fails, try importing the tar directly
-          if ! sudo crictl --runtime-endpoint unix:///run/k3s/containerd/containerd.sock images | grep -q "${IMAGE_NAME}:testing"; then
-            echo "=== Image not found via crictl, loading from tar ==="
-            # Tag and load via crictl
-            docker tag "${FULL_IMAGE_NAME}" "${IMAGE_NAME}:testing"
-            docker save "${IMAGE_NAME}:testing" -o "${TMP_DIR}/${IMAGE_NAME}-alt.tar"
-            sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import "${TMP_DIR}/${IMAGE_NAME}-alt.tar"
-          fi
-          
-          echo "=== Verifying images in containerd ==="
-          sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images ls | grep -i "${IMAGE_NAME}"
-          echo "=== Verifying images via crictl ==="
-          sudo crictl --runtime-endpoint unix:///run/k3s/containerd/containerd.sock images | grep -i "${IMAGE_NAME}"
+          echo "=== Checking all containerd namespaces for the image ==="
+          for ns in $(sudo ctr --address /run/k3s/containerd/containerd.sock namespaces ls -q); do
+            echo "Namespace: $ns"
+            sudo ctr --address /run/k3s/containerd/containerd.sock --namespace "$ns" images ls | grep -i "${IMAGE_NAME}" || echo "  (no ${IMAGE_NAME} images found)"
+          done
 
           # Patch K8s deployment with imagePullPolicy Never
+          echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
             {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"docker.io/library/${IMAGE_NAME}:testing\"},
             {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Never\"}
           ]"
-          echo "=== Deployment patched ==="
+          
+          echo "=== Verifying deployment patch ==="
           kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
           kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}{"\n"}'
           
           echo "=== Waiting for pod to be ready ==="
-          kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout=120s || {
+          kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout=180s || {
             echo "=== Rollout failed, checking pod status ==="
             kubectl -n "$NAMESPACE" get pods -l app="$REPO_NAME"
             kubectl -n "$NAMESPACE" describe pods -l app="$REPO_NAME"
