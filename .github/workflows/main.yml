@@ -141,7 +141,7 @@ jobs:
           sudo apt-get install -y conntrack socat ipset ebtables ansible-core
           sudo apt install -y sshpass python3-venv pipx make git
           pipx install --include-deps ansible
-          export PATH=$PATH:~/.local/bin
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate SSH Key
         run: |
@@ -159,7 +159,7 @@ jobs:
         run: |
           set -e
           INTERFACE=$(ip route | awk '/default/ {print $5}')
-          IP_ADDR=$(ip -4 addr show ${INTERFACE} | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+          IP_ADDR=$(ip -4 addr show "${INTERFACE}" | awk '/inet / {print $2}' | cut -d/ -f1)
           echo "Extracted IP: ${IP_ADDR}"
           echo "[all]" > aether-onramp/hosts.ini
           echo "node1 ansible_host=${IP_ADDR} ansible_user=runner ansible_ssh_private_key_file=~/.ssh/id_rsa" >> aether-onramp/hosts.ini
@@ -173,8 +173,11 @@ jobs:
           echo "node1" >> aether-onramp/hosts.ini
           sed -i "s/ens18/eth0/" aether-onramp/vars/main.yml
           sed -i "s/10.76.28.113/${IP_ADDR}/" aether-onramp/vars/main.yml
+          # Increase RKE2 install timeout from 300s to 600s for CI environment
           sed -i "s/300s/600s/" aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
-          sed -i '99d' aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
+          # Remove the 'retries: 40' line that can cause issues with RKE2 installation
+          sed -i '/^ *retries: 40$/d' aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
+          # Increase 5G core Helm install timeout to 10m to avoid failures in CI where large images and slow networks exceed the default 2m30s timeout
           sed -i "s/2m30s/10m/" aether-onramp/deps/5gc/roles/core/tasks/install.yml
 
       - name: Test aether-pingall
@@ -202,7 +205,7 @@ jobs:
           REPO_URL="https://github.com/omec-project/${REPO_NAME}"
           git clone ${REPO_URL} ${REPO_NAME} && cd ${REPO_NAME}
 
-          if [[ "${GITHUB_REF}" == refs/pull/* ]]; then
+          if [[ "${GITHUB_REF}" == "refs/pull/"* ]]; then
             PR_NUMBER=$(echo "${GITHUB_REF}" | awk -F'/' '{print $3}')
             git fetch origin pull/${PR_NUMBER}/merge:pr-${PR_NUMBER}
             git checkout pr-${PR_NUMBER}
@@ -219,21 +222,17 @@ jobs:
           FULL_IMAGE_NAME="docker.io/library/${IMAGE_NAME}:testing"
           docker build -t "${FULL_IMAGE_NAME}" .
           
-          # Save and import Docker image into containerd (used by RKE2)
-          TMP_DIR="${RUNNER_TEMP:-/tmp}"
-          docker save "${FULL_IMAGE_NAME}" -o "${TMP_DIR}/${IMAGE_NAME}.tar"
+          # Set up a local registry to serve the image
+          echo "=== Starting local registry ==="
+          docker run -d -p 5000:5000 --name registry registry:2
           
-          echo "=== Importing image into containerd ==="
-          sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images import "${TMP_DIR}/${IMAGE_NAME}.tar"
+          # Tag and push to local registry
+          LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
+          docker tag "${FULL_IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
+          docker push "${LOCAL_IMAGE_NAME}"
           
-          echo "=== Verifying image in containerd ==="
-          sudo ctr --address /run/k3s/containerd/containerd.sock --namespace k8s.io images ls | grep "${IMAGE_NAME}:testing"
-          
-          echo "=== Checking all containerd namespaces for the image ==="
-          for ns in $(sudo ctr --address /run/k3s/containerd/containerd.sock namespaces ls -q); do
-            echo "Namespace: $ns"
-            sudo ctr --address /run/k3s/containerd/containerd.sock --namespace "$ns" images ls | grep -i "${IMAGE_NAME}" || echo "  (no ${IMAGE_NAME} images found)"
-          done
+          echo "=== Verifying image in local registry ==="
+          curl -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
 
           # Delete existing pods to ensure clean slate
           echo "=== Deleting existing ${REPO_NAME} pods ==="
@@ -243,11 +242,11 @@ jobs:
           echo "=== Waiting for pods to terminate ==="
           kubectl -n "$NAMESPACE" wait --for=delete pod -l app="$REPO_NAME" --timeout=60s || true
           
-          # Patch K8s deployment with imagePullPolicy Never
+          # Patch K8s deployment to use local registry
           echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
-            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"docker.io/library/${IMAGE_NAME}:testing\"},
-            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"IfNotPresent\"}
+            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${LOCAL_IMAGE_NAME}\"},
+            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Always\"}
           ]"
           
           echo "=== Verifying deployment patch ==="
@@ -281,12 +280,34 @@ jobs:
         working-directory: aether-onramp
         run: |
           set -e
-          status=$(docker exec gnbsim-1 cat summary.log)
-          if echo "$status" | grep -q "Profile Status: FAIL"; then
-            echo "Profile Status indicates failure."
+          # Capture summary.log contents and verify it exists
+          status=$(docker exec gnbsim-1 cat summary.log 2>/dev/null) || {
+            echo "Failed to read summary.log from gnbsim-1 container."
+            exit 1
+          }
+          
+          if [ -z "$status" ]; then
+            echo "summary.log is missing or empty."
             exit 1
           fi
+          
+          if ! echo "$status" | grep -q "Profile Status:"; then
+            echo "summary.log does not contain expected 'Profile Status:' line."
+            echo "summary.log contents:"
+            echo "$status"
+            exit 1
+          fi
+          
+          if echo "$status" | grep -q "Profile Status: FAIL"; then
+            echo "Profile Status indicates failure."
+            echo "summary.log contents:"
+            echo "$status"
+            exit 1
+          fi
+          
           echo "Profile Status is successful."
+          echo "summary.log contents:"
+          echo "$status"
 
       - name: Dump all pod logs in aether-5gc namespace
         if: always()
@@ -298,7 +319,7 @@ jobs:
           for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
             kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1 || true
           done
-          for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep nrf); do
+          for pod in $(kubectl get pods -n "$NAMESPACE" -l app=nrf -o jsonpath='{.items[*].metadata.name}'); do
             kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.txt" 2>&1 || true
           done
           docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1
