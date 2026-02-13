@@ -156,6 +156,9 @@ jobs:
           # Pin to a specific commit/tag for reproducible CI runs
           AETHER_ONRAMP_REF="main"
           git clone --recursive --branch "${AETHER_ONRAMP_REF}" --depth 1 ${REPO_URL}
+          cd aether-onramp
+          echo "=== aether-onramp commit used ==="
+          git log -1 --format="Commit: %H%nAuthor: %an%nDate: %ad%nMessage: %s"
 
       - name: Update files
         run: |
@@ -201,15 +204,12 @@ jobs:
         run: |
           set -ex
           REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
-          
+
           # Use the repository already checked out in the workspace
           cd "${GITHUB_WORKSPACE}"
 
-          if [ "${REPO_NAME}" = "webconsole" ]; then
-            IMAGE_NAME="webui"
-          else
-            IMAGE_NAME="${REPO_NAME}"
-          fi
+          # webconsole uses 'webui' as the image name
+          IMAGE_NAME="${REPO_NAME/webconsole/webui}"
 
           # Set up a local registry to serve the image
           echo "=== Starting local registry ==="
@@ -222,7 +222,7 @@ jobs:
             echo "Docker build failed, aborting."
             exit 1
           fi
-          
+
           echo "=== Pushing Docker image ${LOCAL_IMAGE_NAME} to local registry ==="
           if ! docker push "${LOCAL_IMAGE_NAME}"; then
             echo "Docker push failed, aborting."
@@ -239,17 +239,30 @@ jobs:
             kubectl -n "$NAMESPACE" get deployments
             exit 1
           fi
-          
+
+          # Find the container index by name
+          echo "=== Finding container index ==="
+          CONTAINER_INDEX=$(kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath="{.spec.template.spec.containers[*].name}" | tr ' ' '\n' | grep -n "^${IMAGE_NAME}$" | cut -d: -f1)
+          if [ -z "$CONTAINER_INDEX" ]; then
+            echo "ERROR: Container '${IMAGE_NAME}' not found in deployment ${REPO_NAME}"
+            echo "Available containers:"
+            kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[*].name}'
+            exit 1
+          fi
+          # Convert to 0-based index
+          CONTAINER_INDEX=$((CONTAINER_INDEX - 1))
+          echo "Found container '${IMAGE_NAME}' at index ${CONTAINER_INDEX}"
+
           # Patch K8s deployment to use local registry
           echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
-            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${LOCAL_IMAGE_NAME}\"},
-            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/imagePullPolicy\", \"value\": \"Always\"}
+            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/${CONTAINER_INDEX}/image\", \"value\": \"${LOCAL_IMAGE_NAME}\"},
+            {\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/${CONTAINER_INDEX}/imagePullPolicy\", \"value\": \"Always\"}
           ]"
 
           echo "=== Verifying deployment patch ==="
-          kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-          kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}{"\n"}'
+          kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath="{.spec.template.spec.containers[${CONTAINER_INDEX}].image}{\"\n\"}"
+          kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath="{.spec.template.spec.containers[${CONTAINER_INDEX}].imagePullPolicy}{\"\n\"}"
 
           echo "=== Waiting for pod to be ready ==="
           kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout=180s || {
@@ -312,17 +325,19 @@ jobs:
         run: |
           set -ex
           REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
-          if [ "${REPO_NAME}" = "webconsole" ]; then
-            APP_LABEL="webui"
-          else
-            APP_LABEL="${REPO_NAME}"
-          fi
-          
+          # webconsole uses 'webui' as the app label
+          APP_LABEL="${REPO_NAME/webconsole/webui}"
+
           mkdir -p logs
           kubectl get events -A --sort-by='.lastTimestamp' > logs/events.log
           kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.log
           for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1 || true
+            if ! kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1; then
+              echo "Failed to collect logs for pod ${pod} using '--all-containers'; attempting fallback without the flag." | tee -a logs/log-collection-errors.log
+              if ! kubectl logs -n "$NAMESPACE" "$pod" >> "logs/${pod}.log" 2>&1; then
+                echo "Fallback log collection for pod ${pod} without '--all-containers' also failed." | tee -a logs/log-collection-errors.log
+              fi
+            fi
           done
           for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${APP_LABEL}" -o jsonpath='{.items[*].metadata.name}'); do
             kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
