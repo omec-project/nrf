@@ -216,28 +216,17 @@ jobs:
             IMAGE_NAME="${REPO_NAME}"
           fi
 
-          FULL_IMAGE_NAME="docker.io/library/${IMAGE_NAME}:testing"
-          docker build -t "${FULL_IMAGE_NAME}" .
-
           # Set up a local registry to serve the image
           echo "=== Starting local registry ==="
           docker run -d -p 5000:5000 --name registry registry:2
 
-          # Tag and push to local registry
+          # Build and push to local registry
           LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
-          docker tag "${FULL_IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
+          docker build -t "${LOCAL_IMAGE_NAME}" .
           docker push "${LOCAL_IMAGE_NAME}"
 
           echo "=== Verifying image in local registry ==="
           curl -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
-
-          # Delete existing pods to ensure clean slate
-          echo "=== Deleting existing ${REPO_NAME} pods ==="
-          kubectl -n "$NAMESPACE" delete pods -l app="$REPO_NAME" --force --grace-period=0 || true
-
-          # Wait for pods to be fully deleted
-          echo "=== Waiting for pods to terminate ==="
-          kubectl -n "$NAMESPACE" wait --for=delete pod -l app="$REPO_NAME" --timeout=60s || true
 
           # Patch K8s deployment to use local registry
           echo "=== Patching deployment ==="
@@ -258,8 +247,8 @@ jobs:
             exit 1
           }
 
-      - name: Sleep time to give the NF time to sync-up with other NFs
-        run: sleep 60
+      - name: Wait for network function to sync-up with others
+        run: sleep 30
 
       - name: Install GNBSIM
         working-directory: aether-onramp
@@ -310,14 +299,21 @@ jobs:
         if: always()
         run: |
           set -ex
+          REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
+          if [ "${REPO_NAME}" = "webconsole" ]; then
+            APP_LABEL="webui"
+          else
+            APP_LABEL="${REPO_NAME}"
+          fi
+          
           mkdir -p logs
-          kubectl get events -A --sort-by='.lastTimestamp' > logs/events.txt
-          kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.txt
+          kubectl get events -A --sort-by='.lastTimestamp' > logs/events.log
+          kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.log
           for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
             kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1 || true
           done
-          for pod in $(kubectl get pods -n "$NAMESPACE" -l app=nrf -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.txt" 2>&1 || true
+          for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${APP_LABEL}" -o jsonpath='{.items[*].metadata.name}'); do
+            kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
           done
           docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1
 
