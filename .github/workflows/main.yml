@@ -141,7 +141,7 @@ jobs:
           sudo apt-get install -y conntrack socat ipset ebtables ansible-core
           sudo apt install -y sshpass python3-venv pipx make git
           pipx install --include-deps ansible
-          export PATH=$PATH:~/.local/bin
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate SSH Key
         run: |
@@ -155,49 +155,57 @@ jobs:
           REPO_URL="https://github.com/opennetworkinglab/aether-onramp.git"
           # Pin to a specific commit/tag for reproducible CI runs
           AETHER_ONRAMP_REF="main"
-          git clone --recursive --branch "${AETHER_ONRAMP_REF}" --depth 1 ${REPO_URL}
-          cd aether-onramp
+          # Clone to parent directory to avoid polluting NRF workspace
+          AETHER_ONRAMP_DIR="${GITHUB_WORKSPACE}/../aether-onramp"
+          git clone --recursive --branch "${AETHER_ONRAMP_REF}" --depth 1 ${REPO_URL} "${AETHER_ONRAMP_DIR}"
+          cd "${AETHER_ONRAMP_DIR}"
           echo "=== aether-onramp commit used ==="
           git log -1 --format="Commit: %H%nAuthor: %an%nDate: %ad%nMessage: %s"
+          # Export for use in subsequent steps
+          echo "AETHER_ONRAMP_DIR=${AETHER_ONRAMP_DIR}" >> "$GITHUB_ENV"
 
       - name: Update files
         run: |
           set -e
           INTERFACE=$(ip route | awk '/default/ {print $5}')
           IP_ADDR=$(ip -4 addr show ${INTERFACE} | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+          if [ -z "${IP_ADDR}" ]; then
+            echo "Failed to extract IP address" >&2
+            exit 1
+          fi
           echo "Extracted IP: ${IP_ADDR}"
-          echo "[all]" > aether-onramp/hosts.ini
-          echo "node1 ansible_host=${IP_ADDR} ansible_user=runner ansible_ssh_private_key_file=~/.ssh/id_rsa" >> aether-onramp/hosts.ini
-          echo "" >> aether-onramp/hosts.ini
-          echo "[master_nodes]" >> aether-onramp/hosts.ini
-          echo "node1" >> aether-onramp/hosts.ini
-          echo "" >> aether-onramp/hosts.ini
-          echo "[worker_nodes]" >> aether-onramp/hosts.ini
-          echo "" >> aether-onramp/hosts.ini
-          echo "[gnbsim_nodes]" >> aether-onramp/hosts.ini
-          echo "node1" >> aether-onramp/hosts.ini
-          sed -i "s/ens18/eth0/" aether-onramp/vars/main.yml
-          sed -i "s/10.76.28.113/${IP_ADDR}/" aether-onramp/vars/main.yml
-          sed -i "s/300s/600s/" aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
-          sed -i '99d' aether-onramp/deps/k8s/roles/rke2/tasks/install.yml
-          sed -i "s/2m30s/10m/" aether-onramp/deps/5gc/roles/core/tasks/install.yml
+          echo "[all]" > "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "node1 ansible_host=${IP_ADDR} ansible_user=runner ansible_ssh_private_key_file=~/.ssh/id_rsa" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "[master_nodes]" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "node1" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "[worker_nodes]" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "[gnbsim_nodes]" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          echo "node1" >> "${AETHER_ONRAMP_DIR}/hosts.ini"
+          sed -i "s/ens18/eth0/" "${AETHER_ONRAMP_DIR}/vars/main.yml"
+          sed -i "s/10.76.28.113/${IP_ADDR}/" "${AETHER_ONRAMP_DIR}/vars/main.yml"
+          sed -i "s/300s/600s/" "${AETHER_ONRAMP_DIR}/deps/k8s/roles/rke2/tasks/install.yml"
+          sed -i '99d' "${AETHER_ONRAMP_DIR}/deps/k8s/roles/rke2/tasks/install.yml"
+          sed -i "s/2m30s/10m/" "${AETHER_ONRAMP_DIR}/deps/5gc/roles/core/tasks/install.yml"
 
       - name: Test aether-pingall
-        working-directory: aether-onramp
         run: |
           set -e
+          cd "${AETHER_ONRAMP_DIR}"
           make aether-pingall
 
       - name: Install aether-k8s
-        working-directory: aether-onramp
         run: |
           set -e
+          cd "${AETHER_ONRAMP_DIR}"
           make aether-k8s-install
 
       - name: Install 5G Core
-        working-directory: aether-onramp
         run: |
           set -e
+          cd "${AETHER_ONRAMP_DIR}"
           make aether-5gc-install
 
       - name: Patch K8s Deployment to attach local image
@@ -265,30 +273,34 @@ jobs:
           kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" -o jsonpath="{.spec.template.spec.containers[${CONTAINER_INDEX}].imagePullPolicy}{\"\n\"}"
 
           echo "=== Waiting for pod to be ready ==="
-          kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout=180s || {
-            echo "=== Rollout failed, checking pod status ==="
-            kubectl -n "$NAMESPACE" get pods -l app="$REPO_NAME"
-            kubectl -n "$NAMESPACE" describe pods -l app="$REPO_NAME"
+          # Allow overriding the rollout timeout via K8S_ROLLOUT_TIMEOUT (e.g. '300s', '600s'); default is 300s
+          ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-300s}"
+          kubectl -n "$NAMESPACE" rollout status deployment "$REPO_NAME" --timeout="${ROLLOUT_TIMEOUT}" || {
+            echo "=== Rollout failed after timeout ${ROLLOUT_TIMEOUT}, checking pod status ==="
+            kubectl -n "$NAMESPACE" get pods -l app="${IMAGE_NAME}"
+            kubectl -n "$NAMESPACE" describe pods -l app="${IMAGE_NAME}"
             exit 1
           }
 
       - name: Wait for network function to sync up with others
-        run: sleep 30
-
-      - name: Install GNBSIM
-        working-directory: aether-onramp
         run: |
           set -e
+          echo "Waiting for all pods in aether-5gc namespace to be Ready..."
+          kubectl wait --for=condition=ready pod --all -n aether-5gc --timeout=300s
+
+      - name: Install GNBSIM
+        run: |
+          set -e
+          cd "${AETHER_ONRAMP_DIR}"
           make aether-gnbsim-install
 
       - name: Perform tests
-        working-directory: aether-onramp
         run: |
           set -e
+          cd "${AETHER_ONRAMP_DIR}"
           make aether-gnbsim-run
 
       - name: Validate results
-        working-directory: aether-onramp
         run: |
           set -e
           # Capture summary.log contents and verify it exists
@@ -302,23 +314,16 @@ jobs:
             exit 1
           fi
 
-          if ! echo "$status" | grep -q "Profile Status:"; then
-            echo "summary.log does not contain expected 'Profile Status:' line."
+          if echo "$status" | grep -q "Profile Status: PASS"; then
+            echo "Profile Status is successful."
+            echo "summary.log contents:"
+            echo "$status"
+          else
+            echo "Profile Status does not indicate success (expected 'Profile Status: PASS')."
             echo "summary.log contents:"
             echo "$status"
             exit 1
           fi
-
-          if echo "$status" | grep -q "Profile Status: FAIL"; then
-            echo "Profile Status indicates failure."
-            echo "summary.log contents:"
-            echo "$status"
-            exit 1
-          fi
-
-          echo "Profile Status is successful."
-          echo "summary.log contents:"
-          echo "$status"
 
       - name: Dump all pod logs in aether-5gc namespace
         if: always()
