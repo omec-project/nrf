@@ -153,7 +153,9 @@ jobs:
         run: |
           set -e
           REPO_URL="https://github.com/opennetworkinglab/aether-onramp.git"
-          git clone --recursive ${REPO_URL}
+          # Pin to a specific commit/tag for reproducible CI runs
+          AETHER_ONRAMP_REF="main"
+          git clone --recursive --branch "${AETHER_ONRAMP_REF}" --depth 1 ${REPO_URL}
 
       - name: Update files
         run: |
@@ -199,16 +201,9 @@ jobs:
         run: |
           set -ex
           REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
-          REPO_URL="https://github.com/omec-project/${REPO_NAME}"
-          git clone ${REPO_URL} ${REPO_NAME} && cd ${REPO_NAME}
-
-          if [[ "${GITHUB_REF}" == "refs/pull/"* ]]; then
-            PR_NUMBER=$(echo "${GITHUB_REF}" | awk -F'/' '{print $3}')
-            git fetch origin pull/${PR_NUMBER}/merge:pr-${PR_NUMBER}
-            git checkout pr-${PR_NUMBER}
-          else
-            git checkout main
-          fi
+          
+          # Use the repository already checked out in the workspace
+          cd "${GITHUB_WORKSPACE}"
 
           if [ "${REPO_NAME}" = "webconsole" ]; then
             IMAGE_NAME="webui"
@@ -222,12 +217,29 @@ jobs:
 
           # Build and push to local registry
           LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
-          docker build -t "${LOCAL_IMAGE_NAME}" .
-          docker push "${LOCAL_IMAGE_NAME}"
+          echo "=== Building Docker image ${LOCAL_IMAGE_NAME} ==="
+          if ! docker build -t "${LOCAL_IMAGE_NAME}" .; then
+            echo "Docker build failed, aborting."
+            exit 1
+          fi
+          
+          echo "=== Pushing Docker image ${LOCAL_IMAGE_NAME} to local registry ==="
+          if ! docker push "${LOCAL_IMAGE_NAME}"; then
+            echo "Docker push failed, aborting."
+            exit 1
+          fi
 
           echo "=== Verifying image in local registry ==="
           curl -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
 
+          # Verify deployment exists before patching
+          echo "=== Checking deployment exists ==="
+          if ! kubectl -n "$NAMESPACE" get deployment "$REPO_NAME" &>/dev/null; then
+            echo "ERROR: Deployment ${REPO_NAME} not found in namespace ${NAMESPACE}"
+            kubectl -n "$NAMESPACE" get deployments
+            exit 1
+          fi
+          
           # Patch K8s deployment to use local registry
           echo "=== Patching deployment ==="
           kubectl -n "$NAMESPACE" patch deployment "$REPO_NAME" --type="json" -p="[
@@ -247,7 +259,7 @@ jobs:
             exit 1
           }
 
-      - name: Wait for network function to sync-up with others
+      - name: Wait for network function to sync up with others
         run: sleep 30
 
       - name: Install GNBSIM
@@ -315,7 +327,7 @@ jobs:
           for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${APP_LABEL}" -o jsonpath='{.items[*].metadata.name}'); do
             kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
           done
-          docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1
+          docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1 || true
 
       - name: Upload pod logs
         if: always()
