@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Intel Corporation
+# Copyright 2021-present Open Networking Foundation
 # SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 # Copyright 2019 free5GC.org
 #

@@ -1,6 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Intel Corporation
 # SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
-# SPDX-FileCopyrightText: 2024 Intel Corporation
+# SPDX-FileCopyrightText: 2024-present Intel Corporation
 #
 # SPDX-License-Identifier: Apache-2.0
 #
