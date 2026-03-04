@@ -7,13 +7,9 @@
 package service
 
 import (
-	"bufio"
-	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -142,19 +138,6 @@ func (nrf *NRF) setLogLevel() {
 	}
 }
 
-func (nrf *NRF) FilterCli(c *cli.Command) (args []string) {
-	for _, flag := range nrf.GetCliCmd() {
-		name := flag.Names()[0]
-		value := fmt.Sprint(c.Generic(name))
-		if value == "" {
-			continue
-		}
-
-		args = append(args, "--"+name, value)
-	}
-	return args
-}
-
 func (nrf *NRF) Start() {
 	initLog.Infoln("server started")
 	config := factory.NrfConfig.Configuration
@@ -206,57 +189,6 @@ func (nrf *NRF) Start() {
 	if err != nil {
 		initLog.Fatalf("HTTP server setup failed: %+v", err)
 	}
-}
-
-func (nrf *NRF) Exec(c *cli.Command) error {
-	initLog.Debugln("args:", c.String("cfg"))
-	args := nrf.FilterCli(c)
-	initLog.Debugln("filter:", args)
-	command := exec.Command("nrf", args...)
-
-	if err := nrf.Initialize(c); err != nil {
-		return err
-	}
-
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		initLog.Fatalln(err)
-	}
-	wg := sync.WaitGroup{}
-	wg.Add(3)
-	go func() {
-		in := bufio.NewScanner(stdout)
-		for in.Scan() {
-			initLog.Infoln(in.Text())
-		}
-		wg.Done()
-	}()
-
-	stderr, err := command.StderrPipe()
-	if err != nil {
-		initLog.Fatalln(err)
-	}
-	go func() {
-		in := bufio.NewScanner(stderr)
-		initLog.Infoln("NRF log start")
-		for in.Scan() {
-			initLog.Infoln(in.Text())
-		}
-		wg.Done()
-	}()
-
-	go func() {
-		initLog.Infoln("NRF start")
-		if err = command.Start(); err != nil {
-			initLog.Infof("NRF start error: %v", err)
-		}
-		initLog.Infoln("NRF end")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	return err
 }
 
 func (nrf *NRF) Terminate() {
