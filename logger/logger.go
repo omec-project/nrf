@@ -62,10 +62,6 @@ func init() {
 	UtilLog = log.Sugar().With("component", "NRF", "category", "Util")
 }
 
-func GetLogger() *zap.Logger {
-	return log
-}
-
 // SetLogLevel: set the log level (panic|fatal|error|warn|info|debug)
 func SetLogLevel(level zapcore.Level) {
 	InitLog.Infoln("set log level:", level)
