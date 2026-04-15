@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 # SPDX-FileCopyrightText: 2024-present Intel Corporation
+# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -8,6 +8,7 @@ FROM golang:1.26.2-bookworm@sha256:4f4ab2c90005e7e63cb631f0b4427f05422f241622ee3
 
 WORKDIR $GOPATH/src/nrf
 COPY . .
+ARG MAKEFLAGS
 RUN make all
 
 FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS nrf
@@ -32,10 +33,10 @@ LABEL org.opencontainers.image.source="${VCS_URL}" \
 
 ARG DEBUG_TOOLS
 
-# Install debug tools ~ 50MB (if DEBUG_TOOLS is set to true)
+# Install debug tools only when explicitly requested.
 RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
-        apk update && apk add --no-cache -U vim strace net-tools curl netcat-openbsd bind-tools bash; \
-        fi
+        apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools bash; \
+    fi
 
-# Copy executable and default certs
+# Copy executable
 COPY --from=builder /go/src/nrf/bin/* /usr/local/bin/.
