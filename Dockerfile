@@ -8,6 +8,7 @@ FROM golang:1.26.2-bookworm@sha256:4f4ab2c90005e7e63cb631f0b4427f05422f241622ee3
 
 WORKDIR $GOPATH/src/nrf
 COPY . .
+ARG MAKEFLAGS
 RUN make all
 
 FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS nrf
@@ -34,8 +35,8 @@ ARG DEBUG_TOOLS
 
 # Install debug tools only when explicitly requested.
 RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
-    apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools bash; \
-        fi
+        apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools bash; \
+    fi
 
 # Copy executable and default certs
 COPY --from=builder /go/src/nrf/bin/* /usr/local/bin/.
