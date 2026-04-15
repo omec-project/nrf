@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 # SPDX-FileCopyrightText: 2024-present Intel Corporation
+# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -38,5 +38,5 @@ RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
         apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools bash; \
     fi
 
-# Copy executable and default certs
+# Copy executable
 COPY --from=builder /go/src/nrf/bin/* /usr/local/bin/.
