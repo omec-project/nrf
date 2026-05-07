@@ -7,10 +7,12 @@ package producer
 
 import (
 	"net/http"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/utils"
 	"github.com/omec-project/util/httpwrapper"
 )
 
@@ -28,10 +30,7 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	} else if errResponse != nil {
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, errResponse)
 	}
-	problemDetails := &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
-	}
+	problemDetails := utils.ProblemDetailsUnspecified()
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -40,22 +39,26 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 ) {
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
 
-	var expiration int32 = 1000
+	var expirationSeconds int32 = 1000
 	scope := request.Scope
 	tokenType := "Bearer"
+	expiresAt := time.Now().Add(time.Duration(expirationSeconds) * time.Second)
+
+	aud := models.AccessTokenClaimsAud{
+		ArrayOfString: &[]string{request.GetTargetNfInstanceId()},
+	}
 
 	// Create AccessToken
 	accessTokenClaims := models.AccessTokenClaims{
-		Iss:              "1234567",                  // TODO: NF instance id of the NRF
-		Sub:              request.NfInstanceId,       // nfInstanceId of service consumer
-		Aud:              request.TargetNfInstanceId, // nfInstanceId of service producer
-		Scope:            request.Scope,              // TODO: the name of the NF services for which the
-		Exp:              expiration,                 //       access_token is authorized for use
-		RegisteredClaims: jwt.RegisteredClaims{},
+		Iss:   "1234567",            // TODO: NF instance id of the NRF
+		Sub:   request.NfInstanceId, // nfInstanceId of service consumer
+		Aud:   aud,                  // nfInstanceId of service producer
+		Scope: scope,                // TODO: the name of the NF services for which the
+		Exp:   int32(expiresAt.Unix()),
 	}
 
 	mySigningKey := []byte("NRF") // AllYourBase
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenClaims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenJWTClaims{AccessTokenClaims: accessTokenClaims})
 	accessToken, err := token.SignedString(mySigningKey)
 	if err != nil {
 		logger.AccessTokenLog.Warnln("Signed string error: ", err)
@@ -66,12 +69,9 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 		return nil, errResponse
 	}
 
-	response = &models.AccessTokenRsp{
-		AccessToken: accessToken,
-		TokenType:   tokenType,
-		ExpiresIn:   expiration,
-		Scope:       scope,
-	}
+	response = models.NewAccessTokenRsp(accessToken, tokenType)
+	response.SetExpiresIn(expirationSeconds)
+	response.SetScope(scope)
 
 	return response, nil
 }

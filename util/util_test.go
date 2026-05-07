@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 )
 
@@ -22,8 +23,8 @@ func TestDecode(t *testing.T) {
 
 	testData1 := map[string]any{
 		"NfInstanceId":   "0",
-		"NfType":         models.NfType_NRF,
-		"NfStatus":       models.NfStatus_REGISTERED,
+		"NfType":         models.NFTYPE_NRF,
+		"NfStatus":       models.NFSTATUS_REGISTERED,
 		"HeartBeatTimer": 10,
 		"PlmnList": &[]models.PlmnId{ // Pattern: '^[0-9]{3}[0-9]{2,3}$'
 			{
@@ -34,7 +35,7 @@ func TestDecode(t *testing.T) {
 		"SNssais": &[]models.Snssai{ // range 0-255
 			{
 				Sst: 222,
-				Sd:  "SNssais",
+				Sd:  openapi.PtrString("SNssais"),
 			},
 		},
 		"NsiList": []string{
@@ -54,8 +55,8 @@ func TestDecode(t *testing.T) {
 				Mnc: "111",
 			},
 		},
-		"AllowedNfTypes": []models.NfType{
-			models.NfType_NRF,
+		"AllowedNfTypes": []models.NFType{
+			models.NFTYPE_NRF,
 		},
 		"AllowedNfDomains": []string{
 			"nfdomain1",
@@ -63,7 +64,7 @@ func TestDecode(t *testing.T) {
 		"AllowedNssais": &[]models.Snssai{
 			{
 				Sst: 333,
-				Sd:  "AllowedNssais",
+				Sd:  openapi.PtrString("AllowedNssais"),
 			},
 		},
 		"Priority":             1,
@@ -83,10 +84,10 @@ func TestDecode(t *testing.T) {
 		"CustomInfo":           &map[string]any{},
 		"RecoveryTime":         &dateFormat,
 		"NfServicePersistence": true,
-		"NfServices": &[]models.NfService{
+		"NfServices": &[]models.NFService{
 			{
-				ServiceName:     models.ServiceName_NNRF_DISC,
-				NfServiceStatus: models.NfServiceStatus_REGISTERED,
+				ServiceName:     models.SERVICENAME_NNRF_DISC,
+				NfServiceStatus: models.NFSERVICESTATUS_REGISTERED,
 				AllowedNfDomains: []string{
 					"nfdomain3",
 					"nfdomain4",

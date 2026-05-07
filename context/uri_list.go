@@ -14,6 +14,6 @@ import (
 )
 
 type UriList struct {
-	NfType models.NfType `json:"nfType" bson:"nfType"`
+	NfType models.NFType `json:"nfType" bson:"nfType"`
 	Link   Links         `json:"_link" bson:"_link" mapstructure:"_link"`
 }

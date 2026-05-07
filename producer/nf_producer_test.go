@@ -97,7 +97,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 	testCases := []struct {
 		name                      string
 		nrfPlmnList               []models.PlmnId
-		nfPlmnList                *[]models.PlmnId
+		nfPlmnList                []models.PlmnId
 		expectedNfProfilePlmnList []models.PlmnId
 		expectedWebconsoleCalled  bool
 	}{
@@ -126,7 +126,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "01",
 				},
 			},
-			nfPlmnList: &[]models.PlmnId{},
+			nfPlmnList: []models.PlmnId{},
 			expectedNfProfilePlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
@@ -143,7 +143,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 					Mnc: "99",
 				},
 			},
-			nfPlmnList: &[]models.PlmnId{
+			nfPlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
 					Mnc: "01",
@@ -160,7 +160,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 		{
 			name:        "NF with provided PLMNs and NRF with no PLMNs",
 			nrfPlmnList: []models.PlmnId{},
-			nfPlmnList: &[]models.PlmnId{
+			nfPlmnList: []models.PlmnId{
 				{
 					Mcc: "001",
 					Mnc: "01",
@@ -189,16 +189,16 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 				return tc.nrfPlmnList, nil
 			}
 			dbadapter.DBClient = &MockMongoDBClient{}
-			var nf models.NfProfile
-			nf.NfType = models.NfType_AUSF
+			var nf models.NFProfile
+			nf.NfType = models.NFTYPE_AUSF
 			nf.NfInstanceId = uuid.New().String()
-			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.NfStatus = models.NFSTATUS_REGISTERED
 			nf.PlmnList = tc.nfPlmnList
 			_, data, err := producer.NFRegisterProcedure(nf)
 			if err != nil {
 				t.Errorf("failed to register NF: %v", err)
 			}
-			rawNfPlmns, _ := json.Marshal(data["plmnList"])
+			rawNfPlmns, _ := json.Marshal(data["plmnlist"])
 			var nfPlmns []models.PlmnId
 			json.Unmarshal(rawNfPlmns, &nfPlmns)
 			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, nfPlmns) {
@@ -215,7 +215,7 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 	testCases := []struct {
 		name        string
 		nrfPlmnList []models.PlmnId
-		nfPlmnList  *[]models.PlmnId
+		nfPlmnList  []models.PlmnId
 	}{
 		{
 			name:        "NF with no provided PLMNs and NRF with no PLMNs",
@@ -225,7 +225,7 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 		{
 			name:        "NF with provided empty PLMNs and NRF with no PLMNs",
 			nrfPlmnList: []models.PlmnId{},
-			nfPlmnList:  &[]models.PlmnId{},
+			nfPlmnList:  []models.PlmnId{},
 		},
 	}
 	for _, tc := range testCases {
@@ -242,10 +242,10 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 				return tc.nrfPlmnList, nil
 			}
 			dbadapter.DBClient = &MockMongoDBClient{}
-			var nf models.NfProfile
-			nf.NfType = models.NfType_AUSF
+			var nf models.NFProfile
+			nf.NfType = models.NFTYPE_AUSF
 			nf.NfInstanceId = uuid.New().String()
-			nf.NfStatus = models.NfStatus_REGISTERED
+			nf.NfStatus = models.NFSTATUS_REGISTERED
 			nf.PlmnList = tc.nfPlmnList
 			_, data, err := producer.NFRegisterProcedure(nf)
 			if err == nil {
@@ -269,10 +269,10 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 		return nil, errors.New("http error")
 	}
 	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NfProfile
-	nf.NfType = models.NfType_AUSF
+	var nf models.NFProfile
+	nf.NfType = models.NFTYPE_AUSF
 	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NfStatus_REGISTERED
+	nf.NfStatus = models.NFSTATUS_REGISTERED
 	_, data, err := producer.NFRegisterProcedure(nf)
 	if err == nil {
 		t.Errorf("Expected error, got: %v", data)
