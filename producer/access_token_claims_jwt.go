@@ -7,7 +7,7 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 type accessTokenJWTClaims struct {

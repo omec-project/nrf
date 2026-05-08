@@ -25,8 +25,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/utils"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
 )
 

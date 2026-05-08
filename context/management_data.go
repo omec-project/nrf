@@ -19,7 +19,7 @@ import (
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/polling"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
 

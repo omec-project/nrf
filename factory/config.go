@@ -15,7 +15,7 @@ import (
 	"strconv"
 
 	"github.com/omec-project/nrf/logger"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 	utilLogger "github.com/omec-project/util/logger"
 )
 

@@ -18,8 +18,8 @@ import (
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
-	"github.com/omec-project/openapi/Nnrf_AccessToken"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/Nnrf_AccessToken"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 func TestAccessTokenRequest(t *testing.T) {

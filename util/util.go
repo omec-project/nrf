@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 // Decode - Only support []map[string]interface to []models.NFProfileDiscovery

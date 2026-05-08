@@ -22,9 +22,9 @@ import (
 	"github.com/omec-project/nrf/logger"
 	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/utils"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
 	"go.mongodb.org/mongo-driver/bson"
 )
