@@ -29,6 +29,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+const nfStatusNotifyTimeout = 10 * time.Second
+
+var nfStatusNotifyHTTPClient = &http.Client{Timeout: nfStatusNotifyTimeout}
+
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
@@ -108,7 +112,7 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 
 	nfType, ok := response["nftype"].(string)
 	if !ok {
-		logger.ManagementLog.Warnln("response missing 'nfType' or wrong format")
+		logger.ManagementLog.Warnln("response missing 'nftype' or wrong format")
 		nfType = "unknown"
 	}
 
@@ -119,9 +123,10 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
-	limit, err := strconv.Atoi(request.Query.Get("limit"))
+	limitRaw := request.Query.Get("limit")
+	limit, err := strconv.Atoi(limitRaw)
 	if err != nil {
-		logger.ManagementLog.Errorln("Error in string conversion:", limit)
+		logger.ManagementLog.Errorln("error converting limit query parameter:", limitRaw, err)
 		problemDetails := models.ProblemDetails{
 			Title:  openapi.PtrString("Invalid Parameter"),
 			Status: openapi.PtrInt32(http.StatusBadRequest),
@@ -458,13 +463,15 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 	bsonBytes, err := bson.Marshal(nf)
 	if err != nil {
 		logger.ManagementLog.Errorln("bson marshal error in NFRegisterProcedure:", err)
-		return nil, nil, nil
+		problemDetails = utils.ProblemDetailsSystemFailure(err.Error())
+		return nil, nil, problemDetails
 	}
 
 	err = bson.Unmarshal(bsonBytes, &putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("bson unmarshal error in NFRegisterProcedure:", err)
-		return nil, nil, nil
+		problemDetails = utils.ProblemDetailsSystemFailure(err.Error())
+		return nil, nil, problemDetails
 	}
 
 	// set db info
@@ -568,7 +575,10 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 		return problemDetails
 	}
 
-	req, err := http.NewRequestWithContext(context.TODO(), http.MethodPost, url, bytes.NewReader(body))
+	notifyCtx, cancel := context.WithTimeout(context.Background(), nfStatusNotifyTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(notifyCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
 		problemDetails := models.NewProblemDetails()
@@ -580,7 +590,7 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, application/problem+json")
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := nfStatusNotifyHTTPClient.Do(req)
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
 		problemDetails := models.NewProblemDetails()

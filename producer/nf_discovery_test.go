@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -15,6 +16,10 @@ import (
 )
 
 type mockDiscoveryDBClient struct {
+	dbadapter.DBInterface
+}
+
+type mockBSFDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
@@ -48,6 +53,18 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M
 
 func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
 	return nil, nil
+}
+
+func (db *mockBSFDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	if collName != "NfProfile" {
+		return nil, nil
+	}
+
+	return []map[string]interface{}{{
+		"nfinstanceid": "bsf-1",
+		"nftype":       "BSF",
+		"nfstatus":     "REGISTERED",
+	}}, nil
 }
 
 func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
@@ -192,5 +209,32 @@ func TestLoadDiscoveryProfilesFromURIList(t *testing.T) {
 	}
 	if profiles[0].NfType != models.NFTYPE_UDM {
 		t.Fatalf("unexpected profile type: %s", profiles[0].NfType)
+	}
+}
+
+func TestNFDiscoveryProcedureHandlesBSFProfileWithoutBsfInfo(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	query := url.Values{}
+	query.Set("target-nf-type", "BSF")
+	query.Set("requester-nf-type", "AMF")
+
+	dbadapter.DBClient = &mockBSFDiscoveryDBClient{}
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+	if response == nil {
+		t.Fatal("expected discovery response")
+	}
+	if len(response.NfInstances) != 1 {
+		t.Fatalf("expected one BSF instance, got %d", len(response.NfInstances))
+	}
+	if response.NfInstances[0].BsfInfo != nil {
+		t.Fatalf("expected nil BsfInfo, got %+v", response.NfInstances[0].BsfInfo)
 	}
 }

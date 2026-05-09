@@ -130,6 +130,9 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	// handle ipv4 & ipv6
 	if queryParameters["target-nf-type"][0] == "BSF" {
 		for i, nfProfile := range nfProfilesStruct {
+			if nfProfile.BsfInfo == nil {
+				continue
+			}
 			ipv4AddressRanges, ok := nfProfile.BsfInfo.GetIpv4AddressRangesOk()
 			if ok {
 				for j, ipv4AddressRange := range ipv4AddressRanges {

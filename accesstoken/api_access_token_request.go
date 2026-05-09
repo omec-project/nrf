@@ -60,6 +60,6 @@ func HTTPAccessTokenRequest(c *gin.Context) {
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.JSON(httpResponse.Status, responseBody)
+		c.Data(httpResponse.Status, "application/json", responseBody.Bytes())
 	}
 }
