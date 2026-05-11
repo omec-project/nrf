@@ -59,8 +59,11 @@ func HandleGetNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Respo
 	if response != nil {
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
-		problemDetails := utils.ProblemDetailsUnspecified()
-		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+		problemDetails := models.NewProblemDetails()
+		problemDetails.SetStatus(http.StatusNotFound)
+		problemDetails.SetCause("CONTEXT_NOT_FOUND")
+		problemDetails.SetDetail("NF instance not found")
+		return httpwrapper.NewResponse(http.StatusNotFound, nil, problemDetails)
 	}
 }
 

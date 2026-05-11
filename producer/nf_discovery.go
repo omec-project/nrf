@@ -1378,10 +1378,10 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 
 	// [Query-1] target-nf-type
 	var targetNfType string
-	if targetNfType != "" {
+	if targetNfTypeParam, ok := queryParameters["target-nf-type"]; ok && targetNfTypeParam != nil {
 		var targetNfTypeFilter bson.M
-		targetNfType = queryParameters["target-nf-type"].value
-		negative := queryParameters["target-nf-type"].negative
+		targetNfType = targetNfTypeParam.value
+		negative := targetNfTypeParam.negative
 		if negative {
 			targetNfTypeFilter = bson.M{
 				"nftype": bson.M{
