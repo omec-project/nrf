@@ -101,7 +101,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 
 	nfProfilesStruct, err = util.Decode(nfProfilesRaw, time.RFC3339)
 	if err != nil {
-		logger.DiscoveryLog.Warnln("NF Profile Raw decode error:", nfProfilesStruct)
+		logger.DiscoveryLog.Warnln("NF Profile Raw decode error:", err)
 	}
 	logger.DiscoveryLog.Debugf("primary discovery decoded count: %d", len(nfProfilesStruct))
 

@@ -655,7 +655,7 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 	case okUdr:
 		nfGroupCond := bson.M{
 			"subscrCond": bson.M{
-				"NfType":    nfType,
+				"nfType":    nfType,
 				"nfGroupId": udrInfo.GetGroupId(),
 			},
 		}
@@ -663,7 +663,7 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 	case okUdm:
 		nfGroupCond := bson.M{
 			"subscrCond": bson.M{
-				"NfType":    nfType,
+				"nfType":    nfType,
 				"nfGroupId": udmInfo.GetGroupId(),
 			},
 		}
@@ -671,7 +671,7 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 	case okAusf:
 		nfGroupCond := bson.M{
 			"subscrCond": bson.M{
-				"NfType":    nfType,
+				"nfType":    nfType,
 				"nfGroupId": ausfInfo.GetGroupId(),
 			},
 		}
