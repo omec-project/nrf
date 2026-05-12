@@ -102,7 +102,25 @@ func TestDecode(t *testing.T) {
 
 	target, err := Decode(source, time.RFC3339)
 	if err != nil {
-		t.Log(err)
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if len(target) != 1 {
+		t.Fatalf("expected 1 decoded profile, got %d", len(target))
+	}
+
+	profile := target[0]
+	if profile.GetNfInstanceId() != "0" {
+		t.Fatalf("unexpected NF instance ID: %q", profile.GetNfInstanceId())
+	}
+	if profile.GetNfType() != models.NFTYPE_NRF {
+		t.Fatalf("unexpected NF type: %q", profile.GetNfType())
+	}
+	services, ok := profile.GetNfServicesOk()
+	if !ok || len(services) != 1 {
+		t.Fatalf("expected 1 decoded NF service, got %v", services)
+	}
+	if services[0].GetServiceName() != models.SERVICENAME_NNRF_DISC {
+		t.Fatalf("unexpected service name: %q", services[0].GetServiceName())
 	}
 
 	t.Logf("%+v", target)

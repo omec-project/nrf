@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -361,8 +362,8 @@ func nnrfNFManagementOption(nf *models.NFProfile, nfprofile models.NFProfile) {
 		if ipv4AddressRanges, ok := nfprofile.BsfInfo.GetIpv4AddressRangesOk(); ok {
 			b := make([]models.Ipv4AddressRange, len(ipv4AddressRanges))
 			for i, rang := range ipv4AddressRanges {
-				b[i].SetStart(rang.GetStart())
-				b[i].SetEnd(rang.GetEnd())
+				b[i].SetStart(strconv.FormatInt(Ipv4ToInt(rang.GetStart()), 10))
+				b[i].SetEnd(strconv.FormatInt(Ipv4ToInt(rang.GetEnd()), 10))
 			}
 			a.SetIpv4AddressRanges(b)
 		}
@@ -370,8 +371,8 @@ func nnrfNFManagementOption(nf *models.NFProfile, nfprofile models.NFProfile) {
 		if ipv6PrefixRanges, ok := nfprofile.BsfInfo.GetIpv6PrefixRangesOk(); ok {
 			b := make([]models.Ipv6PrefixRange, len(ipv6PrefixRanges))
 			for i, rang := range ipv6PrefixRanges {
-				b[i].SetStart(rang.GetStart())
-				b[i].SetEnd(rang.GetEnd())
+				b[i].SetStart(Ipv6ToInt(rang.GetStart()).String())
+				b[i].SetEnd(Ipv6ToInt(rang.GetEnd()).String())
 			}
 			a.SetIpv6PrefixRanges(b)
 		}
