@@ -282,7 +282,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
-		logger.ManagementLog.Errorln("failed to delete NF profiles of type %s: %v", nfType, err)
+		logger.ManagementLog.Errorf("failed to delete NF profiles of type %s: %v", nfType, err)
 		problemDetails = models.NewProblemDetails()
 		problemDetails.SetTitle("NF Profiles Deletion Failed")
 		problemDetails.SetStatus(http.StatusInternalServerError)
@@ -290,7 +290,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 		return problemDetails
 	}
 
-	logger.ManagementLog.Infoln("successfully deleted NF profiles of type %s", nfType)
+	logger.ManagementLog.Infof("successfully deleted NF profiles of type %s", nfType)
 	return nil
 }
 
@@ -367,15 +367,26 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
 	if nfProfile.NfType == models.NFTYPE_AMF {
 		url := "http://amf:29518" + "/namf-oam/v1/amfInstanceDown/" + nfInstanceID
-		req, err := http.NewRequest(http.MethodPost, url, nil)
+		notifyCtx, cancel := context.WithTimeout(context.Background(), nfStatusNotifyTimeout)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(notifyCtx, http.MethodPost, url, nil)
 		if err != nil {
 			logger.ManagementLog.Infoln("Error in creating request ", err)
+			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-		_, err = client.Do(req)
+		resp, err := nfStatusNotifyHTTPClient.Do(req)
 		if err != nil {
 			logger.ManagementLog.Infoln("Errored when sending request to the server", err)
+			return
+		}
+		if resp != nil && resp.Body != nil {
+			defer func() {
+				if bodyCloseErr := resp.Body.Close(); bodyCloseErr != nil {
+					logger.ManagementLog.Errorf("NF down notification response body cannot close: %+v", bodyCloseErr)
+				}
+			}()
 		}
 	}
 }
