@@ -1770,7 +1770,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			amfRegionIdFilter = bson.M{
 				"amfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"amfregionid": amfRegionId[0],
+						"amfregionid": amfRegionId,
 					},
 				},
 			}
@@ -1791,7 +1791,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			amfSetIdFilter = bson.M{
 				"amfinfo": bson.M{
 					"$elemMatch": bson.M{ // TOCHECK : elemMatch
-						"amfsetid": amfSetId[0],
+						"amfsetid": amfSetId,
 					},
 				},
 			}
@@ -2060,7 +2060,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		pgwFilter := bson.M{
 			"smfinfo": bson.M{
 				"$elemMatch": bson.M{
-					"pgwfqdn": pgw[0],
+					"pgwfqdn": pgw,
 				},
 			},
 		}
@@ -2385,7 +2385,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		accessTypeFilter := bson.M{
 			"smfinfo": bson.M{
 				"$elemMatch": bson.M{
-					"accesstype": accessType[0],
+					"accesstype": accessType,
 				},
 			},
 		}

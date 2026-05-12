@@ -132,7 +132,7 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 		logger.ManagementLog.Errorln("error converting limit query parameter:", limitRaw, err)
 		problemDetails := models.ProblemDetails{
 			Title:  openapi.PtrString("Invalid Parameter"),
-			Status: openapi.PtrInt32(http.StatusBadRequest),
+			Status: openapi.PtrInt32(int32(http.StatusBadRequest)),
 			Detail: openapi.PtrString(err.Error()),
 		}
 
