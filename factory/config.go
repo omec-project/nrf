@@ -21,8 +21,8 @@ import (
 
 const (
 	NRF_EXPECTED_CONFIG_VERSION = "1.0.0"
-	NRF_DEFAULT_IPV4            = "127.0.0.10"
-	NRF_DEFAULT_PORT            = 8000
+	NRF_DEFAULT_IPV4            = "127.0.0.1"
+	NRF_DEFAULT_PORT            = 29510
 	NRF_DEFAULT_SCHEME          = "https"
 )
 

@@ -47,7 +47,7 @@ func TestAccessTokenRequest(t *testing.T) {
 	configuration := Nnrf_AccessToken.NewConfiguration()
 	serverConfig := &configuration.Servers[0]
 	if apiRootVar, exists := serverConfig.Variables["nrfApiRoot"]; exists {
-		apiRootVar.DefaultValue = "https://127.0.0.1:29510"
+		apiRootVar.DefaultValue = "https://" + factory.NRF_DEFAULT_IPV4 + ":" + strconv.Itoa(factory.NRF_DEFAULT_PORT)
 		serverConfig.Variables["nrfApiRoot"] = apiRootVar
 	}
 

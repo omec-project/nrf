@@ -38,7 +38,6 @@ func InitNFService(srvNameList []string, version string) []models.NFService {
 	NFServices := make([]models.NFService, len(srvNameList))
 	for index, nameString := range srvNameList {
 		name := models.ServiceName(nameString)
-		transportPorotocol := models.TRANSPORTPROTOCOL_TCP
 		NFServices[index] = models.NFService{
 			ServiceInstanceId: strconv.Itoa(index),
 			ServiceName:       name,
@@ -54,7 +53,7 @@ func InitNFService(srvNameList []string, version string) []models.NFService {
 			IpEndPoints: []models.IpEndPoint{
 				{
 					Ipv4Address: openapi.PtrString(factory.NrfConfig.GetSbiRegisterIP()),
-					Transport:   transportPorotocol.Ptr(),
+					Transport:   models.TRANSPORTPROTOCOL_TCP.Ptr(),
 					Port:        openapi.PtrInt32(int32(factory.NrfConfig.GetSbiPort())),
 				},
 			},

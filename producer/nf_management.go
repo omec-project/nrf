@@ -454,7 +454,7 @@ func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{
 	return response
 }
 
-func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, response bson.M,
+func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, response *models.NFProfile,
 	problemDetails *models.ProblemDetails,
 ) {
 	logger.ManagementLog.Debugln("[NRF] In NFRegisterProcedure")
@@ -524,7 +524,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
-		return header, putData, nil
+		return header, &nf, nil
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
 		uriList := nrfContext.GetNotificationUri(nf)
@@ -542,7 +542,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
 		logger.ManagementLog.Infoln("location header:", locationHeaderValue)
-		return header, putData, nil
+		return header, &nf, nil
 	}
 }
 
@@ -575,11 +575,11 @@ func GetNfTypeByNfInstanceID(nfInstanceID string) (nfType string) {
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,
 	url string,
 ) *models.ProblemDetails {
-	notifcationData := models.NotificationData{
+	notificationData := models.NotificationData{
 		Event:         Notification_event,
 		NfInstanceUri: nfInstanceUri,
 	}
-	body, err := json.Marshal(notifcationData)
+	body, err := json.Marshal(notificationData)
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
 		problemDetails := models.NewProblemDetails()

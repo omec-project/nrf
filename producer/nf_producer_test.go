@@ -6,7 +6,6 @@
 package producer_test
 
 import (
-	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -198,9 +197,10 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			if err != nil {
 				t.Errorf("failed to register NF: %v", err)
 			}
-			rawNfPlmns, _ := json.Marshal(data["plmnlist"])
 			var nfPlmns []models.PlmnId
-			json.Unmarshal(rawNfPlmns, &nfPlmns)
+			if data != nil {
+				nfPlmns = data.GetPlmnList()
+			}
 			if !reflect.DeepEqual(tc.expectedNfProfilePlmnList, nfPlmns) {
 				t.Errorf("Expected %v, got %v", tc.expectedNfProfilePlmnList, nfPlmns)
 			}
