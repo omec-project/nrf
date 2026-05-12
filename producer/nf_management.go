@@ -446,12 +446,22 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	return nf, nil
 }
 
-func GetNFInstanceProcedure(nfInstanceID string) (response map[string]interface{}) {
+func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
 	collName := "NfProfile"
 	filter := bson.M{"nfinstanceid": nfInstanceID}
-	response, _ = dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if err != nil || response == nil {
+		return nil
+	}
 
-	return response
+	decodedProfiles, decodeErr := util.Decode([]map[string]any{response}, time.RFC3339)
+	if decodeErr != nil || len(decodedProfiles) == 0 {
+		logger.ManagementLog.Warnf("failed to decode NF profile for %s: %v", nfInstanceID, decodeErr)
+		return nil
+	}
+
+	nfProfile := util.ConvertNFProfileDiscoveryToNFProfile(decodedProfiles[0])
+	return &nfProfile
 }
 
 func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, response *models.NFProfile,
