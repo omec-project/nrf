@@ -125,3 +125,41 @@ func TestDecode(t *testing.T) {
 
 	t.Logf("%+v", target)
 }
+
+func TestConvertNFProfileDiscoveryToNFProfile(t *testing.T) {
+	recoveryTime := time.Now().UTC().Truncate(time.Second)
+	discovery := models.NFProfileDiscovery{
+		NfInstanceId:  "instance-1",
+		NfType:        models.NFTYPE_UDM,
+		NfStatus:      models.NFSTATUS_REGISTERED,
+		Priority:      openapi.PtrInt32(7),
+		Ipv4Addresses: []string{"10.0.0.1"},
+		PlmnList: []models.PlmnId{{
+			Mcc: "001",
+			Mnc: "01",
+		}},
+		RecoveryTime: &recoveryTime,
+	}
+
+	profile := ConvertNFProfileDiscoveryToNFProfile(discovery)
+
+	if profile.GetNfInstanceId() != discovery.GetNfInstanceId() {
+		t.Fatalf("expected NF instance ID %q, got %q", discovery.GetNfInstanceId(), profile.GetNfInstanceId())
+	}
+	if profile.GetNfType() != discovery.GetNfType() {
+		t.Fatalf("expected NF type %q, got %q", discovery.GetNfType(), profile.GetNfType())
+	}
+	if profile.GetPriority() != discovery.GetPriority() {
+		t.Fatalf("expected priority %d, got %d", discovery.GetPriority(), profile.GetPriority())
+	}
+	if got := profile.GetIpv4Addresses(); len(got) != 1 || got[0] != "10.0.0.1" {
+		t.Fatalf("unexpected ipv4 addresses: %+v", got)
+	}
+	plmnList, ok := profile.GetPlmnListOk()
+	if !ok || len(plmnList) != 1 || plmnList[0].Mcc != "001" || plmnList[0].Mnc != "01" {
+		t.Fatalf("unexpected PLMN list: %+v", plmnList)
+	}
+	if profile.GetRecoveryTime() != recoveryTime {
+		t.Fatalf("expected recovery time %v, got %v", recoveryTime, profile.GetRecoveryTime())
+	}
+}

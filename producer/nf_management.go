@@ -113,9 +113,9 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
 	}
 
-	nfType, ok := response["nftype"].(string)
-	if !ok {
-		logger.ManagementLog.Warnln("response missing 'nftype' or wrong format")
+	nfType := string(response.GetNfType())
+	if nfType == "" {
+		logger.ManagementLog.Warnln("response missing NF type")
 		nfType = "unknown"
 	}
 
@@ -216,7 +216,7 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 	}
 
 	// TODO: need to store Condition !
-	if ok, _ := dbadapter.DBClient.RestfulAPIPost("Subscriptions", bson.M{"subscriptionId": subscription.SubscriptionId},
+	if ok, _ := dbadapter.DBClient.RestfulAPIPost("Subscriptions", bson.M{"subscriptionId": subscription.GetSubscriptionId()},
 		putData); !ok { // subscription id not exist before
 		return putData, nil
 	} else {
@@ -391,7 +391,7 @@ func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
 	}
 }
 
-func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response map[string]interface{}, err error) {
+func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.NFProfile, error) {
 	// Validation for NF Instance ID
 	if nfInstanceID == "" {
 		logger.ManagementLog.Errorln("nf Instance ID is required")
@@ -443,7 +443,8 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (response 
 	}
 
 	logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
-	return nf, nil
+	updatedProfile := util.ConvertNFProfileDiscoveryToNFProfile(nfProfiles[0])
+	return &updatedProfile, nil
 }
 
 func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
