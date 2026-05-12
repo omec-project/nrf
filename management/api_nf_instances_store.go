@@ -52,6 +52,7 @@ func HTTPGetNFInstances(c *gin.Context) {
 // Options /nf-instances
 // Discover communication options supported by NRF for NF Instances
 func HTTPOptionsNFInstances(c *gin.Context) {
-	logger.ManagementLog.Warnln("Handle Options /nf-instances is not implemented")
-	c.String(http.StatusNotImplemented, "501 not implemented")
+	detail := "Handle Options /nf-instances is not implemented"
+	logger.ManagementLog.Warnln(detail)
+	writeNotImplementedProblem(c, detail)
 }
