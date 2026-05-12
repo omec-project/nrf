@@ -465,7 +465,8 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		problemDetails = models.NewProblemDetails()
 		problemDetails.SetTitle(nfProfile.NfInstanceId)
 		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetDetail(fmt.Sprint(nfProfile.GetHeartBeatTimer()))
+		problemDetails.SetCause("INVALID_REQUEST")
+		problemDetails.SetDetail(err.Error())
 		return nil, nil, problemDetails
 	}
 
