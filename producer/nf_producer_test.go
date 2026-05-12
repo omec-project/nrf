@@ -195,7 +195,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			nf.PlmnList = tc.nfPlmnList
 			_, data, err := producer.NFRegisterProcedure(nf)
 			if err != nil {
-				t.Errorf("failed to register NF: %v", err)
+				t.Fatalf("failed to register NF: %v", err)
 			}
 			var nfPlmns []models.PlmnId
 			if data != nil {
