@@ -52,6 +52,21 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M
 }
 
 func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	if collName == "NfProfile" {
+		return []map[string]any{
+			{
+				"nfinstanceid": "udm-1",
+				"nftype":       "UDM",
+				"nfstatus":     "REGISTERED",
+				"nfservices": []map[string]any{
+					{
+						"servicename":     "nudm-ueau",
+						"nfservicestatus": "REGISTERED",
+					},
+				},
+			},
+		}, nil
+	}
 	return nil, nil
 }
 

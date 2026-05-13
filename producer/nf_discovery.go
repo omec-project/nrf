@@ -179,20 +179,54 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 	}
 
 	uriList := &context.UriList{}
-	if err := mapstructure.Decode(uriListRaw, uriList); err != nil {
+	err = mapstructure.Decode(uriListRaw, uriList)
+	if err != nil {
 		return nil, err
 	}
 
 	logger.DiscoveryLog.Debugf("fallback urilist count: %d", len(uriList.Link.Item))
 
-	profiles := make([]models.NFProfileDiscovery, 0, len(uriList.Link.Item))
+	orderedInstanceIDs := make([]string, 0, len(uriList.Link.Item))
+	uniqueInstanceIDs := make([]string, 0, len(uriList.Link.Item))
+	seenInstanceIDs := make(map[string]struct{}, len(uriList.Link.Item))
 	for _, item := range uriList.Link.Item {
 		nfInstanceID := getNFInstanceIDFromURI(item.GetHref())
 		if nfInstanceID == "" {
 			continue
 		}
+		orderedInstanceIDs = append(orderedInstanceIDs, nfInstanceID)
+		if _, seen := seenInstanceIDs[nfInstanceID]; seen {
+			continue
+		}
+		seenInstanceIDs[nfInstanceID] = struct{}{}
+		uniqueInstanceIDs = append(uniqueInstanceIDs, nfInstanceID)
+	}
 
-		profileRaw := GetNFInstanceProcedure(nfInstanceID)
+	if len(uniqueInstanceIDs) == 0 {
+		return nil, nil
+	}
+
+	profileListRaw, err := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", bson.M{
+		"nfinstanceid": bson.M{"$in": uniqueInstanceIDs},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	profilesByInstanceID := make(map[string]map[string]interface{}, len(profileListRaw))
+	for _, profileRaw := range profileListRaw {
+		if profileRaw == nil {
+			continue
+		}
+		if nfInstanceID, ok := profileRaw["nfinstanceid"].(string); ok && nfInstanceID != "" {
+			profilesByInstanceID[nfInstanceID] = profileRaw
+		}
+	}
+
+	profiles := make([]models.NFProfileDiscovery, 0, len(orderedInstanceIDs))
+	for _, nfInstanceID := range orderedInstanceIDs {
+		profileRaw := profilesByInstanceID[nfInstanceID]
+
 		if profileRaw == nil {
 			continue
 		}
