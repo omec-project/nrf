@@ -33,6 +33,32 @@ const nfStatusNotifyTimeout = 10 * time.Second
 
 var nfStatusNotifyHTTPClient = &http.Client{Timeout: nfStatusNotifyTimeout}
 
+func normalizeNFInstancePatchJSON(patchJSON []byte) []byte {
+	var patchItems []models.PatchItem
+	if err := json.Unmarshal(patchJSON, &patchItems); err != nil {
+		return patchJSON
+	}
+
+	changed := false
+	for index := range patchItems {
+		if patchItems[index].Path == "/nfStatus" {
+			patchItems[index].Path = "/nfstatus"
+			changed = true
+		}
+	}
+
+	if !changed {
+		return patchJSON
+	}
+
+	normalizedPatchJSON, err := json.Marshal(patchItems)
+	if err != nil {
+		return patchJSON
+	}
+
+	return normalizedPatchJSON
+}
+
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
 	nfInstanceId := request.Params["nfInstanceID"]
@@ -103,6 +129,7 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		problemDetails := utils.ProblemDetailsMalformedRequestSyntax("Invalid body format")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, problemDetails)
 	}
+	patchJSON = normalizeNFInstancePatchJSON(patchJSON)
 
 	response, err := updateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if err != nil {
