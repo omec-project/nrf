@@ -593,8 +593,8 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 			guamiListFilter = bson.M{
 				"$or": guamiListBsonArray,
 			}
+			setUriListByFilter(guamiListFilter, &uriList)
 		}
-		setUriListByFilter(guamiListFilter, &uriList)
 	}
 
 	// NetworkSliceCond

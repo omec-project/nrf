@@ -93,24 +93,28 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 	nfInstanceID := request.Params["nfInstanceID"]
 	if nfInstanceID == "" {
 		logger.ManagementLog.Errorln("nfInstanceID is missing")
-		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Missing nfInstanceID"})
+		problemDetails := utils.ProblemDetailsMalformedRequestSyntax("Missing nfInstanceID")
+		return httpwrapper.NewResponse(http.StatusBadRequest, nil, problemDetails)
 	}
 
 	patchJSON, ok := request.Body.([]byte)
 	if !ok {
 		logger.ManagementLog.Errorln("invalid body format")
-		return httpwrapper.NewResponse(http.StatusBadRequest, nil, map[string]string{"error": "Invalid body format"})
+		problemDetails := utils.ProblemDetailsMalformedRequestSyntax("Invalid body format")
+		return httpwrapper.NewResponse(http.StatusBadRequest, nil, problemDetails)
 	}
 
 	response, err := updateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if err != nil {
 		logger.ManagementLog.Errorln("updateNFInstanceProcedure failed:", err)
-		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure failed"})
+		problemDetails := utils.ProblemDetailsSystemFailure("Update procedure failed")
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 	}
 
 	if response == nil {
 		logger.ManagementLog.Errorln("received nil response after update procedure")
-		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, map[string]string{"error": "Update procedure returned nil response"})
+		problemDetails := utils.ProblemDetailsSystemFailure("Update procedure returned nil response")
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 	}
 
 	nfType := string(response.GetNfType())
