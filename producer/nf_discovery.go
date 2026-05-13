@@ -395,7 +395,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 
 				targetPlmnByteArray, err := bson.Marshal(targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnListtruct:", err)
+					logger.DiscoveryLog.Warnln("marshal error in targetPlmnListtruct:", err)
 				}
 
 				targetPlmnBsonM := bson.M{}
@@ -466,7 +466,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 
 				snssaiByteArray, err := bson.Marshal(snssaiStruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct", err)
+					logger.DiscoveryLog.Warnln("marshal error in snssaiStruct", err)
 				}
 
 				snssaiBsonM := bson.M{}
