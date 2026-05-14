@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -29,6 +30,151 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+func cloneDiscoveryQueryParameters(queryParameters url.Values) url.Values {
+	cloned := make(url.Values, len(queryParameters))
+	for key, values := range queryParameters {
+		cloned[key] = append([]string(nil), values...)
+	}
+	return cloned
+}
+
+func hasExplodedDiscoveryQueryParam(queryParameters url.Values, prefix string) bool {
+	for key := range queryParameters {
+		if strings.HasPrefix(key, prefix+"[") {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeDiscoveryQueryParameters(queryParameters url.Values) url.Values {
+	normalized := cloneDiscoveryQueryParameters(queryParameters)
+
+	if normalized.Get("target-plmn-list") == "" && hasExplodedDiscoveryQueryParam(normalized, "target-plmn-list") {
+		if value, ok := marshalExplodedPlmnIDList(normalized, "target-plmn-list"); ok {
+			normalized.Set("target-plmn-list", value)
+		}
+	}
+	if normalized.Get("snssais") == "" && hasExplodedDiscoveryQueryParam(normalized, "snssais") {
+		if value, ok := marshalExplodedSnssaiList(normalized, "snssais"); ok {
+			normalized.Set("snssais", value)
+		}
+	}
+	if normalized.Get("tai") == "" && hasExplodedDiscoveryQueryParam(normalized, "tai") {
+		if value, ok := marshalExplodedTai(normalized, "tai"); ok {
+			normalized.Set("tai", value)
+		}
+	}
+	if normalized.Get("guami") == "" && hasExplodedDiscoveryQueryParam(normalized, "guami") {
+		if value, ok := marshalExplodedGuami(normalized, "guami"); ok {
+			normalized.Set("guami", value)
+		}
+	}
+
+	return normalized
+}
+
+func marshalExplodedPlmnIDList(queryParameters url.Values, prefix string) (string, bool) {
+	mccValues := queryParameters[prefix+"[mcc]"]
+	mncValues := queryParameters[prefix+"[mnc]"]
+	count := max(len(mccValues), len(mncValues))
+	if count == 0 {
+		return "", false
+	}
+
+	encoded := make([]string, 0, count)
+	for index := range count {
+		plmnID := models.NewPlmnIdWithDefaults()
+		if index < len(mccValues) {
+			plmnID.SetMcc(mccValues[index])
+		}
+		if index < len(mncValues) {
+			plmnID.SetMnc(mncValues[index])
+		}
+		marshaled, err := json.Marshal(plmnID)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("marshal error in exploded plmnID:", err)
+			return "", false
+		}
+		encoded = append(encoded, string(marshaled))
+	}
+
+	return strings.Join(encoded, ","), true
+}
+
+func marshalExplodedSnssaiList(queryParameters url.Values, prefix string) (string, bool) {
+	sstValues := queryParameters[prefix+"[sst]"]
+	sdValues := queryParameters[prefix+"[sd]"]
+	count := max(len(sstValues), len(sdValues))
+	if count == 0 {
+		return "", false
+	}
+
+	encoded := make([]string, 0, count)
+	for index := range count {
+		snssai := models.NewSnssaiWithDefaults()
+		if index < len(sstValues) && sstValues[index] != "" {
+			sstValue, err := strconv.ParseInt(sstValues[index], 10, 32)
+			if err != nil {
+				logger.DiscoveryLog.Warnln("parse error in exploded snssai sst:", err)
+				return "", false
+			}
+			snssai.SetSst(int32(sstValue))
+		}
+		if index < len(sdValues) && sdValues[index] != "" {
+			snssai.SetSd(sdValues[index])
+		}
+		marshaled, err := json.Marshal(snssai)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("marshal error in exploded snssai:", err)
+			return "", false
+		}
+		encoded = append(encoded, string(marshaled))
+	}
+
+	return strings.Join(encoded, ","), true
+}
+
+func marshalExplodedTai(queryParameters url.Values, prefix string) (string, bool) {
+	plmnID := models.NewPlmnId(queryParameters.Get(prefix+"[plmnId][mcc]"), queryParameters.Get(prefix+"[plmnId][mnc]"))
+	tac := queryParameters.Get(prefix + "[tac]")
+	nid := queryParameters.Get(prefix + "[nid]")
+	if plmnID.GetMcc() == "" && plmnID.GetMnc() == "" && tac == "" && nid == "" {
+		return "", false
+	}
+
+	tai := models.NewTai(*plmnID, tac)
+	if nid != "" {
+		tai.SetNid(nid)
+	}
+
+	marshaled, err := json.Marshal(tai)
+	if err != nil {
+		logger.DiscoveryLog.Warnln("marshal error in exploded tai:", err)
+		return "", false
+	}
+	return string(marshaled), true
+}
+
+func marshalExplodedGuami(queryParameters url.Values, prefix string) (string, bool) {
+	plmnID := models.NewPlmnIdNid(queryParameters.Get(prefix+"[plmnId][mcc]"), queryParameters.Get(prefix+"[plmnId][mnc]"))
+	if nid := queryParameters.Get(prefix + "[plmnId][nid]"); nid != "" {
+		plmnID.SetNid(nid)
+	}
+	amfID := queryParameters.Get(prefix + "[amfId]")
+	if plmnID.GetMcc() == "" && plmnID.GetMnc() == "" && plmnID.GetNid() == "" && amfID == "" {
+		return "", false
+	}
+
+	guami := models.NewGuami(*plmnID, amfID)
+	marshaled, err := json.Marshal(guami)
+	if err != nil {
+		logger.DiscoveryLog.Warnln("marshal error in exploded guami:", err)
+		return "", false
+	}
+	return string(marshaled), true
+}
+
 func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	// Get all query parameters
 	logger.DiscoveryLog.Infoln("Handle NFDiscoveryRequest")
@@ -53,6 +199,8 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,
 	problemDetails *models.ProblemDetails,
 ) {
+	queryParameters = normalizeDiscoveryQueryParameters(queryParameters)
+
 	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
 		problemDetails = models.NewProblemDetails()
 		problemDetails.SetTitle("Invalid Parameter")

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -251,5 +252,60 @@ func TestNFDiscoveryProcedureHandlesBSFProfileWithoutBsfInfo(t *testing.T) {
 	}
 	if response.NfInstances[0].BsfInfo != nil {
 		t.Fatalf("expected nil BsfInfo, got %+v", response.NfInstances[0].BsfInfo)
+	}
+}
+
+func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *testing.T) {
+	query := url.Values{}
+	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, "snssais", []models.Snssai{{Sst: 1, Sd: openapi.PtrString("010203")}}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, "tai", models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, "guami", models.Guami{PlmnId: models.PlmnIdNid{Mcc: "001", Mnc: "01"}, AmfId: "000001"}, "", "")
+
+	normalized := normalizeDiscoveryQueryParameters(query)
+
+	if got := normalized.Get("target-plmn-list"); got == "" || got[0] != '{' {
+		t.Fatalf("expected normalized target-plmn-list JSON, got %q", got)
+	}
+	if got := normalized.Get("snssais"); got == "" || got[0] != '{' {
+		t.Fatalf("expected normalized snssais JSON, got %q", got)
+	}
+	if got := normalized.Get("tai"); got == "" || got[0] != '{' {
+		t.Fatalf("expected normalized tai JSON, got %q", got)
+	}
+	if got := normalized.Get("guami"); got == "" || got[0] != '{' {
+		t.Fatalf("expected normalized guami JSON, got %q", got)
+	}
+}
+
+func TestBuildFilterSupportsExplodedStructuredParams(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, "tai", models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, "guami", models.Guami{PlmnId: models.PlmnIdNid{Mcc: "001", Mnc: "01"}, AmfId: "000001"}, "", "")
+
+	filter := buildFilter(normalizeDiscoveryQueryParameters(query))
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+
+	var foundPLMN, foundTAI, foundGUAMI bool
+	for _, candidate := range andFilters {
+		if _, exists := candidate["$or"]; exists {
+			foundPLMN = true
+		}
+		if _, exists := candidate["amfinfo.tailist"]; exists {
+			foundTAI = true
+		}
+		if _, exists := candidate["amfinfo.guamilist"]; exists {
+			foundGUAMI = true
+		}
+	}
+
+	if !foundPLMN || !foundTAI || !foundGUAMI {
+		t.Fatalf("expected PLMN, TAI and GUAMI filters, got %+v", andFilters)
 	}
 }
