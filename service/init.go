@@ -21,7 +21,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
-	openapiLogger "github.com/omec-project/openapi/logger"
+	openapiLogger "github.com/omec-project/openapi/v2/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"

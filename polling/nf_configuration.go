@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/omec-project/nrf/factory"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 const nfconfigPlmnEndpoint = "/nfconfig/plmn"

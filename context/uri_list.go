@@ -10,10 +10,10 @@
 package context
 
 import (
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 type UriList struct {
-	NfType models.NfType `json:"nfType" bson:"nfType"`
+	NfType models.NFType `json:"nfType" bson:"nfType"`
 	Link   Links         `json:"_link" bson:"_link" mapstructure:"_link"`
 }

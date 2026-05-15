@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -16,16 +17,163 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
 	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+func cloneDiscoveryQueryParameters(queryParameters url.Values) url.Values {
+	cloned := make(url.Values, len(queryParameters))
+	for key, values := range queryParameters {
+		cloned[key] = append([]string(nil), values...)
+	}
+	return cloned
+}
+
+func hasExplodedDiscoveryQueryParam(queryParameters url.Values, prefix string) bool {
+	for key := range queryParameters {
+		if strings.HasPrefix(key, prefix+"[") {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeDiscoveryQueryParameters(queryParameters url.Values) url.Values {
+	normalized := cloneDiscoveryQueryParameters(queryParameters)
+
+	if normalized.Get("target-plmn-list") == "" && hasExplodedDiscoveryQueryParam(normalized, "target-plmn-list") {
+		if value, ok := marshalExplodedPlmnIDList(normalized, "target-plmn-list"); ok {
+			normalized.Set("target-plmn-list", value)
+		}
+	}
+	if normalized.Get("snssais") == "" && hasExplodedDiscoveryQueryParam(normalized, "snssais") {
+		if value, ok := marshalExplodedSnssaiList(normalized, "snssais"); ok {
+			normalized.Set("snssais", value)
+		}
+	}
+	if normalized.Get("tai") == "" && hasExplodedDiscoveryQueryParam(normalized, "tai") {
+		if value, ok := marshalExplodedTai(normalized, "tai"); ok {
+			normalized.Set("tai", value)
+		}
+	}
+	if normalized.Get("guami") == "" && hasExplodedDiscoveryQueryParam(normalized, "guami") {
+		if value, ok := marshalExplodedGuami(normalized, "guami"); ok {
+			normalized.Set("guami", value)
+		}
+	}
+
+	return normalized
+}
+
+func marshalExplodedPlmnIDList(queryParameters url.Values, prefix string) (string, bool) {
+	mccValues := queryParameters[prefix+"[mcc]"]
+	mncValues := queryParameters[prefix+"[mnc]"]
+	count := max(len(mccValues), len(mncValues))
+	if count == 0 {
+		return "", false
+	}
+
+	encoded := make([]string, 0, count)
+	for index := range count {
+		plmnID := models.NewPlmnIdWithDefaults()
+		if index < len(mccValues) {
+			plmnID.SetMcc(mccValues[index])
+		}
+		if index < len(mncValues) {
+			plmnID.SetMnc(mncValues[index])
+		}
+		marshaled, err := json.Marshal(plmnID)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("marshal error in exploded plmnID:", err)
+			return "", false
+		}
+		encoded = append(encoded, string(marshaled))
+	}
+
+	return strings.Join(encoded, ","), true
+}
+
+func marshalExplodedSnssaiList(queryParameters url.Values, prefix string) (string, bool) {
+	sstValues := queryParameters[prefix+"[sst]"]
+	sdValues := queryParameters[prefix+"[sd]"]
+	count := max(len(sstValues), len(sdValues))
+	if count == 0 {
+		return "", false
+	}
+
+	encoded := make([]string, 0, count)
+	for index := range count {
+		snssai := models.NewSnssaiWithDefaults()
+		if index < len(sstValues) && sstValues[index] != "" {
+			sstValue, err := strconv.ParseInt(sstValues[index], 10, 32)
+			if err != nil {
+				logger.DiscoveryLog.Warnln("parse error in exploded snssai sst:", err)
+				return "", false
+			}
+			snssai.SetSst(int32(sstValue))
+		}
+		if index < len(sdValues) && sdValues[index] != "" {
+			snssai.SetSd(sdValues[index])
+		}
+		marshaled, err := json.Marshal(snssai)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("marshal error in exploded snssai:", err)
+			return "", false
+		}
+		encoded = append(encoded, string(marshaled))
+	}
+
+	return strings.Join(encoded, ","), true
+}
+
+func marshalExplodedTai(queryParameters url.Values, prefix string) (string, bool) {
+	plmnID := models.NewPlmnId(queryParameters.Get(prefix+"[plmnId][mcc]"), queryParameters.Get(prefix+"[plmnId][mnc]"))
+	tac := queryParameters.Get(prefix + "[tac]")
+	nid := queryParameters.Get(prefix + "[nid]")
+	if plmnID.GetMcc() == "" && plmnID.GetMnc() == "" && tac == "" && nid == "" {
+		return "", false
+	}
+
+	tai := models.NewTai(*plmnID, tac)
+	if nid != "" {
+		tai.SetNid(nid)
+	}
+
+	marshaled, err := json.Marshal(tai)
+	if err != nil {
+		logger.DiscoveryLog.Warnln("marshal error in exploded tai:", err)
+		return "", false
+	}
+	return string(marshaled), true
+}
+
+func marshalExplodedGuami(queryParameters url.Values, prefix string) (string, bool) {
+	plmnID := models.NewPlmnIdNid(queryParameters.Get(prefix+"[plmnId][mcc]"), queryParameters.Get(prefix+"[plmnId][mnc]"))
+	if nid := queryParameters.Get(prefix + "[plmnId][nid]"); nid != "" {
+		plmnID.SetNid(nid)
+	}
+	amfID := queryParameters.Get(prefix + "[amfId]")
+	if plmnID.GetMcc() == "" && plmnID.GetMnc() == "" && plmnID.GetNid() == "" && amfID == "" {
+		return "", false
+	}
+
+	guami := models.NewGuami(*plmnID, amfID)
+	marshaled, err := json.Marshal(guami)
+	if err != nil {
+		logger.DiscoveryLog.Warnln("marshal error in exploded guami:", err)
+		return "", false
+	}
+	return string(marshaled), true
+}
 
 func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	// Get all query parameters
@@ -41,12 +189,9 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
 		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
-		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
-	problemDetails = &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
-	}
+	problemDetails = utils.ProblemDetailsUnspecified()
 	stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
@@ -54,12 +199,13 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,
 	problemDetails *models.ProblemDetails,
 ) {
+	queryParameters = normalizeDiscoveryQueryParameters(queryParameters)
+
 	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
-		problemDetails := &models.ProblemDetails{
-			Title:  "Invalid Parameter",
-			Status: http.StatusBadRequest,
-			Cause:  "Loss mandatory parameter",
-		}
+		problemDetails = models.NewProblemDetails()
+		problemDetails.SetTitle("Invalid Parameter")
+		problemDetails.SetStatus(http.StatusBadRequest)
+		problemDetails.SetCause("Loss mandatory parameter")
 		return nil, problemDetails
 	}
 
@@ -70,18 +216,17 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		complexQueryStruct := &models.ComplexQuery{}
 		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("UnMasrhal complexQuery Error: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal complexQuery Error:", err)
 		}
 		// Check either CNF or DNF
-		if complexQueryStruct.CNf != nil && complexQueryStruct.DNf != nil {
-			problemDetails := &models.ProblemDetails{
-				Title:  "Invalid Parameter",
-				Status: http.StatusBadRequest,
-				Cause:  "EITHER CNF OR DNF",
-				InvalidParams: []models.InvalidParam{
-					{Param: "complexQuery"},
-				},
-			}
+		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
+			problemDetails = models.NewProblemDetails()
+			problemDetails.SetTitle("Invalid Parameter")
+			problemDetails.SetStatus(http.StatusBadRequest)
+			problemDetails.SetCause("EITHER CNF OR DNF")
+			problemDetails.SetInvalidParams([]models.InvalidParam{
+				{Param: "complexQuery"},
+			})
 			return nil, problemDetails
 		}
 	}
@@ -93,14 +238,30 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	logger.DiscoveryLog.Debugln("query filter:", filter)
 
 	// Use the filter to find documents
-	nfProfilesRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
+	nfProfilesRaw, err := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", filter)
+	if err != nil {
+		logger.DiscoveryLog.Warnln("NF profile query error:", err)
+	}
+	logger.DiscoveryLog.Debugf("primary discovery raw count: %d", len(nfProfilesRaw))
 
 	// nfProfile data for response
-	var nfProfilesStruct []models.NfProfile
+	var nfProfilesStruct []models.NFProfileDiscovery
 
-	nfProfilesStruct, err := util.Decode(nfProfilesRaw, time.RFC3339)
+	nfProfilesStruct, err = util.Decode(nfProfilesRaw, time.RFC3339)
 	if err != nil {
-		logger.DiscoveryLog.Warnln("NF Profile Raw decode error: ", nfProfilesStruct)
+		logger.DiscoveryLog.Warnln("NF Profile Raw decode error:", err)
+	}
+	logger.DiscoveryLog.Debugf("primary discovery decoded count: %d", len(nfProfilesStruct))
+
+	if len(nfProfilesStruct) == 0 {
+		allProfiles, fallbackErr := loadDiscoveryProfilesFromURIList(queryParameters)
+		if fallbackErr != nil {
+			logger.DiscoveryLog.Warnln("fallback discovery load error:", fallbackErr)
+		} else {
+			logger.DiscoveryLog.Debugf("fallback discovery decoded count: %d", len(allProfiles))
+			nfProfilesStruct = filterDiscoveryResults(allProfiles, queryParameters)
+			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
+		}
 	}
 
 	// sort nfprofiles based on timestamp
@@ -117,40 +278,196 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	// handle ipv4 & ipv6
 	if queryParameters["target-nf-type"][0] == "BSF" {
 		for i, nfProfile := range nfProfilesStruct {
-			if nfProfile.BsfInfo.Ipv4AddressRanges != nil {
-				for j := range *nfProfile.BsfInfo.Ipv4AddressRanges {
-					ipv4IntStart, err := strconv.Atoi((((*(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).Start))
+			if nfProfile.BsfInfo == nil {
+				continue
+			}
+			ipv4AddressRanges, ok := nfProfile.BsfInfo.GetIpv4AddressRangesOk()
+			if ok {
+				for j, ipv4AddressRange := range ipv4AddressRanges {
+					ipv4IntStart, err := strconv.Atoi(ipv4AddressRange.GetStart())
 					if err != nil {
-						logger.DiscoveryLog.Warnln("ipv4IntStart Atoi Error: ", err)
+						logger.DiscoveryLog.Warnln("ipv4IntStart Atoi Error:", err)
 					}
-					((*(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).Start = context.Ipv4IntToIpv4String(int64(ipv4IntStart))
-					ipv4IntEnd, err := strconv.Atoi((((*(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).End))
+					(((*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).Start = context.Ipv4IntToIpv4String(int64(ipv4IntStart))
+					ipv4IntEnd, err := strconv.Atoi(ipv4AddressRange.GetEnd())
 					if err != nil {
-						logger.DiscoveryLog.Warnln("ipv4IntEnd Atoi Error: ", err)
+						logger.DiscoveryLog.Warnln("ipv4IntEnd Atoi Error:", err)
 					}
-					((*(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).End = context.Ipv4IntToIpv4String(int64(ipv4IntEnd))
+					(((*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).End = context.Ipv4IntToIpv4String(int64(ipv4IntEnd))
 				}
 			}
-			if nfProfile.BsfInfo.Ipv6PrefixRanges != nil {
-				for j := range *nfProfile.BsfInfo.Ipv6PrefixRanges {
+			ipv6PrefixRanges, ok := nfProfile.BsfInfo.GetIpv6PrefixRangesOk()
+			if ok {
+				for j, ipv6PrefixRange := range ipv6PrefixRanges {
 					ipv6IntStart := new(big.Int)
-					ipv6IntStart.SetString(((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).Start, 10)
-					((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).Start = context.Ipv6IntToIpv6String(ipv6IntStart)
+					ipv6IntStart.SetString(ipv6PrefixRange.GetStart(), 10)
+					(((*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).Start = context.Ipv6IntToIpv6String(ipv6IntStart)
 
 					ipv6IntEnd := new(big.Int)
-					ipv6IntEnd.SetString(((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End, 10)
-					((*(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End = context.Ipv6IntToIpv6String(ipv6IntEnd)
+					ipv6IntEnd.SetString(ipv6PrefixRange.GetEnd(), 10)
+					(((*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End = context.Ipv6IntToIpv6String(ipv6IntEnd)
 				}
 			}
 		}
 	}
 	// Build SearchResult model
-	searchResult := &models.SearchResult{
-		ValidityPeriod: 100,
-		NfInstances:    nfProfilesStruct,
-	}
+	searchResult := models.NewSearchResult(100, nfProfilesStruct)
 
 	return searchResult, nil
+}
+
+func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFProfileDiscovery, error) {
+	targetNfType := queryParameters["target-nf-type"][0]
+	uriListRaw, err := dbadapter.DBClient.RestfulAPIGetOne("urilist", bson.M{"nfType": targetNfType})
+	if err != nil {
+		return nil, err
+	}
+	if uriListRaw == nil {
+		return nil, nil
+	}
+
+	uriList := &context.UriList{}
+	err = mapstructure.Decode(uriListRaw, uriList)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.DiscoveryLog.Debugf("fallback urilist count: %d", len(uriList.Link.Item))
+
+	orderedInstanceIDs := make([]string, 0, len(uriList.Link.Item))
+	uniqueInstanceIDs := make([]string, 0, len(uriList.Link.Item))
+	seenInstanceIDs := make(map[string]struct{}, len(uriList.Link.Item))
+	for _, item := range uriList.Link.Item {
+		nfInstanceID := getNFInstanceIDFromURI(item.GetHref())
+		if nfInstanceID == "" {
+			continue
+		}
+		orderedInstanceIDs = append(orderedInstanceIDs, nfInstanceID)
+		if _, seen := seenInstanceIDs[nfInstanceID]; seen {
+			continue
+		}
+		seenInstanceIDs[nfInstanceID] = struct{}{}
+		uniqueInstanceIDs = append(uniqueInstanceIDs, nfInstanceID)
+	}
+
+	if len(uniqueInstanceIDs) == 0 {
+		return nil, nil
+	}
+
+	profileListRaw, err := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", bson.M{
+		"nfinstanceid": bson.M{"$in": uniqueInstanceIDs},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	profilesByInstanceID := make(map[string]map[string]interface{}, len(profileListRaw))
+	for _, profileRaw := range profileListRaw {
+		if profileRaw == nil {
+			continue
+		}
+		if nfInstanceID, ok := profileRaw["nfinstanceid"].(string); ok && nfInstanceID != "" {
+			profilesByInstanceID[nfInstanceID] = profileRaw
+		}
+	}
+
+	profiles := make([]models.NFProfileDiscovery, 0, len(orderedInstanceIDs))
+	for _, nfInstanceID := range orderedInstanceIDs {
+		profileRaw := profilesByInstanceID[nfInstanceID]
+
+		if profileRaw == nil {
+			continue
+		}
+
+		decodedProfiles, decodeErr := util.Decode([]any{profileRaw}, time.RFC3339)
+		if decodeErr != nil {
+			logger.DiscoveryLog.Warnf("fallback profile decode error for %s: %v", nfInstanceID, decodeErr)
+			continue
+		}
+		if len(decodedProfiles) == 0 {
+			continue
+		}
+		decodedProfile := decodedProfiles[0]
+		if decodedProfile.NfInstanceId == "" {
+			continue
+		}
+
+		profiles = append(profiles, decodedProfile)
+	}
+
+	return profiles, nil
+}
+
+func getNFInstanceIDFromURI(uri string) string {
+	idx := strings.LastIndex(uri, "/")
+	if idx == -1 || idx == len(uri)-1 {
+		return ""
+	}
+	return uri[idx+1:]
+}
+
+func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
+	filtered := make([]models.NFProfileDiscovery, 0, len(nfProfiles))
+	for _, profile := range nfProfiles {
+		if matchesDiscoveryQuery(profile, queryParameters) {
+			filtered = append(filtered, profile)
+		}
+	}
+	return filtered
+}
+
+func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters url.Values) bool {
+	if values := queryParameters["target-nf-type"]; len(values) > 0 && values[0] != "" {
+		if string(profile.NfType) != values[0] {
+			return false
+		}
+	}
+
+	if values := queryParameters["target-nf-instance-id"]; len(values) > 0 && values[0] != "" {
+		if profile.NfInstanceId != values[0] {
+			return false
+		}
+	}
+
+	if values := queryParameters["requester-nf-type"]; len(values) > 0 && values[0] != "" {
+		allowedTypes, ok := profile.GetAllowedNfTypesOk()
+		if ok && len(allowedTypes) > 0 {
+			matched := false
+			for _, allowedType := range allowedTypes {
+				if string(allowedType) == values[0] {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
+	}
+
+	if values := queryParameters["service-names"]; len(values) > 0 && values[0] != "" {
+		requestedServices := strings.Split(values[0], ",")
+		matched := false
+		for _, service := range profile.NfServices {
+			if service.NfServiceStatus != models.NFSERVICESTATUS_REGISTERED {
+				continue
+			}
+			for _, requestedService := range requestedServices {
+				if string(service.ServiceName) == requestedService {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	return true
 }
 
 func buildFilter(queryParameters url.Values) bson.M {
@@ -159,13 +476,17 @@ func buildFilter(queryParameters url.Values) bson.M {
 		"$and": []bson.M{},
 	}
 
+	targetNfType := ""
+
 	// [Query-1] target-nf-type
-	targetNfType := queryParameters["target-nf-type"][0]
-	if targetNfType != "" {
-		targetNfTypeFilter := bson.M{
-			"nfType": targetNfType,
+	if len(queryParameters["target-nf-type"]) > 0 {
+		targetNfType = queryParameters["target-nf-type"][0]
+		if targetNfType != "" {
+			targetNfTypeFilter := bson.M{
+				"nftype": targetNfType,
+			}
+			filter["$and"] = append(filter["$and"].([]bson.M), targetNfTypeFilter)
 		}
-		filter["$and"] = append(filter["$and"].([]bson.M), targetNfTypeFilter)
 	}
 
 	// [Query-2] request-nf-type
@@ -173,10 +494,8 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if requesterNfType != "" {
 		requesterNfTypeFilter := bson.M{
 			"$or": []bson.M{
-				{"allowedNfTypes": requesterNfType},
-				{"allowedNfTypes": bson.M{
-					"$exists": false,
-				}},
+				{"allowednftypes": requesterNfType},
+				{"allowednftypes": nil},
 			},
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), requesterNfTypeFilter)
@@ -193,14 +512,14 @@ func buildFilter(queryParameters url.Values) bson.M {
 			serviceNamesBsonArray = append(serviceNamesBsonArray, v)
 		}
 		serviceNamesFilter := bson.M{
-			"nfServices": bson.M{
+			"nfservices": bson.M{
 				"$elemMatch": bson.M{
-					"serviceName": bson.M{
+					"servicename": bson.M{
 						// get all service in array
 						"$in": serviceNamesBsonArray,
 					},
 					// the service need to be registered
-					"nfServiceStatus": "REGISTERED",
+					"nfservicestatus": "REGISTERED",
 				},
 			},
 		}
@@ -214,16 +533,16 @@ func buildFilter(queryParameters url.Values) bson.M {
 		requesterNfinstanceFqdnFilter := bson.M{
 			"$or": []bson.M{
 				{
-					"nfServices": bson.M{
+					"nfservices": bson.M{
 						"$elemMatch": bson.M{
-							"allowedNfDomains": requesterNfinstanceFqdn,
+							"allowednfdomains": requesterNfinstanceFqdn,
 						},
 					},
 				},
 				{ // if not provided, allow any.
-					"nfServices": bson.M{
+					"nfservices": bson.M{
 						"$elemMatch": bson.M{
-							"allowedNfDomains": bson.M{
+							"allowednfdomains": bson.M{
 								"$exists": false,
 							},
 						},
@@ -250,15 +569,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 				temptargetPlmn += ","
 				temptargetPlmn += v
 
-				targetPlmnListtruct := &models.PlmnId{}
+				targetPlmnListtruct := models.NewPlmnIdWithDefaults()
 				err := json.Unmarshal([]byte(temptargetPlmn), targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnListtruct: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnListtruct:", err)
 				}
 
 				targetPlmnByteArray, err := bson.Marshal(targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnListtruct: ", err)
+					logger.DiscoveryLog.Warnln("marshal error in targetPlmnListtruct:", err)
 				}
 
 				targetPlmnBsonM := bson.M{}
@@ -268,7 +587,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 				}
 				logger.DiscoveryLog.Debugln("temp target Plmn:", temptargetPlmn)
 
-				targetPlmnListBsonArray = append(targetPlmnListBsonArray, bson.M{"plmnList": bson.M{"$elemMatch": targetPlmnBsonM}})
+				targetPlmnListBsonArray = append(targetPlmnListBsonArray, bson.M{"plmnlist": bson.M{"$elemMatch": targetPlmnBsonM}})
 			}
 		}
 
@@ -289,7 +608,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if queryParameters["target-nf-instance-id"] != nil {
 		targetNfInstanceid := queryParameters["target-nf-instance-id"][0]
 		nfInstanceIdFilter := bson.M{
-			"nfInstanceId": targetNfInstanceid,
+			"nfinstanceid": targetNfInstanceid,
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), nfInstanceIdFilter)
 	}
@@ -321,29 +640,29 @@ func buildFilter(queryParameters url.Values) bson.M {
 				tempSnssai += ","
 				tempSnssai += v
 
-				snssaiStruct := &models.Snssai{}
+				snssaiStruct := models.NewSnssaiWithDefaults()
 				err := json.Unmarshal([]byte(tempSnssai), snssaiStruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiStruct", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct", err)
 				}
 
 				snssaiByteArray, err := bson.Marshal(snssaiStruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiStruct", err)
+					logger.DiscoveryLog.Warnln("marshal error in snssaiStruct", err)
 				}
 
 				snssaiBsonM := bson.M{}
 				err = bson.Unmarshal(snssaiByteArray, &snssaiBsonM)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiBsonM", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM", err)
 				}
 
-				snssaisBsonArray = append(snssaisBsonArray, bson.M{"sNssais": bson.M{"$elemMatch": snssaiBsonM}})
+				snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{"$elemMatch": snssaiBsonM}})
 			}
 		}
 
 		// if not assign, serve all NF
-		snssaisBsonArray = append(snssaisBsonArray, bson.M{"sNssais": bson.M{"$exists": false}})
+		snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{"$exists": false}})
 
 		snssaisFilter := bson.M{
 			"$or": snssaisBsonArray,
@@ -361,7 +680,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			nsiListBsonArray = append(nsiListBsonArray, v)
 		}
 		nsiListFilter := bson.M{
-			"nsiList": bson.M{
+			"nsilist": bson.M{
 				"$all": nsiListBsonArray,
 			},
 		}
@@ -375,11 +694,14 @@ func buildFilter(queryParameters url.Values) bson.M {
 		switch targetNfType {
 		case "SMF":
 			dnnFilter = bson.M{
-				"smfInfo.sNssaiSmfInfoList": bson.M{
+				"smfinfo.snssaismfinfolist": bson.M{
 					"$elemMatch": bson.M{
-						"dnnSmfInfoList": bson.M{
+						"dnnsmfinfolist": bson.M{
 							"$elemMatch": bson.M{
-								"dnn": dnn,
+								"$or": []bson.M{
+									{"dnn": dnn},
+									{"dnn.string": dnn},
+								},
 							},
 						},
 					},
@@ -387,9 +709,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			}
 		case "UPF":
 			dnnFilter = bson.M{
-				"upfInfo.sNssaiUpfInfoList": bson.M{
+				"upfinfo.snssaiupfinfolist": bson.M{
 					"$elemMatch": bson.M{
-						"dnnUpfInfoList": bson.M{
+						"dnnupfinfolist": bson.M{
 							"$elemMatch": bson.M{
 								"dnn": dnn,
 							},
@@ -401,10 +723,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			dnnFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"bsfInfo.dnnList": dnn,
+						"bsfinfo.dnnlist": dnn,
 					},
 					{
-						"bsfInfo.dnnList": bson.M{
+						"bsfinfo.dnnlist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -414,10 +736,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			dnnFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"pcfInfo.dnnList": dnn,
+						"pcfinfo.dnnlist": dnn,
 					},
 					{
-						"pcfInfo.dnnList": bson.M{
+						"pcfinfo.dnnlist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -435,10 +757,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			smfServingAreaFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"upfInfo.smfServingArea": smfServingArea,
+						"upfinfo.smfservingarea": smfServingArea,
 					},
 					{
-						"upfInfo.smfServingArea": bson.M{
+						"upfinfo.smfservingarea": bson.M{
 							"$exists": false,
 						},
 					},
@@ -453,32 +775,32 @@ func buildFilter(queryParameters url.Values) bson.M {
 		var taiFilter bson.M
 		tai := queryParameters["tai"][0]
 
-		taiStruct := &models.Tai{}
+		taiStruct := models.NewTaiWithDefaults()
 		err := json.Unmarshal([]byte(tai), taiStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiStruct: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiStruct:", err)
 		}
 
 		taiByteArray, err := bson.Marshal(taiStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiByteArray: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiByteArray:", err)
 		}
 
 		taiBsonM := bson.M{}
 		err = bson.Unmarshal(taiByteArray, &taiBsonM)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiByteArray: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiByteArray:", err)
 		}
 		switch targetNfType {
 		case "SMF":
 			taiFilter = bson.M{
-				"smfInfo.taiList": bson.M{
+				"smfinfo.tailist": bson.M{
 					"$elemMatch": taiBsonM,
 				},
 			}
 		case "AMF":
 			taiFilter = bson.M{
-				"amfInfo.taiList": bson.M{
+				"amfinfo.tailist": bson.M{
 					"$elemMatch": taiBsonM,
 				},
 			}
@@ -491,7 +813,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 		if targetNfType == "AMF" {
 			amfRegionId := queryParameters["amf-region-id"][0]
 			amfRegionIdFilter := bson.M{
-				"amfInfo.amfRegionId": amfRegionId,
+				"amfinfo.amfregionid": amfRegionId,
 			}
 			filter["$and"] = append(filter["$and"].([]bson.M), amfRegionIdFilter)
 		}
@@ -502,7 +824,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 		if targetNfType == "AMF" {
 			amfSetId := queryParameters["amf-set-id"][0]
 			amfSetIdFilter := bson.M{
-				"amfInfo.amfSetId": amfSetId,
+				"amfinfo.amfsetid": amfSetId,
 			}
 			filter["$and"] = append(filter["$and"].([]bson.M), amfSetIdFilter)
 		}
@@ -514,25 +836,25 @@ func buildFilter(queryParameters url.Values) bson.M {
 		if targetNfType == "AMF" {
 			guami := queryParameters["guami"][0]
 
-			guamiStruct := &models.Guami{}
+			guamiStruct := models.NewGuamiWithDefaults()
 			err := json.Unmarshal([]byte(guami), guamiStruct)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiStruct: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiStruct:", err)
 			}
 
 			guamiByteArray, err := bson.Marshal(guamiStruct)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiByteArray: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiByteArray:", err)
 			}
 
 			guamiBsonM := bson.M{}
 			err = bson.Unmarshal(guamiByteArray, &guamiBsonM)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiByteArray: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiByteArray:", err)
 			}
 
 			guamiFilter := bson.M{
-				"amfInfo.guamiList": bson.M{
+				"amfinfo.guamilist": bson.M{
 					"$elemMatch": guamiBsonM,
 				},
 			}
@@ -552,7 +874,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			supiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"pcfInfo.supiRanges": bson.M{
+						"pcfinfo.supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi,
@@ -564,7 +886,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"pcfInfo.supiRanges": bson.M{
+						"pcfinfo.supiranges": nil,
+					},
+					{
+						"pcfinfo.supiranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -574,7 +899,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			supiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"chfInfo.supiRangeList": bson.M{
+						"chfinfo.supirangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi,
@@ -586,7 +911,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"chfInfo.supiRangeList": bson.M{
+						"chfinfo.supirangelist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -596,7 +921,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			supiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"ausfInfo.supiRanges": bson.M{
+						"ausfinfo.supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi,
@@ -608,7 +933,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"ausfInfo.supiRanges": bson.M{
+						"ausfinfo.supiranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -618,7 +943,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			supiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udmInfo.supiRanges": bson.M{
+						"udminfo.supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi,
@@ -630,15 +955,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udmInfo.supiRanges": bson.M{
+						"udminfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.gpsiRanges": bson.M{
+						"udminfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.externalGroupIdentifiersRanges": bson.M{
+						"udminfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -648,7 +973,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			supiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udrInfo.supiRanges": bson.M{
+						"udrinfo.supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi,
@@ -660,15 +985,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udrInfo.supiRanges": bson.M{
+						"udrinfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.gpsiRanges": bson.M{
+						"udrinfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.externalGroupIdentifiersRanges": bson.M{
+						"udrinfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -687,7 +1012,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			ueIpv4AddressFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"bsfInfo.ipv4AddressRanges": bson.M{
+						"bsfinfo.ipv4addressranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": strconv.Itoa(int(ueIpv4AddressNumber)),
@@ -699,7 +1024,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"bsfInfo.ipv4AddressRanges": bson.M{
+						"bsfinfo.ipv4addressranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -717,10 +1042,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			ipDomainFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"bsfInfo.ipDomainList": ipDomain,
+						"bsfinfo.ipdomainlist": ipDomain,
 					},
 					{
-						"bsfInfo.ipDomainList": bson.M{
+						"bsfinfo.ipdomainlist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -739,7 +1064,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			ueIpv6PrefixFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"bsfInfo.ipv6PrefixRanges": bson.M{
+						"bsfinfo.ipv6prefixranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": ueIpv6PrefixNumber.String(),
@@ -751,7 +1076,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"bsfInfo.ipv6PrefixRanges": bson.M{
+						"bsfinfo.ipv6prefixranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -766,7 +1091,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 		pgwInd := queryParameters["pgw-ind"][0]
 		if pgwInd == "true" {
 			pgwIndFilter := bson.M{
-				"smfInfo.pgwFqdn": bson.M{
+				"smfinfo.pgwfqdn": bson.M{
 					"$exists": true,
 				},
 			}
@@ -778,7 +1103,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if queryParameters["pgw"] != nil {
 		pgw := queryParameters["pgw"][0]
 		pgwFilter := bson.M{
-			"smfInfo.pgwFqdn": pgw,
+			"smfinfo.pgwfqdn": pgw,
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), pgwFilter)
 	}
@@ -793,7 +1118,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			gpsiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"chfInfo.gpsiRangeList": bson.M{
+						"chfinfo.gpsirangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
@@ -805,7 +1130,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"chfInfo.gpsiRangeList": bson.M{
+						"chfinfo.gpsirangelist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -815,7 +1140,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			gpsiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udmInfo.gpsiRanges": bson.M{
+						"udminfo.gpsiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
@@ -827,15 +1152,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udmInfo.supiRanges": bson.M{
+						"udminfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.gpsiRanges": bson.M{
+						"udminfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.externalGroupIdentifiersRanges": bson.M{
+						"udminfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -845,7 +1170,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			gpsiFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udrInfo.gpsiRanges": bson.M{
+						"udrinfo.gpsiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
@@ -857,15 +1182,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udrInfo.supiRanges": bson.M{
+						"udrinfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.gpsiRanges": bson.M{
+						"udrinfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.externalGroupIdentifiersRanges": bson.M{
+						"udrinfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -886,7 +1211,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			externalGroupIdentityFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udmInfo.externalGroupIdentifiersRanges": bson.M{
+						"udminfo.externalgroupidentifiersranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": encodedGroupId,
@@ -898,15 +1223,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udmInfo.supiRanges": bson.M{
+						"udminfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.gpsiRanges": bson.M{
+						"udminfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udmInfo.externalGroupIdentifiersRanges": bson.M{
+						"udminfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -916,7 +1241,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			externalGroupIdentityFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udrInfo.externalGroupIdentifiersRanges": bson.M{
+						"udrinfo.externalgroupidentifiersranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": encodedGroupId,
@@ -928,15 +1253,15 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"udrInfo.supiRanges": bson.M{
+						"udrinfo.supiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.gpsiRanges": bson.M{
+						"udrinfo.gpsiranges": bson.M{
 							"$exists": false,
 						},
 
-						"udrInfo.externalGroupIdentifiersRanges": bson.M{
+						"udrinfo.externalgroupidentifiersranges": bson.M{
 							"$exists": false,
 						},
 					},
@@ -954,10 +1279,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			dataSetFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udrInfo.supportedDataSets": dataSet,
+						"udrinfo.supporteddatasets": dataSet,
 					},
 					{
-						"udrInfo.supportedDataSets": bson.M{
+						"udrinfo.supporteddatasets": bson.M{
 							"$exists": false,
 						},
 					},
@@ -976,10 +1301,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			routingIndicatorFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"ausfInfo.routingIndicators": routingIndicator,
+						"ausfinfo.routingindicators": routingIndicator,
 					},
 					{
-						"ausfInfo.routingIndicators": bson.M{
+						"ausfinfo.routingindicators": bson.M{
 							"$exists": false,
 						},
 					},
@@ -989,10 +1314,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 			routingIndicatorFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"udmInfo.routingIndicators": routingIndicator,
+						"udminfo.routingindicators": routingIndicator,
 					},
 					{
-						"udmInfo.routingIndicators": bson.M{
+						"udminfo.routingindicators": bson.M{
 							"$exists": false,
 						},
 					},
@@ -1016,19 +1341,19 @@ func buildFilter(queryParameters url.Values) bson.M {
 		switch targetNfType {
 		case "UDR":
 			groupIdListFilter = bson.M{
-				"udrInfo.groupId": bson.M{
+				"udrinfo.groupid": bson.M{
 					"$in": groupIdListBsonArray,
 				},
 			}
 		case "UDM":
 			groupIdListFilter = bson.M{
-				"udmInfo.groupId": bson.M{
+				"udminfo.groupid": bson.M{
 					"$in": groupIdListBsonArray,
 				},
 			}
 		case "AUSF":
 			groupIdListFilter = bson.M{
-				"ausfInfo.groupId": bson.M{
+				"ausfinfo.groupid": bson.M{
 					"$in": groupIdListBsonArray,
 				},
 			}
@@ -1048,11 +1373,11 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		if targetNfType == "UPF" {
 			dnaiFilter = bson.M{
-				"upfInfo.sNssaiUpfInfoList": bson.M{
+				"upfinfo.snssaiupfinfolist": bson.M{
 					"$elemMatch": bson.M{
-						"dnnUpfInfoList": bson.M{
+						"dnnupfinfolist": bson.M{
 							"$elemMatch": bson.M{
-								"dnaiList": bson.M{
+								"dnailist": bson.M{
 									"$in": dnaiListBsonArray,
 								},
 							},
@@ -1070,7 +1395,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 		// upfIwkEpsInd := queryParameters["upf-iwk-eps-ind"][0]
 		if targetNfType == "UPF" {
 			upfIwkEpsIndFilter = bson.M{
-				"upfInfo.iwkEpsInd": true,
+				"upfinfo.iwkepsind": true,
 			}
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), upfIwkEpsIndFilter)
@@ -1080,10 +1405,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if queryParameters["chf-supported-plmn"] != nil {
 		var chfSupportedPlmnFilter bson.M
 		chfSupportedPlmn := queryParameters["chf-supported-plmn"][0]
-		chfSupportedPlmnStruct := &models.PlmnId{}
+		chfSupportedPlmnStruct := models.NewPlmnIdWithDefaults()
 		err := json.Unmarshal([]byte(chfSupportedPlmn), chfSupportedPlmnStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in chfSupportedPlmnStruct: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in chfSupportedPlmnStruct:", err)
 		}
 
 		encodedchfSupportedPlmn := chfSupportedPlmnStruct.Mcc + chfSupportedPlmnStruct.Mnc
@@ -1092,7 +1417,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 			chfSupportedPlmnFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"chfInfo.plmnRangeList": bson.M{
+						"chfinfo.plmnrangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": encodedchfSupportedPlmn,
@@ -1104,7 +1429,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 						},
 					},
 					{
-						"chfInfo.plmnRangeList": bson.M{
+						"chfinfo.plmnrangelist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -1130,10 +1455,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 		accessTypeFilter := bson.M{
 			"$or": []bson.M{
 				{
-					"smfInfo.accessType": accessType,
+					"smfinfo.accesstype": accessType,
 				},
 				{
-					"smfInfo.accessType": bson.M{
+					"smfinfo.accesstype": bson.M{
 						"$exists": false,
 					},
 				},
@@ -1146,9 +1471,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if queryParameters["supported-features"] != nil {
 		supportedFeatures := queryParameters["supported-features"][0]
 		supportedFeaturesFilter := bson.M{
-			"nfServices": bson.M{
+			"nfservices": bson.M{
 				"$elemMatch": bson.M{
-					"supportedFeatures": supportedFeatures,
+					"supportedfeatures": supportedFeatures,
 				},
 			},
 		}
@@ -1162,7 +1487,7 @@ func buildFilter(queryParameters url.Values) bson.M {
 		complexQueryStruct := &models.ComplexQuery{}
 		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in complexQuery: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in complexQuery:", err)
 		}
 		complexQueryFilter := complexQueryFilter(complexQueryStruct)
 		filter["$and"] = append(filter["$and"].([]bson.M), complexQueryFilter)
@@ -1182,7 +1507,7 @@ type AtomElem struct {
 
 func complexQueryFilter(complexQueryParameter *models.ComplexQuery) bson.M {
 	complexQueryType := ""
-	if complexQueryParameter.CNf != nil {
+	if complexQueryParameter.Cnf != nil {
 		complexQueryType = COMPLEX_QUERY_TYPE_CNF
 	} else {
 		complexQueryType = COMPLEX_QUERY_TYPE_DNF
@@ -1195,11 +1520,16 @@ func complexQueryFilter(complexQueryParameter *models.ComplexQuery) bson.M {
 		filter = bson.M{
 			"$and": []bson.M{},
 		}
-		for _, cnfUnit := range complexQueryParameter.CNf.CnfUnits {
+		for _, cnfUnit := range complexQueryParameter.Cnf.GetCnfUnits() {
 			queryParameters := make(map[string]*AtomElem)
 			var cnfUnitFilter bson.M
 			for _, atom := range cnfUnit.CnfUnit {
-				queryParameters[atom.Attr] = &AtomElem{value: atom.Value, negative: atom.Negative}
+				strValue, ok := atom.Value.(string)
+				if !ok {
+					logger.AppLog.Errorln("the value is not a string")
+					continue
+				}
+				queryParameters[atom.Attr] = &AtomElem{value: strValue, negative: atom.GetNegative()}
 			}
 			cnfUnitFilter = complexQueryFilterSubprocess(queryParameters, complexQueryType)
 
@@ -1230,19 +1560,19 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 
 	// [Query-1] target-nf-type
 	var targetNfType string
-	if targetNfType != "" {
+	if targetNfTypeParam, ok := queryParameters["target-nf-type"]; ok && targetNfTypeParam != nil {
 		var targetNfTypeFilter bson.M
-		targetNfType = queryParameters["target-nf-type"].value
-		negative := queryParameters["target-nf-type"].negative
+		targetNfType = targetNfTypeParam.value
+		negative := targetNfTypeParam.negative
 		if negative {
 			targetNfTypeFilter = bson.M{
-				"nfType": bson.M{
+				"nftype": bson.M{
 					"$ne": targetNfType,
 				},
 			}
 		} else if !negative {
 			targetNfTypeFilter = bson.M{
-				"nfType": targetNfType,
+				"nftype": targetNfType,
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), targetNfTypeFilter)
@@ -1267,27 +1597,27 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		negative := queryParameters["service-names"].negative
 		if negative {
 			serviceNamesFilter = bson.M{
-				"nfServices": bson.M{
+				"nfservices": bson.M{
 					"$elemMatch": bson.M{
-						"serviceName": bson.M{
+						"servicename": bson.M{
 							// get all service in array
 							"$nin": serviceNamesBsonArray,
 						},
 						// the service need to be registered
-						"nfServiceStatus": "REGISTERED",
+						"nfservicestatus": "REGISTERED",
 					},
 				},
 			}
 		} else if !negative {
 			serviceNamesFilter = bson.M{
-				"nfServices": bson.M{
+				"nfservices": bson.M{
 					"$elemMatch": bson.M{
-						"serviceName": bson.M{
+						"servicename": bson.M{
 							// get all service in array
 							"$in": serviceNamesBsonArray,
 						},
 						// the service need to be registered
-						"nfServiceStatus": "REGISTERED",
+						"nfservicestatus": "REGISTERED",
 					},
 				},
 			}
@@ -1303,17 +1633,17 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		negative := queryParameters["requester-nfinstance-fqdn"].negative
 		if negative {
 			requesterNfinstanceFqdnFilter = bson.M{
-				"nfServices": bson.M{
+				"nfservices": bson.M{
 					"$elemMatch": bson.M{
-						"allowedNfDomains": requesterNfinstanceFqdn,
+						"allowednfdomains": requesterNfinstanceFqdn,
 					},
 				},
 			}
 		} else if !negative {
 			requesterNfinstanceFqdnFilter = bson.M{
-				"nfServices": bson.M{
+				"nfservices": bson.M{
 					"$elemMatch": bson.M{
-						"allowedNfDomains": bson.M{
+						"allowednfdomains": bson.M{
 							"$ne": requesterNfinstanceFqdn,
 						},
 					},
@@ -1339,21 +1669,21 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 				temptargetPlmn += ","
 				temptargetPlmn += v
 
-				targetPlmnListtruct := &models.PlmnId{}
+				targetPlmnListtruct := models.NewPlmnIdWithDefaults()
 				err := json.Unmarshal([]byte(temptargetPlmn), targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnListstruct: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnListstruct:", err)
 				}
 
 				targetPlmnByteArray, err := bson.Marshal(targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnByteArray: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnByteArray:", err)
 				}
 
 				targetPlmnBsonM := bson.M{}
 				err = bson.Unmarshal(targetPlmnByteArray, &targetPlmnBsonM)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in targetPlmnBsonM: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnBsonM:", err)
 				}
 
 				targetPlmnListBsonArray = append(targetPlmnListBsonArray, targetPlmnBsonM)
@@ -1364,13 +1694,13 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		negative := queryParameters["target-plmn-list"].negative
 		if negative {
 			targetPlmnListFilter = bson.M{
-				"PlmnList": bson.M{
+				"plmnlist": bson.M{
 					"$nin": targetPlmnListBsonArray,
 				},
 			}
 		} else if !negative {
 			targetPlmnListFilter = bson.M{
-				"PlmnList": bson.M{
+				"plmnlist": bson.M{
 					"$in": targetPlmnListBsonArray,
 				},
 			}
@@ -1392,13 +1722,13 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		negative := queryParameters["target-nf-instanceid"].negative
 		if negative {
 			nfInstanceIdFilter = bson.M{
-				"nfInstanceId": bson.M{
+				"nfinstanceid": bson.M{
 					"$ne": targetNfInstanceid,
 				},
 			}
 		} else if !negative {
 			nfInstanceIdFilter = bson.M{
-				"nfInstanceId": targetNfInstanceid,
+				"nfinstanceid": targetNfInstanceid,
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), nfInstanceIdFilter)
@@ -1436,21 +1766,21 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 				tempSnssai += ","
 				tempSnssai += v
 
-				snssaiStruct := &models.Snssai{}
+				snssaiStruct := models.NewSnssaiWithDefaults()
 				err := json.Unmarshal([]byte(tempSnssai), snssaiStruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiStruct: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct:", err)
 				}
 
 				snssaiByteArray, err := bson.Marshal(snssaiStruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiByteArray: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in snssaiByteArray:", err)
 				}
 
 				snssaiBsonM := bson.M{}
 				err = bson.Unmarshal(snssaiByteArray, &snssaiBsonM)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("Unmarshal Error in snssaiBsonM: ", err)
+					logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM:", err)
 				}
 
 				snssaisBsonArray = append(snssaisBsonArray, snssaiBsonM)
@@ -1479,7 +1809,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			nsiListBsonArray = append(nsiListBsonArray, v)
 		}
 		nsiListFilter := bson.M{
-			"nsiList": bson.M{
+			"nsilist": bson.M{
 				"$all": nsiListBsonArray,
 			},
 		}
@@ -1498,14 +1828,13 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "SMF":
 			dnnFilter = bson.M{
-				"smfInfo": bson.M{
+				"smfinfo.snssaismfinfolist": bson.M{
 					"$elemMatch": bson.M{
-						"sNssaiSmfInfoList": bson.M{
+						"dnnsmfinfolist": bson.M{
 							"$elemMatch": bson.M{
-								"dnnSmfInfoList": bson.M{
-									"$elemMatch": bson.M{
-										"dnn": dnn[0],
-									},
+								"$or": []bson.M{
+									{"dnn": dnn},
+									{"dnn.string": dnn},
 								},
 							},
 						},
@@ -1514,11 +1843,11 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UPF":
 			dnnFilter = bson.M{
-				"upfInfo": bson.M{
+				"upfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"sNssaiUpfInfoList": bson.M{
+						"snssaiupfinfolist": bson.M{
 							"$elemMatch": bson.M{
-								"dnnUpfInfoList": bson.M{
+								"dnnupfinfolist": bson.M{
 									"$elemMatch": bson.M{
 										"dnn": dnn,
 									},
@@ -1530,9 +1859,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "BSF":
 			dnnFilter = bson.M{
-				"bsfInfo": bson.M{
+				"bsfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"dnnList": dnn[0],
+						"dnnlist": dnn,
 					},
 				},
 			}
@@ -1551,9 +1880,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		smfServingArea := queryParameters["smf-serving-area"].value
 		if targetNfType == "UPF" {
 			smfServingAreaFilter = bson.M{
-				"upfInfo": bson.M{
+				"upfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"smfServingArea": smfServingArea,
+						"smfservingarea": smfServingArea,
 					},
 				},
 			}
@@ -1573,36 +1902,36 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		taiSplit := strings.Split(tai, ",")
 		tempTai := taiSplit[0] + "," + taiSplit[1]
 
-		taiStruct := &models.Tai{}
+		taiStruct := models.NewTaiWithDefaults()
 		err := json.Unmarshal([]byte(tempTai), taiStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiStruct: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiStruct:", err)
 		}
 
 		taiByteArray, err := bson.Marshal(taiStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiByteArray: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiByteArray:", err)
 		}
 
 		taiBsonM := bson.M{}
 		err = bson.Unmarshal(taiByteArray, &taiBsonM)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("Unmarshal Error in taiByteArray: ", err)
+			logger.DiscoveryLog.Warnln("unmarshal error in taiByteArray:", err)
 		}
 		switch targetNfType {
 		case "SMF":
 			taiFilter = bson.M{
-				"smfInfo": bson.M{
+				"smfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"taiList": taiBsonM,
+						"tailist": taiBsonM,
 					},
 				},
 			}
 		case "AMF":
 			taiFilter = bson.M{
-				"amfInfo": bson.M{
+				"amfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"taiList": taiBsonM,
+						"tailist": taiBsonM,
 					},
 				},
 			}
@@ -1621,9 +1950,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		if targetNfType == "AMF" {
 			amfRegionId := queryParameters["amf-region-id"].value
 			amfRegionIdFilter = bson.M{
-				"amfInfo": bson.M{
+				"amfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"amfRegionId": amfRegionId[0],
+						"amfregionid": amfRegionId,
 					},
 				},
 			}
@@ -1642,9 +1971,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		if targetNfType == "AMF" {
 			amfSetId := queryParameters["amf-set-id"].value
 			amfSetIdFilter = bson.M{
-				"amfInfo": bson.M{
+				"amfinfo": bson.M{
 					"$elemMatch": bson.M{ // TOCHECK : elemMatch
-						"amfSetId": amfSetId[0],
+						"amfsetid": amfSetId,
 					},
 				},
 			}
@@ -1666,27 +1995,27 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			guamiSplit := strings.Split(guami, ",")
 			tempguami := guamiSplit[0] + "," + guamiSplit[1]
 
-			guamiStruct := &models.Guami{}
+			guamiStruct := models.NewGuamiWithDefaults()
 			err := json.Unmarshal([]byte(tempguami), guamiStruct)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiStruct: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiStruct:", err)
 			}
 
 			guamiByteArray, err := bson.Marshal(guamiStruct)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiByteArray: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiByteArray:", err)
 			}
 
 			guamiBsonM := bson.M{}
 			err = bson.Unmarshal(guamiByteArray, &guamiBsonM)
 			if err != nil {
-				logger.DiscoveryLog.Warnln("Unmarshal Error in guamiByteArray: ", err)
+				logger.DiscoveryLog.Warnln("unmarshal error in guamiByteArray:", err)
 			}
 
 			guamiFilter = bson.M{
-				"amfInfo": bson.M{
+				"amfinfo": bson.M{
 					"$elemMatch": bson.M{ // TOCHECK : elemMatch
-						"guamiList": bson.M{
+						"guamilist": bson.M{
 							"$elemMatch": guamiBsonM,
 						},
 					},
@@ -1709,9 +2038,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "PCF":
 			supiFilter = bson.M{
-				"pcfInfo": bson.M{
+				"pcfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"supiRanges": bson.M{
+						"supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi[0],
@@ -1726,9 +2055,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "CHF":
 			supiFilter = bson.M{
-				"chfInfo": bson.M{
+				"chfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"supiRanges": bson.M{
+						"supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi[0],
@@ -1743,9 +2072,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "AUSF":
 			supiFilter = bson.M{
-				"ausfInfo": bson.M{
+				"ausfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"supiRanges": bson.M{
+						"supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi[0],
@@ -1760,9 +2089,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UDM":
 			supiFilter = bson.M{
-				"udmInfo": bson.M{
+				"udminfo": bson.M{
 					"$elemMatch": bson.M{
-						"supiRanges": bson.M{
+						"supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi[0],
@@ -1777,9 +2106,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UDR":
 			supiFilter = bson.M{
-				"udrInfo": bson.M{
+				"udrinfo": bson.M{
 					"$elemMatch": bson.M{
-						"supiRanges": bson.M{
+						"supiranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": supi[0],
@@ -1808,9 +2137,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			ueIpv4Address := queryParameters["ue-ipv4-address"].value
 			ueIpv4AddressNumber := context.Ipv4ToInt(ueIpv4Address)
 			ueIpv4AddressFilter = bson.M{
-				"bsfInfo": bson.M{
+				"bsfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"ipv4AddressNumberRanges": bson.M{
+						"ipv4addressranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": ueIpv4AddressNumber,
@@ -1838,9 +2167,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		if targetNfType == "BSF" {
 			ipDomain := queryParameters["ip-domain"].value
 			ipDomainFilter = bson.M{
-				"bsfInfo": bson.M{
+				"bsfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"ipDomain": ipDomain[0],
+						"ipdomainlist": ipDomain,
 					},
 				},
 			}
@@ -1860,9 +2189,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			ueIpv6Prefix := queryParameters["ue-ipv6-prefix"].value
 			ueIpv6PrefixNumber := context.Ipv6ToInt(ueIpv6Prefix)
 			ueIpv6PrefixFilter = bson.M{
-				"bsfInfo": bson.M{
+				"bsfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"ipv6PrefixRanges": bson.M{
+						"ipv6prefixranges": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": ueIpv6PrefixNumber,
@@ -1890,9 +2219,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		pgwInd := queryParameters["pgw-ind"].value
 		if pgwInd == "true" {
 			pgwIndFilter = bson.M{
-				"smfInfo": bson.M{
+				"smfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"pgwFqdn": bson.M{
+						"pgwfqdn": bson.M{
 							"$ne": "",
 						},
 					},
@@ -1911,9 +2240,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	if queryParameters["pgw"] != nil {
 		pgw := queryParameters["pgw"].value
 		pgwFilter := bson.M{
-			"smfInfo": bson.M{
+			"smfinfo": bson.M{
 				"$elemMatch": bson.M{
-					"pgwFqdn": pgw[0],
+					"pgwfqdn": pgw,
 				},
 			},
 		}
@@ -1932,9 +2261,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "CHF":
 			gpsiFilter = bson.M{
-				"chfInfo": bson.M{
+				"chfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"gpsiRangeList": bson.M{
+						"gpsirangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
@@ -1949,9 +2278,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UDM":
 			gpsiFilter = bson.M{
-				"udmInfo": bson.M{
+				"udminfo": bson.M{
 					"$elemMatch": bson.M{
-						"gpsiRangeList": bson.M{
+						"gpsirangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi[0],
@@ -1966,9 +2295,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UDR":
 			gpsiFilter = bson.M{
-				"udrInfo": bson.M{
+				"udrinfo": bson.M{
 					"$elemMatch": bson.M{
-						"gpsiRangeList": bson.M{
+						"gpsirangelist": bson.M{
 							"$elemMatch": bson.M{
 								"start": bson.M{
 									"$lte": gpsi[0],
@@ -1997,17 +2326,17 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "UDM":
 			externalGroupIdentityFilter = bson.M{
-				"udmInfo": bson.M{
+				"udminfo": bson.M{
 					"$elemMatch": bson.M{
-						"groupId": externalGroupIdentity,
+						"groupid": externalGroupIdentity,
 					},
 				},
 			}
 		case "UDR":
 			externalGroupIdentityFilter = bson.M{
-				"udrInfo": bson.M{
+				"udrinfo": bson.M{
 					"$elemMatch": bson.M{
-						"groupId": externalGroupIdentity,
+						"groupid": externalGroupIdentity,
 					},
 				},
 			}
@@ -2026,9 +2355,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		dataSet := queryParameters["data-set"]
 		if targetNfType == "UDR" {
 			dataSetFilter = bson.M{
-				"udrInfo": bson.M{
+				"udrinfo": bson.M{
 					"$elemMatch": bson.M{
-						"SupportedDataSets": dataSet,
+						"supporteddatasets": dataSet,
 					},
 				},
 			}
@@ -2048,17 +2377,17 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "AUSF":
 			routingIndicatorFilter = bson.M{
-				"ausfInfo": bson.M{
+				"ausfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"routingIndicators": routingIndicator,
+						"routingindicators": routingIndicator,
 					},
 				},
 			}
 		case "UDM":
 			routingIndicatorFilter = bson.M{
-				"udmInfo": bson.M{
+				"udminfo": bson.M{
 					"$elemMatch": bson.M{
-						"routingIndicators": routingIndicator,
+						"routingindicators": routingIndicator,
 					},
 				},
 			}
@@ -2085,9 +2414,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		switch targetNfType {
 		case "UDR":
 			groupIdListFilter = bson.M{
-				"udrInfo": bson.M{
+				"udrinfo": bson.M{
 					"$elemMatch": bson.M{
-						"groupId": bson.M{
+						"groupid": bson.M{
 							"$in": groupIdListBsonArray,
 						},
 					},
@@ -2095,9 +2424,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "UDM":
 			groupIdListFilter = bson.M{
-				"udmInfo": bson.M{
+				"udminfo": bson.M{
 					"$elemMatch": bson.M{
-						"groupId": bson.M{
+						"groupid": bson.M{
 							"$in": groupIdListBsonArray,
 						},
 					},
@@ -2105,9 +2434,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			}
 		case "AUSF":
 			groupIdListFilter = bson.M{
-				"ausfInfo": bson.M{
+				"ausfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"groupId": bson.M{
+						"groupid": bson.M{
 							"$in": groupIdListBsonArray,
 						},
 					},
@@ -2134,13 +2463,13 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		}
 		if targetNfType == "UPF" {
 			dnaiFilter = bson.M{
-				"upfInfo": bson.M{
+				"upfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"sNssaiUpfInfoList": bson.M{
+						"snssaiupfinfolist": bson.M{
 							"$elemMatch": bson.M{
-								"dnnUpfInfoList": bson.M{
+								"dnnupfinfolist": bson.M{
 									"$elemMatch": bson.M{
-										"dnaiList": dnaiListBsonArray,
+										"dnailist": dnaiListBsonArray,
 									},
 								},
 							},
@@ -2163,9 +2492,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		// upfIwkEpsInd := queryParameters["upf-iwk-eps-ind"].value
 		if targetNfType == "UPF" {
 			upfIwkEpsIndFilter = bson.M{
-				"upfInfo": bson.M{
+				"upfinfo": bson.M{
 					"$elemMatch": bson.M{
-						"iwkEpsInd": true,
+						"iwkepsind": true,
 					},
 				},
 			}
@@ -2186,9 +2515,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 			chfSupportedPlmnFilter = bson.M{
 				"$or": []bson.M{
 					{
-						"chfInfo": bson.M{
+						"chfinfo": bson.M{
 							"$elemMatch": bson.M{
-								"plmnRangeList": bson.M{
+								"plmnrangelist": bson.M{
 									"$elemMatch": bson.M{
 										"start": bson.M{
 											"$lte": chfSupportedPlmn,
@@ -2202,7 +2531,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 						},
 					},
 					{
-						"chfInfo.plmnRangeList": bson.M{
+						"chfinfo.plmnrangelist": bson.M{
 							"$exists": false,
 						},
 					},
@@ -2236,9 +2565,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	if queryParameters["access-type"] != nil {
 		accessType := queryParameters["access-type"].value
 		accessTypeFilter := bson.M{
-			"smfInfo": bson.M{
+			"smfinfo": bson.M{
 				"$elemMatch": bson.M{
-					"accessType": accessType[0],
+					"accesstype": accessType,
 				},
 			},
 		}
@@ -2254,9 +2583,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	if queryParameters["supported-features"] != nil {
 		supportedFeatures := queryParameters["supported-features"].value
 		supportedFeaturesFilter := bson.M{
-			"nfServices": bson.M{
+			"nfservices": bson.M{
 				"$elemMatch": bson.M{
-					"supportedFeatures": supportedFeatures,
+					"supportedfeatures": supportedFeatures,
 				},
 			},
 		}
