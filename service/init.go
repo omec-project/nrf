@@ -124,7 +124,7 @@ func (nrf *NRF) Start() {
 	}
 
 	if err != nil {
-		logger.InitLog.Warnf("initialize HTTP server: +%v", err)
+		logger.InitLog.Warnf("initialize HTTP server: %+v", err)
 	}
 
 	serverScheme := factory.NrfConfig.GetSbiScheme()
