@@ -25,8 +25,6 @@ import (
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 type NRF struct{}
@@ -46,12 +44,6 @@ var nrfCLi = []cli.Flag{
 		Usage:    "nrf config file",
 		Required: true,
 	},
-}
-
-var initLog *zap.SugaredLogger
-
-func init() {
-	initLog = logger.InitLog
 }
 
 func (*NRF) GetCliCmd() (flags []cli.Flag) {
@@ -87,59 +79,19 @@ func (nrf *NRF) Initialize(c *cli.Command) error {
 }
 
 func (nrf *NRF) setLogLevel() {
-	if factory.NrfConfig.Logger == nil {
-		initLog.Warnln("NRF config without log level setting!!!")
+	cfgLogger := factory.NrfConfig.Logger
+	if cfgLogger == nil {
+		logger.InitLog.Warnln("NRF config without log level setting!!!")
 		return
 	}
 
-	if factory.NrfConfig.Logger.NRF != nil {
-		if factory.NrfConfig.Logger.NRF.DebugLevel != "" {
-			level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.NRF.DebugLevel)
-			if err != nil {
-				initLog.Warnf("NRF Log level [%s] is invalid, set to [info] level",
-					factory.NrfConfig.Logger.NRF.DebugLevel)
-				logger.SetLogLevel(zap.InfoLevel)
-			} else {
-				initLog.Infof("NRF Log level is set to [%s] level", level)
-				logger.SetLogLevel(level)
-			}
-		} else {
-			initLog.Infoln("NRF Log level not set. Default set to [info] level")
-			logger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.NrfConfig.Logger.OpenApi != nil {
-		if factory.NrfConfig.Logger.OpenApi.DebugLevel != "" {
-			if _, err := zapcore.ParseLevel(factory.NrfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				openapiLogger.OpenapiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
-					factory.NrfConfig.Logger.OpenApi.DebugLevel)
-				logger.SetLogLevel(zap.InfoLevel)
-			}
-		} else {
-			openapiLogger.OpenapiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
-			logger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.NrfConfig.Logger.Util != nil {
-		if factory.NrfConfig.Logger.Util.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.NrfConfig.Logger.Util.DebugLevel); err != nil {
-				utilLogger.UtilLog.Warnf("Util Log level [%s] is invalid, set to [info] level",
-					factory.NrfConfig.Logger.Util.DebugLevel)
-				utilLogger.SetLogLevel(zap.InfoLevel)
-			} else {
-				utilLogger.SetLogLevel(level)
-			}
-		} else {
-			utilLogger.UtilLog.Warnln("Util Log level not set. Default set to [info] level")
-			utilLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
+	utilLogger.ApplyLogSetting("NRF", cfgLogger.NRF, logger.InitLog, logger.SetLogLevel)
+	utilLogger.ApplyLogSetting("OpenApi", cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("Util", cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
 }
 
 func (nrf *NRF) Start() {
-	initLog.Infoln("server started")
+	logger.InitLog.Infoln("server started")
 	config := factory.NrfConfig.Configuration
 	dbadapter.ConnectToDBClient(config.MongoDBName, config.MongoDBUrl, config.MongoDBStreamEnable, config.NfProfileExpiryEnable)
 
@@ -162,17 +114,17 @@ func (nrf *NRF) Start() {
 	}()
 
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
-	initLog.Infof("binding addr: [%s]", bindAddr)
+	logger.InitLog.Infof("binding addr: [%s]", bindAddr)
 	sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
 	server, err := http2_util.NewServer(bindAddr, sslLog, router)
 
 	if server == nil {
-		initLog.Errorf("initialize HTTP server failed: %+v", err)
+		logger.InitLog.Errorf("initialize HTTP server failed: %+v", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnf("initialize HTTP server: +%v", err)
+		logger.InitLog.Warnf("initialize HTTP server: %+v", err)
 	}
 
 	serverScheme := factory.NrfConfig.GetSbiScheme()
@@ -187,7 +139,7 @@ func (nrf *NRF) Start() {
 	}
 
 	if err != nil {
-		initLog.Fatalf("HTTP server setup failed: %+v", err)
+		logger.InitLog.Fatalf("HTTP server setup failed: %+v", err)
 	}
 }
 
