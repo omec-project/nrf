@@ -202,10 +202,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	queryParameters = normalizeDiscoveryQueryParameters(queryParameters)
 
 	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetTitle("Invalid Parameter")
-		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetCause("Loss mandatory parameter")
+		problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "Missing mandatory parameter", utils.CauseMandatoryIeMissing)
 		return nil, problemDetails
 	}
 
@@ -220,10 +217,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		}
 		// Check either CNF or DNF
 		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
-			problemDetails = models.NewProblemDetails()
-			problemDetails.SetTitle("Invalid Parameter")
-			problemDetails.SetStatus(http.StatusBadRequest)
-			problemDetails.SetCause("EITHER CNF OR DNF")
+			problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "CNF and DNF are mutually exclusive", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
 				{Param: "complexQuery"},
 			})

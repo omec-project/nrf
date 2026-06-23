@@ -85,10 +85,7 @@ func HandleGetNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Respo
 	if response != nil {
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else {
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusNotFound)
-		problemDetails.SetCause("CONTEXT_NOT_FOUND")
-		problemDetails.SetDetail("NF instance not found")
+		problemDetails := utils.ProblemDetailsContextNotFound("NF instance not found")
 		return httpwrapper.NewResponse(http.StatusNotFound, nil, problemDetails)
 	}
 }
@@ -251,9 +248,7 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 		putData); !ok { // subscription id not exist before
 		return putData, nil
 	} else {
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetCause("CREATE_SUBSCRIPTION_ERROR")
+		problemDetails = utils.ProblemDetailsWithCause("Create subscription error", http.StatusBadRequest, "", utils.CauseCreateSubscriptionError)
 		return nil, problemDetails
 	}
 }
@@ -314,10 +309,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
 		logger.ManagementLog.Errorf("failed to delete NF profiles of type %s: %v", nfType, err)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetTitle("NF Profiles Deletion Failed")
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetDetail(err.Error())
+		problemDetails = utils.ProblemDetails("NF Profiles Deletion Failed", http.StatusInternalServerError, err.Error())
 		return problemDetails
 	}
 
@@ -333,10 +325,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	nfProfilesRaw, err := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
 	if err != nil {
 		logger.ManagementLog.Warnln("error fetching NF profiles:", err)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("FETCH_ERROR")
-		problemDetails.SetDetail(err.Error())
+		problemDetails = utils.ProblemDetailsWithCause("Fetch error", http.StatusInternalServerError, err.Error(), utils.CauseFetchError)
 		return "", problemDetails
 	}
 
@@ -345,10 +334,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	deleteManyErr := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if deleteManyErr != nil {
 		logger.ManagementLog.Warnln("error in deleting NF profiles:", deleteManyErr)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("NF_DELETE_ERROR")
-		problemDetails.SetDetail(deleteManyErr.Error())
+		problemDetails = utils.ProblemDetailsWithCause("NF delete error", http.StatusInternalServerError, deleteManyErr.Error(), utils.CauseNfDeleteError)
 		return "", problemDetails
 	}
 
@@ -356,10 +342,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	nfProfiles, err := util.Decode(nfProfilesRaw, time.RFC3339)
 	if err != nil {
 		logger.ManagementLog.Warnln("Time decode error: ", err)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("NOTIFICATION_ERROR")
-		problemDetails.SetDetail(err.Error())
+		problemDetails = utils.ProblemDetailsWithCause("Notification error", http.StatusInternalServerError, err.Error(), utils.CauseNotificationError)
 		return "", problemDetails
 	}
 
@@ -385,10 +368,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	deleteErr := dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
 	if deleteErr != nil {
 		logger.ManagementLog.Warnln("error in deleting subscriptions:", deleteErr)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("SUBSCRIPTION_DELETE_ERROR")
-		problemDetails.SetDetail(deleteErr.Error())
+		problemDetails = utils.ProblemDetailsWithCause("Subscription delete error", http.StatusInternalServerError, deleteErr.Error(), utils.CauseSubscriptionDeleteError)
 		return "", problemDetails
 	}
 
@@ -504,11 +484,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 	err := nrfContext.NnrfNFManagementDataModel(&nf, nfProfile)
 	if err != nil {
 		logger.ManagementLog.Errorln("NfProfile Validation failed", err)
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetTitle(nfProfile.NfInstanceId)
-		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetCause("INVALID_REQUEST")
-		problemDetails.SetDetail(err.Error())
+		problemDetails = utils.ProblemDetailsWithCause("NF profile validation failed", http.StatusBadRequest, err.Error(), utils.CauseInvalidRequest)
 		return nil, nil, problemDetails
 	}
 
@@ -625,10 +601,7 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 	body, err := json.Marshal(notificationData)
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("NOTIFICATION_ERROR")
-		problemDetails.SetDetail(err.Error())
+		problemDetails := utils.ProblemDetailsWithCause("Notification error", http.StatusInternalServerError, err.Error(), utils.CauseNotificationError)
 		return problemDetails
 	}
 
@@ -638,10 +611,7 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 	req, err := http.NewRequestWithContext(notifyCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("NOTIFICATION_ERROR")
-		problemDetails.SetDetail(err.Error())
+		problemDetails := utils.ProblemDetailsWithCause("Notification error", http.StatusInternalServerError, err.Error(), utils.CauseNotificationError)
 		return problemDetails
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -650,10 +620,7 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 	res, err := nfStatusNotifyHTTPClient.Do(req)
 	if err != nil {
 		logger.ManagementLog.Infof("notify fail: %+v", err)
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("NOTIFICATION_ERROR")
-		problemDetails.SetDetail(err.Error())
+		problemDetails := utils.ProblemDetailsWithCause("Notification error", http.StatusInternalServerError, err.Error(), utils.CauseNotificationError)
 		return problemDetails
 	}
 	if res != nil {
@@ -664,17 +631,16 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 		}()
 		if status := res.StatusCode; status != http.StatusNoContent && status != http.StatusOK {
 			logger.ManagementLog.Warnln("error status in NotificationPost:", status)
-			problemDetails := models.NewProblemDetails()
-			problemDetails.SetStatus(int32(status))
-			problemDetails.SetCause("NOTIFICATION_ERROR")
 			responseBody, readErr := io.ReadAll(res.Body)
 			if readErr == nil && len(responseBody) > 0 {
 				var remoteProblem models.ProblemDetails
 				if decodeErr := json.Unmarshal(responseBody, &remoteProblem); decodeErr == nil {
 					return &remoteProblem
 				}
-				problemDetails.SetDetail(string(responseBody))
+				problemDetails := utils.ProblemDetailsWithCause("Notification error", status, string(responseBody), utils.CauseNotificationError)
+				return problemDetails
 			}
+			problemDetails := utils.ProblemDetailsWithCause("Notification error", status, "", utils.CauseNotificationError)
 			return problemDetails
 		}
 	}
