@@ -15,7 +15,6 @@ import (
 	"strconv"
 
 	"github.com/omec-project/nrf/logger"
-	"github.com/omec-project/openapi/v2/models"
 	utilLogger "github.com/omec-project/util/logger"
 )
 
@@ -47,11 +46,6 @@ type Configuration struct {
 	NfKeepAliveTime       int32    `yaml:"nfKeepAliveTime,omitempty"`
 	MongoDBStreamEnable   bool     `yaml:"mongoDBStreamEnable"`
 	NfProfileExpiryEnable bool     `yaml:"nfProfileExpiryEnable"`
-}
-
-type PlmnSupportItem struct {
-	PlmnId     models.PlmnId   `yaml:"plmnId"`
-	SNssaiList []models.Snssai `yaml:"snssaiList,omitempty"`
 }
 
 type Sbi struct {
