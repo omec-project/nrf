@@ -22,7 +22,6 @@ import (
 	"github.com/omec-project/nrf/logger"
 	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
@@ -158,11 +157,7 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 	limit, err := strconv.Atoi(limitRaw)
 	if err != nil {
 		logger.ManagementLog.Errorln("error converting limit query parameter:", limitRaw, err)
-		problemDetails := models.ProblemDetails{
-			Title:  openapi.PtrString("Invalid Parameter"),
-			Status: openapi.PtrInt32(int32(http.StatusBadRequest)),
-			Detail: openapi.PtrString(err.Error()),
-		}
+		problemDetails := utils.ProblemDetails("Invalid Parameter", http.StatusBadRequest, err.Error())
 
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
@@ -231,7 +226,7 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response bson.M,
 	problemDetails *models.ProblemDetails,
 ) {
-	subscription.SubscriptionId = openapi.PtrString(nrfContext.SetsubscriptionId())
+	subscription.SetSubscriptionId(nrfContext.SetsubscriptionId())
 
 	tmp, err := json.Marshal(subscription)
 	if err != nil {
@@ -376,7 +371,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 }
 
 func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
-	if nfProfile.NfType == models.NFTYPE_AMF {
+	if nfProfile.GetNfType() == models.NFTYPE_AMF {
 		url := "http://amf:29518" + "/namf-oam/v1/amfInstanceDown/" + nfInstanceID
 		notifyCtx, cancel := context.WithTimeout(context.Background(), nfStatusNotifyTimeout)
 		defer cancel()
