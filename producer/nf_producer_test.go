@@ -190,12 +190,12 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 				return tc.nrfPlmnList, nil
 			}
 			dbadapter.DBClient = &MockMongoDBClient{}
-			var nf models.NFProfile
-			nf.NfType = models.NFTYPE_AUSF
-			nf.NfInstanceId = uuid.New().String()
-			nf.NfStatus = models.NFSTATUS_REGISTERED
-			nf.PlmnList = tc.nfPlmnList
-			_, data, err := producer.NFRegisterProcedure(nf)
+			nf := models.NewNFProfileWithDefaults()
+			nf.SetNfType(models.NFTYPE_AUSF)
+			nf.SetNfInstanceId(uuid.New().String())
+			nf.SetNfStatus(models.NFSTATUS_REGISTERED)
+			nf.SetPlmnList(tc.nfPlmnList)
+			_, data, err := producer.NFRegisterProcedure(*nf)
 			if err != nil {
 				t.Fatalf("failed to register NF: %v", err)
 			}
@@ -244,12 +244,12 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 				return tc.nrfPlmnList, nil
 			}
 			dbadapter.DBClient = &MockMongoDBClient{}
-			var nf models.NFProfile
-			nf.NfType = models.NFTYPE_AUSF
-			nf.NfInstanceId = uuid.New().String()
-			nf.NfStatus = models.NFSTATUS_REGISTERED
-			nf.PlmnList = tc.nfPlmnList
-			_, data, err := producer.NFRegisterProcedure(nf)
+			nf := models.NewNFProfileWithDefaults()
+			nf.SetNfType(models.NFTYPE_AUSF)
+			nf.SetNfInstanceId(uuid.New().String())
+			nf.SetNfStatus(models.NFSTATUS_REGISTERED)
+			nf.SetPlmnList(tc.nfPlmnList)
+			_, data, err := producer.NFRegisterProcedure(*nf)
 			if err == nil {
 				t.Errorf("Expected error, got: %v", data)
 			}
@@ -271,11 +271,11 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 		return nil, errors.New("http error")
 	}
 	dbadapter.DBClient = &MockMongoDBClient{}
-	var nf models.NFProfile
-	nf.NfType = models.NFTYPE_AUSF
-	nf.NfInstanceId = uuid.New().String()
-	nf.NfStatus = models.NFSTATUS_REGISTERED
-	_, data, err := producer.NFRegisterProcedure(nf)
+	nf := models.NewNFProfileWithDefaults()
+	nf.SetNfType(models.NFTYPE_AUSF)
+	nf.SetNfInstanceId(uuid.New().String())
+	nf.SetNfStatus(models.NFSTATUS_REGISTERED)
+	_, data, err := producer.NFRegisterProcedure(*nf)
 	if err == nil {
 		t.Errorf("Expected error, got: %v", data)
 	}

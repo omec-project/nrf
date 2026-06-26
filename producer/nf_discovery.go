@@ -382,7 +382,7 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 			continue
 		}
 		decodedProfile := decodedProfiles[0]
-		if decodedProfile.NfInstanceId == "" {
+		if decodedProfile.GetNfInstanceId() == "" {
 			continue
 		}
 
@@ -412,13 +412,13 @@ func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParamet
 
 func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters url.Values) bool {
 	if values := queryParameters["target-nf-type"]; len(values) > 0 && values[0] != "" {
-		if string(profile.NfType) != values[0] {
+		if string(profile.GetNfType()) != values[0] {
 			return false
 		}
 	}
 
 	if values := queryParameters["target-nf-instance-id"]; len(values) > 0 && values[0] != "" {
-		if profile.NfInstanceId != values[0] {
+		if profile.GetNfInstanceId() != values[0] {
 			return false
 		}
 	}
