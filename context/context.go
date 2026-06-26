@@ -26,8 +26,8 @@ func InitNrfContext() {
 	NrfNfProfile.SetNfType(models.NFTYPE_NRF)
 	NrfNfProfile.SetNfStatus(models.NFSTATUS_REGISTERED)
 
-	NFServices := InitNFService(configuration.ServiceNameList, config.Info.Version)
-	NrfNfProfile.SetNfServices(NFServices)
+	nfServices := InitNFService(configuration.ServiceNameList, config.Info.Version)
+	NrfNfProfile.SetNfServices(nfServices)
 }
 
 func InitNFService(srvNameList []string, version string) []models.NFService {
@@ -39,10 +39,10 @@ func InitNFService(srvNameList []string, version string) []models.NFService {
 	ipEndPoint.SetPort(int32(factory.NrfConfig.GetSbiPort()))
 	scheme := models.UriScheme(factory.NrfConfig.GetSbiScheme())
 	apiPrefix := factory.NrfConfig.GetSbiUri()
-	nFServiceVersion := models.NewNFServiceVersion("v"+tmpVersion[0], version)
+	nfServiceVersion := models.NewNFServiceVersion("v"+tmpVersion[0], version)
 	for index, nameString := range srvNameList {
 		serviceName := models.ServiceName(nameString)
-		nfService := models.NewNFService(strconv.Itoa(index), serviceName, []models.NFServiceVersion{*nFServiceVersion}, scheme, models.NFSERVICESTATUS_REGISTERED)
+		nfService := models.NewNFService(strconv.Itoa(index), serviceName, []models.NFServiceVersion{*nfServiceVersion}, scheme, models.NFSERVICESTATUS_REGISTERED)
 		nfService.SetApiPrefix(apiPrefix)
 		nfService.SetIpEndPoints([]models.IpEndPoint{*ipEndPoint})
 		nfServices[index] = *nfService
