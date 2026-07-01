@@ -240,7 +240,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 ) {
 	queryParameters = normalizeDiscoveryQueryParameters(queryParameters)
 
-	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
+	if queryParameters[queryParamTargetNFType] == nil || queryParameters[queryParamRequesterNFType] == nil {
 		problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "Missing mandatory parameter", utils.CauseMandatoryIeMissing)
 		return nil, problemDetails
 	}
@@ -450,7 +450,7 @@ func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParamet
 }
 
 func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters url.Values) bool {
-	if values := queryParameters["target-nf-type"]; len(values) > 0 && values[0] != "" {
+	if values := queryParameters[queryParamTargetNFType]; len(values) > 0 && values[0] != "" {
 		if string(profile.GetNfType()) != values[0] {
 			return false
 		}
