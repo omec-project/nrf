@@ -429,7 +429,7 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 	locationHeader = append(locationHeader, GetNfInstanceURI(nfprofile.GetNfInstanceId()))
 
 	collName := "urilist"
-	nfType := nfprofile.NfType
+	nfType := nfprofile.GetNfType()
 	filter := bson.M{"nfType": nfType}
 
 	ul, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
@@ -442,7 +442,7 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 
 	// obtain location header = NF URI
 	nnrfUriList(&originalUL, &modifyUL, locationHeader)
-	modifyUL.NfType = nfprofile.NfType
+	modifyUL.NfType = nfprofile.GetNfType()
 
 	tmp, err := json.Marshal(modifyUL)
 	if err != nil {

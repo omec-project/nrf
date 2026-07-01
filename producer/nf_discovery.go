@@ -240,11 +240,8 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 ) {
 	queryParameters = normalizeDiscoveryQueryParameters(queryParameters)
 
-	if queryParameters[queryParamTargetNFType] == nil || queryParameters[queryParamRequesterNFType] == nil {
-		problemDetails = models.NewProblemDetails()
-		problemDetails.SetTitle("Invalid Parameter")
-		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetCause("Loss mandatory parameter")
+	if queryParameters["target-nf-type"] == nil || queryParameters["requester-nf-type"] == nil {
+		problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "Missing mandatory parameter", utils.CauseMandatoryIeMissing)
 		return nil, problemDetails
 	}
 
@@ -259,10 +256,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		}
 		// Check either CNF or DNF
 		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
-			problemDetails = models.NewProblemDetails()
-			problemDetails.SetTitle("Invalid Parameter")
-			problemDetails.SetStatus(http.StatusBadRequest)
-			problemDetails.SetCause("EITHER CNF OR DNF")
+			problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "CNF and DNF are mutually exclusive", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
 				{Param: "complexQuery"},
 			})
@@ -427,7 +421,7 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 			continue
 		}
 		decodedProfile := decodedProfiles[0]
-		if decodedProfile.NfInstanceId == "" {
+		if decodedProfile.GetNfInstanceId() == "" {
 			continue
 		}
 
@@ -456,14 +450,14 @@ func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParamet
 }
 
 func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters url.Values) bool {
-	if values := queryParameters[queryParamTargetNFType]; len(values) > 0 && values[0] != "" {
-		if string(profile.NfType) != values[0] {
+	if values := queryParameters["target-nf-type"]; len(values) > 0 && values[0] != "" {
+		if string(profile.GetNfType()) != values[0] {
 			return false
 		}
 	}
 
 	if values := queryParameters["target-nf-instance-id"]; len(values) > 0 && values[0] != "" {
-		if profile.NfInstanceId != values[0] {
+		if profile.GetNfInstanceId() != values[0] {
 			return false
 		}
 	}
