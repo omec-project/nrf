@@ -46,6 +46,8 @@ type routeParamAlias struct {
 	original  string
 }
 
+const nfInstancePath = "/nf-instances/:nfInstanceID"
+
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
 	router := utilLogger.NewGinWithZap(logger.GinLog)
@@ -137,25 +139,25 @@ func getRoutes() []Route {
 		{
 			"DeregisterNFInstance",
 			http.MethodDelete,
-			"/nf-instances/:nfInstanceID",
+			nfInstancePath,
 			HTTPDeregisterNFInstance,
 		},
 		{
 			"GetNFInstance",
 			http.MethodGet,
-			"/nf-instances/:nfInstanceID",
+			nfInstancePath,
 			HTTPGetNFInstance,
 		},
 		{
 			"RegisterNFInstance",
 			http.MethodPut,
-			"/nf-instances/:nfInstanceID",
+			nfInstancePath,
 			HTTPRegisterNFInstance,
 		},
 		{
 			"UpdateNFInstance",
 			http.MethodPatch,
-			"/nf-instances/:nfInstanceID",
+			nfInstancePath,
 			HTTPUpdateNFInstance,
 		},
 		{
