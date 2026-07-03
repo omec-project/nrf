@@ -411,6 +411,35 @@ func TestBuildFilterSupportsSnssaiWithoutSd(t *testing.T) {
 	}
 }
 
+func TestBuildFilterSkipsInvalidSnssaisValue(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+	query.Set("snssais", `{"sst":1`)
+
+	filter := buildFilter(query)
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+
+	for _, candidate := range andFilters {
+		orFilters, exists := candidate["$or"].(bson.A)
+		if !exists {
+			continue
+		}
+		for _, orFilter := range orFilters {
+			orFilterMap, mapOK := orFilter.(bson.M)
+			if !mapOK {
+				continue
+			}
+			if _, hasSnssais := orFilterMap["snssais"]; hasSnssais {
+				t.Fatalf("expected invalid snssais value to be skipped, got %#v", candidate)
+			}
+		}
+	}
+}
+
 func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchWithoutSd(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		"snssais": {value: `{"sst":1}`},
@@ -481,5 +510,36 @@ func TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue(t *testing.T) {
 	}
 	if len(andFilters) != 0 {
 		t.Fatalf("expected invalid snssais value to be skipped, got %#v", andFilters)
+	}
+}
+
+func TestBuildSnssaisElemMatchFiltersHandlesMultipleCommaSeparatedObjects(t *testing.T) {
+	filters := buildSnssaisElemMatchFilters(`{"sst":1,"sd":"010203"},{"sst":1,"sd":"040506"}`)
+	if len(filters) != 2 {
+		t.Fatalf("expected 2 snssais filters, got %d: %#v", len(filters), filters)
+	}
+
+	firstFilter, ok := filters[0]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected first snssais field filter, got %#v", filters[0])
+	}
+	firstElemMatch, ok := firstFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected first snssais $elemMatch document, got %#v", firstFilter[mongoOpElemMatch])
+	}
+	if got := firstElemMatch["sd"]; got != "010203" {
+		t.Fatalf("expected first snssais sd 010203, got %#v", firstElemMatch)
+	}
+
+	secondFilter, ok := filters[1]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected second snssais field filter, got %#v", filters[1])
+	}
+	secondElemMatch, ok := secondFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected second snssais $elemMatch document, got %#v", secondFilter[mongoOpElemMatch])
+	}
+	if got := secondElemMatch["sd"]; got != "040506" {
+		t.Fatalf("expected second snssais sd 040506, got %#v", secondElemMatch)
 	}
 }

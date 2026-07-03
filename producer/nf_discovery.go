@@ -277,7 +277,7 @@ func buildSnssaisElemMatchFilters(raw string) []bson.M {
 
 		snssaiByteArray, err := bson.Marshal(snssaiStruct)
 		if err != nil {
-			logger.DiscoveryLog.Warnln("unmarshal error in snssaiByteArray:", err)
+			logger.DiscoveryLog.Warnln("marshal error in snssaiStruct:", err)
 			continue
 		}
 
@@ -752,19 +752,21 @@ func buildFilter(queryParameters url.Values) bson.M {
 	if queryParameters["snssais"] != nil {
 		snssais := queryParameters["snssais"][0]
 		snssaisFilters := buildSnssaisElemMatchFilters(snssais)
-		var snssaisBsonArray bson.A
-		for _, snssaisFilter := range snssaisFilters {
-			snssaisBsonArray = append(snssaisBsonArray, snssaisFilter)
+		if len(snssaisFilters) > 0 {
+			var snssaisBsonArray bson.A
+			for _, snssaisFilter := range snssaisFilters {
+				snssaisBsonArray = append(snssaisBsonArray, snssaisFilter)
+			}
+
+			// if not assign, serve all NF
+			snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{mongoOpExists: false}})
+
+			snssaisFilter := bson.M{
+				"$or": snssaisBsonArray,
+			}
+
+			filter["$and"] = append(filter["$and"].([]bson.M), snssaisFilter)
 		}
-
-		// if not assign, serve all NF
-		snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{mongoOpExists: false}})
-
-		snssaisFilter := bson.M{
-			"$or": snssaisBsonArray,
-		}
-
-		filter["$and"] = append(filter["$and"].([]bson.M), snssaisFilter)
 	}
 
 	// [Query-11] nsi-list
@@ -1773,7 +1775,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 
 				targetPlmnByteArray, err := bson.Marshal(targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnByteArray:", err)
+					logger.DiscoveryLog.Warnln("marshal error in targetPlmnListtruct:", err)
 				}
 
 				targetPlmnBsonM := bson.M{}
