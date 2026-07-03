@@ -1775,7 +1775,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		}
 		if queryParameters[queryParamTargetNfFqdn].negative {
 			fqdnFilter = bson.M{
-				"$not": fqdnFilter,
+				"fqdn": bson.M{
+					"$ne": targetNfFqdn,
+				},
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), fqdnFilter)
@@ -1789,7 +1791,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	if queryParameters["snssais"] != nil {
 		snssais := queryParameters["snssais"].value
 		snssaisSplit := strings.Split(snssais, ",")
-		var snssaisBsonArray bson.A
+		snssaisFilters := make([]bson.M, 0, len(snssaisSplit)/2)
 
 		var tempSnssai string
 		for i, v := range snssaisSplit {
@@ -1816,18 +1818,28 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 					logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM:", err)
 				}
 
-				snssaisBsonArray = append(snssaisBsonArray, snssaiBsonM)
+				snssaisFilters = append(snssaisFilters, bson.M{
+					"snssais": bson.M{
+						mongoOpElemMatch: snssaiBsonM,
+					},
+				})
 			}
 		}
 
-		snssaisFilter := bson.M{
-			"snssais": bson.M{
-				mongoOpElemMatch: snssaisBsonArray,
-			},
+		var snssaisFilter bson.M
+		switch len(snssaisFilters) {
+		case 0:
+			snssaisFilter = bson.M{}
+		case 1:
+			snssaisFilter = snssaisFilters[0]
+		default:
+			snssaisFilter = bson.M{
+				"$or": snssaisFilters,
+			}
 		}
 		if queryParameters["snssais"].negative {
 			snssaisFilter = bson.M{
-				"$not": snssaisFilter,
+				"$nor": snssaisFilters,
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), snssaisFilter)
