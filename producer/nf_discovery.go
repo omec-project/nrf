@@ -214,6 +214,95 @@ func marshalExplodedGuami(queryParameters url.Values, prefix string) (string, bo
 	return string(marshaled), true
 }
 
+func splitTopLevelCommaSeparatedJSONValues(raw string) []string {
+	values := make([]string, 0, 1)
+	start := 0
+	depth := 0
+	inString := false
+	escaped := false
+
+	for index, char := range raw {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+
+		switch char {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				value := strings.TrimSpace(raw[start:index])
+				if value != "" {
+					values = append(values, value)
+				}
+				start = index + 1
+			}
+		}
+	}
+
+	if tail := strings.TrimSpace(raw[start:]); tail != "" {
+		values = append(values, tail)
+	}
+
+	return values
+}
+
+func buildSnssaisElemMatchFilters(raw string) []bson.M {
+	encodedValues := splitTopLevelCommaSeparatedJSONValues(raw)
+	filters := make([]bson.M, 0, len(encodedValues))
+
+	for _, encodedValue := range encodedValues {
+		snssaiStruct := models.NewSnssaiWithDefaults()
+		err := json.Unmarshal([]byte(encodedValue), snssaiStruct)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct:", err)
+			continue
+		}
+
+		snssaiByteArray, err := bson.Marshal(snssaiStruct)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("marshal error in snssaiStruct:", err)
+			continue
+		}
+
+		snssaiBsonM := bson.M{}
+		err = bson.Unmarshal(snssaiByteArray, &snssaiBsonM)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM:", err)
+			continue
+		}
+		for key, value := range snssaiBsonM {
+			if value == nil {
+				delete(snssaiBsonM, key)
+			}
+		}
+
+		filters = append(filters, bson.M{
+			"snssais": bson.M{
+				mongoOpElemMatch: snssaiBsonM,
+			},
+		})
+	}
+
+	return filters
+}
+
 func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	// Get all query parameters
 	logger.DiscoveryLog.Infoln("Handle NFDiscoveryRequest")
@@ -662,46 +751,22 @@ func buildFilter(queryParameters url.Values) bson.M {
 	// Pattern: '^[A-Fa-f0-9]{6}$'
 	if queryParameters["snssais"] != nil {
 		snssais := queryParameters["snssais"][0]
-		snssaisSplit := strings.Split(snssais, ",")
-		var snssaisBsonArray bson.A
-
-		var tempSnssai string
-		for i, v := range snssaisSplit {
-			if i%2 == 0 {
-				tempSnssai = v
-			} else {
-				tempSnssai += ","
-				tempSnssai += v
-
-				snssaiStruct := models.NewSnssaiWithDefaults()
-				err := json.Unmarshal([]byte(tempSnssai), snssaiStruct)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct", err)
-				}
-
-				snssaiByteArray, err := bson.Marshal(snssaiStruct)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("marshal error in snssaiStruct", err)
-				}
-
-				snssaiBsonM := bson.M{}
-				err = bson.Unmarshal(snssaiByteArray, &snssaiBsonM)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM", err)
-				}
-
-				snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{mongoOpElemMatch: snssaiBsonM}})
+		snssaisFilters := buildSnssaisElemMatchFilters(snssais)
+		if len(snssaisFilters) > 0 {
+			var snssaisBsonArray bson.A
+			for _, snssaisFilter := range snssaisFilters {
+				snssaisBsonArray = append(snssaisBsonArray, snssaisFilter)
 			}
+
+			// if not assign, serve all NF
+			snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{mongoOpExists: false}})
+
+			snssaisFilter := bson.M{
+				"$or": snssaisBsonArray,
+			}
+
+			filter["$and"] = append(filter["$and"].([]bson.M), snssaisFilter)
 		}
-
-		// if not assign, serve all NF
-		snssaisBsonArray = append(snssaisBsonArray, bson.M{"snssais": bson.M{mongoOpExists: false}})
-
-		snssaisFilter := bson.M{
-			"$or": snssaisBsonArray,
-		}
-
-		filter["$and"] = append(filter["$and"].([]bson.M), snssaisFilter)
 	}
 
 	// [Query-11] nsi-list
@@ -1710,7 +1775,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 
 				targetPlmnByteArray, err := bson.Marshal(targetPlmnListtruct)
 				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in targetPlmnByteArray:", err)
+					logger.DiscoveryLog.Warnln("marshal error in targetPlmnListtruct:", err)
 				}
 
 				targetPlmnBsonM := bson.M{}
@@ -1775,7 +1840,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		}
 		if queryParameters[queryParamTargetNfFqdn].negative {
 			fqdnFilter = bson.M{
-				"$not": fqdnFilter,
+				"fqdn": bson.M{
+					"$ne": targetNfFqdn,
+				},
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), fqdnFilter)
@@ -1787,50 +1854,24 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	// [Query-10] snssais
 	// Pattern: '^[A-Fa-f0-9]{6}$'
 	if queryParameters["snssais"] != nil {
-		snssais := queryParameters["snssais"].value
-		snssaisSplit := strings.Split(snssais, ",")
-		var snssaisBsonArray bson.A
-
-		var tempSnssai string
-		for i, v := range snssaisSplit {
-			if i%2 == 0 {
-				tempSnssai = v
-			} else {
-				tempSnssai += ","
-				tempSnssai += v
-
-				snssaiStruct := models.NewSnssaiWithDefaults()
-				err := json.Unmarshal([]byte(tempSnssai), snssaiStruct)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiStruct:", err)
+		snssaisFilters := buildSnssaisElemMatchFilters(queryParameters["snssais"].value)
+		if len(snssaisFilters) > 0 {
+			var snssaisFilter bson.M
+			switch len(snssaisFilters) {
+			case 1:
+				snssaisFilter = snssaisFilters[0]
+			default:
+				snssaisFilter = bson.M{
+					"$or": snssaisFilters,
 				}
-
-				snssaiByteArray, err := bson.Marshal(snssaiStruct)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiByteArray:", err)
-				}
-
-				snssaiBsonM := bson.M{}
-				err = bson.Unmarshal(snssaiByteArray, &snssaiBsonM)
-				if err != nil {
-					logger.DiscoveryLog.Warnln("unmarshal error in snssaiBsonM:", err)
-				}
-
-				snssaisBsonArray = append(snssaisBsonArray, snssaiBsonM)
 			}
-		}
-
-		snssaisFilter := bson.M{
-			"snssais": bson.M{
-				mongoOpElemMatch: snssaisBsonArray,
-			},
-		}
-		if queryParameters["snssais"].negative {
-			snssaisFilter = bson.M{
-				"$not": snssaisFilter,
+			if queryParameters["snssais"].negative {
+				snssaisFilter = bson.M{
+					"$nor": snssaisFilters,
+				}
 			}
+			filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), snssaisFilter)
 		}
-		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), snssaisFilter)
 	}
 
 	// [Query-11] nsi-list
