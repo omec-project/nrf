@@ -309,3 +309,237 @@ func TestBuildFilterSupportsExplodedStructuredParams(t *testing.T) {
 		t.Fatalf("expected PLMN, TAI and GUAMI filters, got %+v", andFilters)
 	}
 }
+
+func TestComplexQueryFilterSubprocessNegatesTargetNfFqdnWithNe(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamTargetNfFqdn: {value: "example.com", negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+	if len(andFilters) != 1 {
+		t.Fatalf("expected 1 fqdn filter, got %d", len(andFilters))
+	}
+
+	fqdnFilter, ok := andFilters[0]["fqdn"].(bson.M)
+	if !ok {
+		t.Fatalf("expected field-level fqdn filter, got %#v", andFilters[0])
+	}
+	if got := fqdnFilter["$ne"]; got != "example.com" {
+		t.Fatalf("expected fqdn $ne match, got %#v", fqdnFilter)
+	}
+}
+
+func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchDocument(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		"snssais": {value: `{"sst":1,"sd":"010203"}`},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+	if len(andFilters) != 1 {
+		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
+	}
+
+	snssaisFilter, ok := andFilters[0]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais field filter, got %#v", andFilters[0])
+	}
+	elemMatch, ok := snssaisFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais $elemMatch document, got %#v", snssaisFilter[mongoOpElemMatch])
+	}
+	if got := elemMatch["sst"]; got != int32(1) {
+		t.Fatalf("expected snssais sst 1, got %#v", elemMatch)
+	}
+	if got := elemMatch["sd"]; got != "010203" {
+		t.Fatalf("expected snssais sd 010203, got %#v", elemMatch)
+	}
+}
+
+func TestBuildFilterSupportsSnssaiWithoutSd(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+	query.Set("snssais", `{"sst":1}`)
+
+	filter := buildFilter(query)
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+
+	var snssaisFilter bson.M
+	for _, candidate := range andFilters {
+		if orFilters, exists := candidate["$or"].(bson.A); exists {
+			for _, orFilter := range orFilters {
+				orFilterMap, mapOK := orFilter.(bson.M)
+				if !mapOK {
+					continue
+				}
+				if _, exists := orFilterMap["snssais"]; exists {
+					snssaisFilter = orFilterMap
+					break
+				}
+			}
+		}
+		if snssaisFilter != nil {
+			break
+		}
+	}
+	if snssaisFilter == nil {
+		t.Fatalf("expected snssais filter in %+v", andFilters)
+	}
+
+	fieldFilter, ok := snssaisFilter["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais field filter, got %#v", snssaisFilter)
+	}
+	elemMatch, ok := fieldFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais $elemMatch document, got %#v", fieldFilter[mongoOpElemMatch])
+	}
+	if got := elemMatch["sst"]; got != int32(1) {
+		t.Fatalf("expected snssais sst 1, got %#v", elemMatch)
+	}
+	if _, exists := elemMatch["sd"]; exists {
+		t.Fatalf("did not expect sd in %#v", elemMatch)
+	}
+}
+
+func TestBuildFilterSkipsInvalidSnssaisValue(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+	query.Set("snssais", `{"sst":1`)
+
+	filter := buildFilter(query)
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+
+	for _, candidate := range andFilters {
+		orFilters, exists := candidate["$or"].(bson.A)
+		if !exists {
+			continue
+		}
+		for _, orFilter := range orFilters {
+			orFilterMap, mapOK := orFilter.(bson.M)
+			if !mapOK {
+				continue
+			}
+			if _, hasSnssais := orFilterMap["snssais"]; hasSnssais {
+				t.Fatalf("expected invalid snssais value to be skipped, got %#v", candidate)
+			}
+		}
+	}
+}
+
+func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchWithoutSd(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		"snssais": {value: `{"sst":1}`},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+	if len(andFilters) != 1 {
+		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
+	}
+
+	snssaisFilter, ok := andFilters[0]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais field filter, got %#v", andFilters[0])
+	}
+	elemMatch, ok := snssaisFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected snssais $elemMatch document, got %#v", snssaisFilter[mongoOpElemMatch])
+	}
+	if got := elemMatch["sst"]; got != int32(1) {
+		t.Fatalf("expected snssais sst 1, got %#v", elemMatch)
+	}
+	if _, exists := elemMatch["sd"]; exists {
+		t.Fatalf("did not expect sd in %#v", elemMatch)
+	}
+}
+
+func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		"snssais": {value: `{"sst":1,"sd":"010203"}`, negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+	if len(andFilters) != 1 {
+		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
+	}
+
+	norFilters, ok := andFilters[0]["$nor"].([]bson.M)
+	if !ok {
+		t.Fatalf("expected $nor snssais negation, got %#v", andFilters[0])
+	}
+	if len(norFilters) != 1 {
+		t.Fatalf("expected 1 negated snssais clause, got %d", len(norFilters))
+	}
+
+	snssaisFilter, ok := norFilters[0]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected nested snssais field filter, got %#v", norFilters[0])
+	}
+	if _, ok := snssaisFilter[mongoOpElemMatch].(bson.M); !ok {
+		t.Fatalf("expected nested snssais $elemMatch document, got %#v", snssaisFilter[mongoOpElemMatch])
+	}
+}
+
+func TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		"snssais": {value: `{"sst":1`},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter["$and"].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+	}
+	if len(andFilters) != 0 {
+		t.Fatalf("expected invalid snssais value to be skipped, got %#v", andFilters)
+	}
+}
+
+func TestBuildSnssaisElemMatchFiltersHandlesMultipleCommaSeparatedObjects(t *testing.T) {
+	filters := buildSnssaisElemMatchFilters(`{"sst":1,"sd":"010203"},{"sst":1,"sd":"040506"}`)
+	if len(filters) != 2 {
+		t.Fatalf("expected 2 snssais filters, got %d: %#v", len(filters), filters)
+	}
+
+	firstFilter, ok := filters[0]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected first snssais field filter, got %#v", filters[0])
+	}
+	firstElemMatch, ok := firstFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected first snssais $elemMatch document, got %#v", firstFilter[mongoOpElemMatch])
+	}
+	if got := firstElemMatch["sd"]; got != "010203" {
+		t.Fatalf("expected first snssais sd 010203, got %#v", firstElemMatch)
+	}
+
+	secondFilter, ok := filters[1]["snssais"].(bson.M)
+	if !ok {
+		t.Fatalf("expected second snssais field filter, got %#v", filters[1])
+	}
+	secondElemMatch, ok := secondFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected second snssais $elemMatch document, got %#v", secondFilter[mongoOpElemMatch])
+	}
+	if got := secondElemMatch["sd"]; got != "040506" {
+		t.Fatalf("expected second snssais sd 040506, got %#v", secondElemMatch)
+	}
+}
