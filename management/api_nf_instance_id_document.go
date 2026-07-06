@@ -31,6 +31,7 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+// ContentTypeJSON is the media type used for JSON request/response bodies.
 const ContentTypeJSON = "application/json"
 
 // Delete /nf-instances/:nfInstanceID
