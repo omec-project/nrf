@@ -39,13 +39,13 @@ func HTTPRemoveSubscription(c *gin.Context) {
 
 	httpResponse := producer.HandleRemoveSubscriptionRequest(req)
 
-	responseBody, err := openapi.SetBody(httpResponse.Body, ContentTypeJSON)
+	responseBody, err := openapi.SetBody(httpResponse.Body, contentTypeJSON)
 	if err != nil {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(httpResponse.Status, ContentTypeJSON, responseBody.Bytes())
+		c.Data(httpResponse.Status, contentTypeJSON, responseBody.Bytes())
 	}
 }
 
@@ -66,12 +66,12 @@ func HTTPUpdateSubscription(c *gin.Context) {
 	req.Body = requestBody
 
 	httpResponse := producer.HandleUpdateSubscriptionRequest(req)
-	responseBody, err := openapi.SetBody(httpResponse.Body, ContentTypeJSON)
+	responseBody, err := openapi.SetBody(httpResponse.Body, contentTypeJSON)
 	if err != nil {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(httpResponse.Status, ContentTypeJSON, responseBody.Bytes())
+		c.Data(httpResponse.Status, contentTypeJSON, responseBody.Bytes())
 	}
 }
