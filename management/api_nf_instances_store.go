@@ -39,13 +39,13 @@ func HTTPGetNFInstances(c *gin.Context) {
 
 	httpResponse := producer.HandleGetNFInstancesRequest(req)
 
-	responseBody, err := openapi.SetBody(httpResponse.Body, "application/json")
+	responseBody, err := openapi.SetBody(httpResponse.Body, contentTypeJSON)
 	if err != nil {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(httpResponse.Status, "application/json", responseBody.Bytes())
+		c.Data(httpResponse.Status, contentTypeJSON, responseBody.Bytes())
 	}
 }
 
