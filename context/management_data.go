@@ -179,6 +179,7 @@ func copyBasicLists(nf *models.NFProfile, nfprofile models.NFProfile) {
 		nf.SetAllowedNssais(a)
 	}
 }
+
 func copyPriorityCapacityLoad(nf *models.NFProfile, nfprofile models.NFProfile) {
 	// Priority
 	if nfprofile.GetPriority() > 0 && nfprofile.GetPriority() <= 65535 {
@@ -193,6 +194,7 @@ func copyPriorityCapacityLoad(nf *models.NFProfile, nfprofile models.NFProfile) 
 		nf.SetLoad(nfprofile.GetLoad())
 	}
 }
+
 func copyLocality(nf *models.NFProfile, nfprofile models.NFProfile) {
 	// Locality
 	if nfprofile.GetLocality() != "" {
@@ -456,7 +458,6 @@ func copyNrfInfo(nf *models.NFProfile, nfprofile models.NFProfile) {
 }
 
 func copyRecoveryTime(nf *models.NFProfile, nfprofile models.NFProfile) {
-
 	// recoveryTime
 	if recoveryTime, ok := nfprofile.GetRecoveryTimeOk(); ok {
 		// Update when restart (Setting by NF itself)
@@ -604,6 +605,7 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 
 	return uriList
 }
+
 func addNfTypeCond(nfProfile models.NFProfile, uriList *[]string) {
 	// nfTypeCond
 	nfTypeCond := bson.M{
@@ -613,6 +615,7 @@ func addNfTypeCond(nfProfile models.NFProfile, uriList *[]string) {
 	}
 	setUriListByFilter(nfTypeCond, uriList)
 }
+
 func addNfInstanceIDCond(nfProfile models.NFProfile, uriList *[]string) {
 	// NfInstanceIdCond
 	nfInstanceIDCond := bson.M{
@@ -622,6 +625,7 @@ func addNfInstanceIDCond(nfProfile models.NFProfile, uriList *[]string) {
 	}
 	setUriListByFilter(nfInstanceIDCond, uriList)
 }
+
 func addServiceNameCond(nfProfile models.NFProfile, uriList *[]string) {
 	// ServiceNameCond
 	if nfServices, ok := nfProfile.GetNfServicesOk(); ok {
@@ -651,6 +655,7 @@ func addAmfCond(nfProfile models.NFProfile, uriList *[]string) {
 		setUriListByFilter(amfCond, uriList)
 	}
 }
+
 func addGuamiListCond(nfProfile models.NFProfile, uriList *[]string) {
 	if amfInfo, ok := nfProfile.GetAmfInfoOk(); ok {
 		var guamiListFilter bson.M
@@ -676,6 +681,7 @@ func addGuamiListCond(nfProfile models.NFProfile, uriList *[]string) {
 		}
 	}
 }
+
 func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 	// NetworkSliceCond
 	if sNssais, ok := nfProfile.GetSNssaisOk(); ok {
@@ -727,6 +733,7 @@ func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 		setUriListByFilter(networkSliceFilter, uriList)
 	}
 }
+
 func addNfGroupCond(nfProfile models.NFProfile, uriList *[]string) {
 	// NfGroupCond
 	nfType := nfProfile.GetNfType()
@@ -760,6 +767,7 @@ func addNfGroupCond(nfProfile models.NFProfile, uriList *[]string) {
 		setUriListByFilter(nfGroupCond, uriList)
 	}
 }
+
 func NnrfUriListLimit(originalUL *UriList, limit int) {
 	// response limit
 
