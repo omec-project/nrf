@@ -628,7 +628,7 @@ func addNfInstanceIDCond(nfProfile models.NFProfile, uriList *[]string) {
 
 func addServiceNameCond(nfProfile models.NFProfile, uriList *[]string) {
 	// ServiceNameCond
-	if nfServices, ok := nfProfile.GetNfServicesOk(); ok {
+	if nfServices, ok := nfProfile.GetNfServicesOk(); ok && len(nfServices) > 0 {
 		var ServiceNameCond bson.M
 		var serviceNames bson.A
 		for _, nfService := range nfServices {
