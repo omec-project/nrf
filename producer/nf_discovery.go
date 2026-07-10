@@ -1672,9 +1672,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	filter = bson.M{
 		logicalOperator: []bson.M{},
 	}
-	targetNfType := queryParameters["target-nf-type"].value
+	// targetNfType := queryParameters[queryParamTargetNFType].value
 
-	addTargetNfTypeFilter(queryParameters, filter, logicalOperator, targetNfType)
+	targetNfType := addTargetNfTypeFilter(queryParameters, filter, logicalOperator)
 	addServiceNamesFilter(queryParameters, filter, logicalOperator)
 	addRequesterNfInstanceFqdnFilter(queryParameters, filter, logicalOperator)
 	addTargetPlmnListFilter(queryParameters, filter, logicalOperator)
@@ -1709,9 +1709,9 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	return filter
 }
 
-func addTargetNfTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string, targetNfType string) {
+func addTargetNfTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) string {
 	// [Query-1] target-nf-type
-	// var targetNfType string
+	var targetNfType string
 	if targetNfTypeParam, ok := queryParameters[queryParamTargetNFType]; ok && targetNfTypeParam != nil {
 		var targetNfTypeFilter bson.M
 		targetNfType = targetNfTypeParam.value
@@ -1729,6 +1729,7 @@ func addTargetNfTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), targetNfTypeFilter)
 	}
+	return targetNfType
 }
 
 // [Query-2] requester-nf-type
