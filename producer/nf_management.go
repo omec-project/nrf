@@ -518,8 +518,20 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 			putData["createdAt"] = time.Now()
 		}
 	}
-
 	// Update NF Profile case
+	return handleNFProfileUpdateOrCreate(nf, nfProfile, locationHeaderValue, collName, filter, putData)
+}
+
+func handleNFProfileUpdateOrCreate(
+	nf models.NFProfile,
+	nfProfile models.NFProfile,
+	locationHeaderValue string,
+	collName string,
+	filter bson.M,
+	putData bson.M,
+) (http.Header, *models.NFProfile, *models.ProblemDetails) {
+	var header http.Header
+	var problemDetails *models.ProblemDetails
 	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrfContext.GetNotificationUri(nf)
@@ -538,7 +550,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
-		return header, &nf, nil
+		return header, &nfProfile, nil
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
 		uriList := nrfContext.GetNotificationUri(nf)
@@ -556,7 +568,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
 		logger.ManagementLog.Infoln("location header:", locationHeaderValue)
-		return header, &nf, nil
+		return header, &nfProfile, nil
 	}
 }
 
