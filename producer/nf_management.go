@@ -568,7 +568,7 @@ func handleNFProfileUpdateOrCreate(
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
 		logger.ManagementLog.Infoln("location header:", locationHeaderValue)
-		return header, &nfProfile, nil
+		return header, &nf, nil
 	}
 }
 
