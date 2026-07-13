@@ -531,7 +531,6 @@ func handleNFProfileUpdateOrCreate(
 	putData bson.M,
 ) (http.Header, *models.NFProfile, *models.ProblemDetails) {
 	var header http.Header
-	var problemDetails *models.ProblemDetails
 	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // true insert
 		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
 		uriList := nrfContext.GetNotificationUri(nf)
