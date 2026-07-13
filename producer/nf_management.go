@@ -541,9 +541,8 @@ func handleNFProfileUpdateOrCreate(
 
 		// receive the rsp from handler
 		for _, uri := range uriList {
-			problemDetails = SendNFStatusNotify(Notification_event, nfInstanceUri, uri)
-			if problemDetails != nil {
-				return nil, nil, problemDetails
+			if pd := SendNFStatusNotify(Notification_event, nfInstanceUri, uri); pd != nil {
+				return nil, nil, pd
 			}
 		}
 
@@ -558,9 +557,8 @@ func handleNFProfileUpdateOrCreate(
 		nfInstanceUri := locationHeaderValue
 
 		for _, uri := range uriList {
-			problemDetails = SendNFStatusNotify(notification_event, nfInstanceUri, uri)
-			if problemDetails != nil {
-				return nil, nil, problemDetails
+			if pd := SendNFStatusNotify(notification_event, nfInstanceUri, uri); pd != nil {
+				return nil, nil, pd
 			}
 		}
 
