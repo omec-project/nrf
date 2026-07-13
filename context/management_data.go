@@ -659,7 +659,7 @@ func addAmfCond(nfProfile models.NFProfile, uriList *[]string) {
 func addGuamiListCond(nfProfile models.NFProfile, uriList *[]string) {
 	if amfInfo, ok := nfProfile.GetAmfInfoOk(); ok {
 		var guamiListFilter bson.M
-		if guamiList, ok := amfInfo.GetGuamiListOk(); ok {
+		if guamiList, ok := amfInfo.GetGuamiListOk(); ok && len(guamiList) > 0 {
 			var guamiListBsonArray bson.A
 			for _, guami := range guamiList {
 				tmp, err := json.Marshal(guami)
@@ -684,7 +684,7 @@ func addGuamiListCond(nfProfile models.NFProfile, uriList *[]string) {
 
 func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 	// NetworkSliceCond
-	if sNssais, ok := nfProfile.GetSNssaisOk(); ok {
+	if sNssais, ok := nfProfile.GetSNssaisOk(); ok && len(sNssais) > 0 {
 		var networkSliceFilter bson.M
 		var snssaisBsonArray bson.A
 		for _, snssai := range sNssais {
