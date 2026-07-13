@@ -550,7 +550,7 @@ func handleNFProfileUpdateOrCreate(
 
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
-		return header, &nfProfile, nil
+		return header, &nf, nil
 	} else { // Create NF Profile case
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
 		uriList := nrfContext.GetNotificationUri(nf)
