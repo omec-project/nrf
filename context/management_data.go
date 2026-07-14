@@ -21,7 +21,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/polling"
 	"github.com/omec-project/openapi/v2/models"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func NnrfNFManagementDataModel(nf *models.NFProfile, nfprofile models.NFProfile) error {
