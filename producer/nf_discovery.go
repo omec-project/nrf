@@ -26,8 +26,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 const (
@@ -392,9 +391,9 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		if nfProfilesRaw[i]["expireAt"] == nil {
 			return false
 		}
-		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(primitive.DateTime).Time()
+		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(bson.DateTime).Time()
 
-		return nfProfilesRaw[i]["expireAt"].(primitive.DateTime).Time().Before(updatedTimeVal)
+		return nfProfilesRaw[i]["expireAt"].(bson.DateTime).Time().Before(updatedTimeVal)
 	})
 
 	// handle ipv4 & ipv6
