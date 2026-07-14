@@ -9,6 +9,7 @@ package producer
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/openapi/v2"
@@ -541,5 +542,153 @@ func TestBuildSnssaisElemMatchFiltersHandlesMultipleCommaSeparatedObjects(t *tes
 	}
 	if got := secondElemMatch["sd"]; got != "040506" {
 		t.Fatalf("expected second snssais sd 040506, got %#v", secondElemMatch)
+	}
+}
+
+// mockSortingDBClient returns a configurable slice of raw NF profiles for
+// testing sort behaviour in NFDiscoveryProcedure.
+type mockSortingDBClient struct {
+	dbadapter.DBInterface
+	profiles []map[string]any
+}
+
+func (db *mockSortingDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
+	if collName == "NfProfile" {
+		return db.profiles, nil
+	}
+	return nil, nil
+}
+
+func TestRawExpireAtToTimeWithBsonDateTime(t *testing.T) {
+	expected := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	dt := bson.DateTime(expected.UnixMilli())
+	got, ok := rawExpireAtToTime(dt)
+	if !ok {
+		t.Fatal("expected ok=true for bson.DateTime")
+	}
+	if !got.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestRawExpireAtToTimeWithTimeTime(t *testing.T) {
+	expected := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	got, ok := rawExpireAtToTime(expected)
+	if !ok {
+		t.Fatal("expected ok=true for time.Time")
+	}
+	if !got.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestRawExpireAtToTimeWithUnsupportedType(t *testing.T) {
+	if _, ok := rawExpireAtToTime("2026-01-01T00:00:00Z"); ok {
+		t.Fatal("expected ok=false for string value")
+	}
+	if _, ok := rawExpireAtToTime(nil); ok {
+		t.Fatal("expected ok=false for nil")
+	}
+	if _, ok := rawExpireAtToTime(int64(1234567890)); ok {
+		t.Fatal("expected ok=false for int64")
+	}
+}
+
+func TestNFDiscoveryProcedureSortsProfilesByExpireAt(t *testing.T) {
+	now := time.Now()
+	earlier := bson.DateTime(now.Add(-1 * time.Hour).UnixMilli())
+	later := bson.DateTime(now.Add(1 * time.Hour).UnixMilli())
+
+	// Profiles deliberately in reverse order: later expiry first, earlier second.
+	profiles := []map[string]any{
+		{
+			"nfinstanceid": "amf-later",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			"expireAt":     later,
+		},
+		{
+			"nfinstanceid": "amf-earlier",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			"expireAt":     earlier,
+		},
+	}
+
+	originalDBClient := dbadapter.DBClient
+	dbadapter.DBClient = &mockSortingDBClient{profiles: profiles}
+	defer func() { dbadapter.DBClient = originalDBClient }()
+
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+	if response == nil || len(response.NfInstances) != 2 {
+		t.Fatalf("expected 2 NF instances, got %+v", response)
+	}
+	if got := response.NfInstances[0].NfInstanceId; got != "amf-earlier" {
+		t.Errorf("expected amf-earlier first (earlier expiry), got %q", got)
+	}
+	if got := response.NfInstances[1].NfInstanceId; got != "amf-later" {
+		t.Errorf("expected amf-later second (later expiry), got %q", got)
+	}
+}
+
+func TestNFDiscoveryProcedureSortsMixedExpireAtTypesAndMissing(t *testing.T) {
+	now := time.Now()
+	// earlier uses time.Time to exercise that branch of rawExpireAtToTime
+	earliertimeTime := now.Add(-1 * time.Hour)
+	// later uses bson.DateTime (the normal MongoDB decode type)
+	laterbsonDT := bson.DateTime(now.Add(1 * time.Hour).UnixMilli())
+
+	// Profiles in scrambled order: later, no-expiry, earlier.
+	profiles := []map[string]any{
+		{
+			"nfinstanceid": "amf-later",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			"expireAt":     laterbsonDT,
+		},
+		{
+			"nfinstanceid": "amf-no-expiry",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			// no expireAt field
+		},
+		{
+			"nfinstanceid": "amf-earlier",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			"expireAt":     earliertimeTime,
+		},
+	}
+
+	originalDBClient := dbadapter.DBClient
+	dbadapter.DBClient = &mockSortingDBClient{profiles: profiles}
+	defer func() { dbadapter.DBClient = originalDBClient }()
+
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+	if response == nil || len(response.NfInstances) != 3 {
+		t.Fatalf("expected 3 NF instances, got %+v", response)
+	}
+	if got := response.NfInstances[0].NfInstanceId; got != "amf-earlier" {
+		t.Errorf("expected amf-earlier first (earliest expiry), got %q", got)
+	}
+	if got := response.NfInstances[1].NfInstanceId; got != "amf-later" {
+		t.Errorf("expected amf-later second (later expiry), got %q", got)
+	}
+	if got := response.NfInstances[2].NfInstanceId; got != "amf-no-expiry" {
+		t.Errorf("expected amf-no-expiry last (missing expireAt), got %q", got)
 	}
 }

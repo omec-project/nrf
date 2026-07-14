@@ -68,6 +68,21 @@ const (
 	queryParamTargetNfInstanceID      = "target-nf-instanceid"
 )
 
+// rawExpireAtToTime converts an expireAt value from a raw MongoDB document to
+// time.Time. The value may be bson.DateTime (returned by the driver when
+// decoding into an `any`) or time.Time (if the field was set directly in an
+// in-memory map before being persisted). Returns false when the conversion is
+// not possible.
+func rawExpireAtToTime(v any) (time.Time, bool) {
+	switch t := v.(type) {
+	case bson.DateTime:
+		return t.Time(), true
+	case time.Time:
+		return t, true
+	}
+	return time.Time{}, false
+}
+
 func cloneDiscoveryQueryParameters(queryParameters url.Values) url.Values {
 	cloned := make(url.Values, len(queryParameters))
 	for key, values := range queryParameters {
@@ -365,6 +380,20 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	}
 	logger.DiscoveryLog.Debugf("primary discovery raw count: %d", len(nfProfilesRaw))
 
+	// sort nfprofiles based on expiry timestamp before decoding so that the
+	// ordering is reflected in the returned SearchResult.
+	sort.Slice(nfProfilesRaw, func(i, j int) bool {
+		timeI, okI := rawExpireAtToTime(nfProfilesRaw[i]["expireAt"])
+		timeJ, okJ := rawExpireAtToTime(nfProfilesRaw[j]["expireAt"])
+		if okI != okJ {
+			return okI // profiles with an expireAt sort before those without
+		}
+		if !okI {
+			return false // both missing expireAt: treat as equal
+		}
+		return timeI.Before(timeJ)
+	})
+
 	// nfProfile data for response
 	var nfProfilesStruct []models.NFProfileDiscovery
 
@@ -384,17 +413,6 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
 		}
 	}
-
-	// sort nfprofiles based on timestamp
-	sort.Slice(nfProfilesRaw, func(i, j int) bool {
-		var updatedTimeVal time.Time
-		if nfProfilesRaw[i]["expireAt"] == nil {
-			return false
-		}
-		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(bson.DateTime).Time()
-
-		return nfProfilesRaw[i]["expireAt"].(bson.DateTime).Time().Before(updatedTimeVal)
-	})
 
 	// handle ipv4 & ipv6
 	if queryParameters[queryParamTargetNFType][0] == "BSF" {
