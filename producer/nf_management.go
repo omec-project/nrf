@@ -531,8 +531,8 @@ func handleNFProfileUpdateOrCreate(
 	putData bson.M,
 ) (http.Header, *models.NFProfile, *models.ProblemDetails) {
 	var header http.Header
-	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // true insert
-		logger.ManagementLog.Infoln("RestfulAPIPutOne True Insert")
+	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // update existing document
+		logger.ManagementLog.Infoln("RestfulAPIPutOne update")
 		uriList := nrfContext.GetNotificationUri(nf)
 
 		// set info for NotificationData
