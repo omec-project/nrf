@@ -2421,69 +2421,95 @@ func addPgwFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOp
 
 func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string, targetNfType string) {
 	// [Query-24] gpsi
-	var supi string
 	if queryParameters["gpsi"] != nil {
 		var gpsiFilter bson.M
 		gpsi := queryParameters["gpsi"].value
+		gpsi = gpsi[7:]
 		switch targetNfType {
 		case "CHF":
 			gpsiFilter = bson.M{
-				"chfinfo": bson.M{
-					mongoOpElemMatch: bson.M{
-						"gpsirangelist": bson.M{
+				"$or": []bson.M{
+					{
+						"chfinfo.gpsirangelist": bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
 								},
 								"end": bson.M{
-									"$gte": supi,
+									"$gte": gpsi,
 								},
 							},
+						},
+					},
+					{
+						"chfinfo.gpsirangelist": bson.M{
+							mongoOpExists: false,
 						},
 					},
 				},
 			}
 		case "UDM":
 			gpsiFilter = bson.M{
-				"udminfo": bson.M{
-					mongoOpElemMatch: bson.M{
-						"gpsirangelist": bson.M{
+				"$or": []bson.M{
+					{
+						fieldUdmInfoGpsiRanges: bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
-									"$lte": gpsi[0],
+									"$lte": gpsi,
 								},
 								"end": bson.M{
-									"$gte": supi[0],
+									"$gte": gpsi,
 								},
 							},
+						},
+					},
+					{
+						fieldUdmInfoSupiRanges: bson.M{
+							mongoOpExists: false,
+						},
+
+						fieldUdmInfoGpsiRanges: bson.M{
+							mongoOpExists: false,
+						},
+
+						fieldUdmExtGrpIDRanges: bson.M{
+							mongoOpExists: false,
 						},
 					},
 				},
 			}
 		case "UDR":
 			gpsiFilter = bson.M{
-				"udrinfo": bson.M{
-					mongoOpElemMatch: bson.M{
-						"gpsirangelist": bson.M{
+				"$or": []bson.M{
+					{
+						fieldUdrInfoGpsiRanges: bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
-									"$lte": gpsi[0],
+									"$lte": gpsi,
 								},
 								"end": bson.M{
-									"$gte": supi[0],
+									"$gte": gpsi,
 								},
 							},
+						},
+					},
+					{
+						fieldUdrInfoSupiRanges: bson.M{
+							mongoOpExists: false,
+						},
+
+						fieldUdrInfoGpsiRanges: bson.M{
+							mongoOpExists: false,
+						},
+
+						fieldUdrExtGroupIDRanges: bson.M{
+							mongoOpExists: false,
 						},
 					},
 				},
 			}
 		}
-		if queryParameters["gpsi"].negative {
-			gpsiFilter = bson.M{
-				"$not": gpsiFilter,
-			}
-		}
-		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), gpsiFilter)
+		filter["$and"] = append(filter["$and"].([]bson.M), gpsiFilter)
 	}
 }
 
