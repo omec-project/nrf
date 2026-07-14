@@ -2509,7 +2509,7 @@ func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 				},
 			}
 		}
-		filter["$and"] = append(filter["$and"].([]bson.M), gpsiFilter)
+		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), gpsiFilter)
 	}
 }
 
