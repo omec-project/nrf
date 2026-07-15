@@ -34,8 +34,8 @@ func TestDecode(t *testing.T) {
 		},
 		"SNssais": &[]models.Snssai{ // range 0-255
 			{
-				Sst: 222,
-				Sd:  openapi.PtrString("SNssais"),
+				Sst: 1, // eMBB per TS 23.501
+				Sd:  openapi.PtrString("010203"),
 			},
 		},
 		"NsiList": []string{
@@ -63,8 +63,8 @@ func TestDecode(t *testing.T) {
 		},
 		"AllowedNssais": &[]models.Snssai{
 			{
-				Sst: 333,
-				Sd:  openapi.PtrString("AllowedNssais"),
+				Sst: 2, // URLLC per TS 23.501
+				Sd:  openapi.PtrString("040506"),
 			},
 		},
 		"Priority":             1,
