@@ -18,7 +18,8 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 )
 
-// Decode - Only support []map[string]interface to []models.NFProfileDiscovery
+// Decode converts source (any []map[string]any or []any value) into []models.NFProfileDiscovery.
+// format is the time layout used for time.Time fields (e.g. time.RFC3339).
 func Decode(source any, format string) ([]models.NFProfileDiscovery, error) {
 	var target []models.NFProfileDiscovery
 
@@ -34,15 +35,30 @@ func Decode(source any, format string) ([]models.NFProfileDiscovery, error) {
 
 		// Handle JSON string to slice/map conversion
 		func(f reflect.Type, t reflect.Type, data any) (any, error) {
-			if f.Kind() == reflect.String && (t.Kind() == reflect.Slice || t.Kind() == reflect.Map) {
-				if str, ok := data.(string); ok {
-					var parsed any
-					if err := json.Unmarshal([]byte(str), &parsed); err == nil {
-						return parsed, nil
-					}
-				}
+			if f == nil || t == nil || f.Kind() != reflect.String {
+				return data, nil
 			}
-			return data, nil
+			str, ok := data.(string)
+			if !ok {
+				return data, nil
+			}
+			// Unwrap one level of pointer to reach the effective target kind.
+			effectiveType := t
+			isPtr := t.Kind() == reflect.Ptr
+			if isPtr {
+				effectiveType = t.Elem()
+			}
+			if effectiveType.Kind() != reflect.Slice && effectiveType.Kind() != reflect.Map {
+				return data, nil
+			}
+			ptr := reflect.New(effectiveType)
+			if err := json.Unmarshal([]byte(str), ptr.Interface()); err != nil {
+				return nil, fmt.Errorf("invalid JSON string: %w", err)
+			}
+			if isPtr {
+				return ptr.Interface(), nil
+			}
+			return ptr.Elem().Interface(), nil
 		},
 	)
 
