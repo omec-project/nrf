@@ -1708,6 +1708,7 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 
 	return filter
 }
+
 func addTargetNfTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) string {
 	// [Query-1] target-nf-type
 	var targetNfType string
