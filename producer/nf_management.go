@@ -517,6 +517,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 	// Update NF Profile case
 	return handleNFProfileUpdateOrCreate(nf, nfProfile, locationHeaderValue, collName, filter, putData)
 }
+
 func handleNFProfileUpdateOrCreate(
 	nf models.NFProfile,
 	nfProfile models.NFProfile,
