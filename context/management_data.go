@@ -181,17 +181,19 @@ func copyBasicLists(nf *models.NFProfile, nfprofile models.NFProfile) {
 }
 
 func copyPriorityCapacityLoad(nf *models.NFProfile, nfprofile models.NFProfile) {
-	// Priority
-	if nfprofile.GetPriority() > 0 && nfprofile.GetPriority() <= 65535 {
-		nf.SetPriority(nfprofile.GetPriority())
+	// Priority: range [0, 65535] per TS 29.510 clause 6.1.6.2.2
+	// Use GetPriorityOk so that an explicitly set priority of 0 (highest
+	// priority) is not silently dropped.
+	if priority, ok := nfprofile.GetPriorityOk(); ok && *priority >= 0 && *priority <= 65535 {
+		nf.SetPriority(*priority)
 	}
-	// Capacity
-	if nfprofile.GetCapacity() > 0 && nfprofile.GetCapacity() <= 65535 {
-		nf.SetCapacity(nfprofile.GetCapacity())
+	// Capacity: range [0, 65535] per TS 29.510 clause 6.1.6.2.2
+	if capacity, ok := nfprofile.GetCapacityOk(); ok && *capacity >= 0 && *capacity <= 65535 {
+		nf.SetCapacity(*capacity)
 	}
-	// Load
-	if nfprofile.GetLoad() > 0 && nfprofile.GetLoad() <= 100 {
-		nf.SetLoad(nfprofile.GetLoad())
+	// Load: range [0, 100] per TS 29.510 clause 6.1.6.2.2
+	if load, ok := nfprofile.GetLoadOk(); ok && *load >= 0 && *load <= 100 {
+		nf.SetLoad(*load)
 	}
 }
 

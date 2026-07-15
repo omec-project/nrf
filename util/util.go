@@ -9,6 +9,8 @@
 package util
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -16,38 +18,97 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 )
 
-// Decode - Only support []map[string]interface to []models.NFProfileDiscovery
+// Decode converts source (any []map[string]any or []any value) into []models.NFProfileDiscovery.
+// format is the time layout used for time.Time fields (e.g. time.RFC3339).
 func Decode(source any, format string) ([]models.NFProfileDiscovery, error) {
 	var target []models.NFProfileDiscovery
 
-	// config mapstruct
-	stringToDateTimeHook := func(
-		f reflect.Type,
-		t reflect.Type,
-		data any,
-	) (any, error) {
-		if t == reflect.TypeOf(time.Time{}) && f == reflect.TypeOf("") {
-			return time.Parse(format, data.(string))
-		}
-		return data, nil
-	}
+	// Enhanced decode hook to handle various data types including JSON strings
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		// Handle time parsing
+		func(f reflect.Type, t reflect.Type, data any) (any, error) {
+			if t == reflect.TypeFor[time.Time]() && f == reflect.TypeFor[string]() {
+				return time.Parse(format, data.(string))
+			}
+			return data, nil
+		},
+
+		// Handle JSON string to slice/map conversion
+		func(f reflect.Type, t reflect.Type, data any) (any, error) {
+			if f == nil || t == nil || f.Kind() != reflect.String {
+				return data, nil
+			}
+			str, ok := data.(string)
+			if !ok {
+				return data, nil
+			}
+			// Unwrap one level of pointer to reach the effective target kind.
+			effectiveType := t
+			isPtr := t.Kind() == reflect.Ptr
+			if isPtr {
+				effectiveType = t.Elem()
+			}
+			if effectiveType.Kind() != reflect.Slice && effectiveType.Kind() != reflect.Map {
+				return data, nil
+			}
+			ptr := reflect.New(effectiveType)
+			if err := json.Unmarshal([]byte(str), ptr.Interface()); err != nil {
+				return nil, fmt.Errorf("invalid JSON string: %w", err)
+			}
+			if isPtr {
+				return ptr.Interface(), nil
+			}
+			return ptr.Elem().Interface(), nil
+		},
+	)
 
 	config := mapstructure.DecoderConfig{
-		DecodeHook: stringToDateTimeHook,
-		Result:     &target,
+		DecodeHook:       decodeHook,
+		Result:           &target,
+		WeaklyTypedInput: true,
 	}
 
 	decoder, err := mapstructure.NewDecoder(&config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create decoder: %w", err)
 	}
 
-	// Decode result to NfProfile structure
 	err = decoder.Decode(source)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding failed: %w", err)
+	}
+	for i, p := range target {
+		if err := validateNFProfileDiscovery(p); err != nil {
+			return nil, fmt.Errorf("profile[%d] violates TS 29.510 constraints: %w", i, err)
+		}
 	}
 	return target, nil
+}
+
+// validateNFProfileDiscovery enforces the numeric range constraints defined in
+// TS 29.510 clause 6.1.6.2.2 (NFProfile) and TS 23.501 clause 5.15.2 (S-NSSAI)
+// that mapstructure's WeaklyTypedInput coercion would otherwise silently bypass.
+func validateNFProfileDiscovery(p models.NFProfileDiscovery) error {
+	if priority, ok := p.GetPriorityOk(); ok && (*priority < 0 || *priority > 65535) {
+		return fmt.Errorf("priority %d out of range [0, 65535]", *priority)
+	}
+	if capacity, ok := p.GetCapacityOk(); ok && (*capacity < 0 || *capacity > 65535) {
+		return fmt.Errorf("capacity %d out of range [0, 65535]", *capacity)
+	}
+	if load, ok := p.GetLoadOk(); ok && (*load < 0 || *load > 100) {
+		return fmt.Errorf("load %d out of range [0, 100]", *load)
+	}
+	for i, snssai := range p.SNssais {
+		if snssai.GetSst() < 0 || snssai.GetSst() > 255 {
+			return fmt.Errorf("sNssais[%d].sst %d out of range [0, 255]", i, snssai.GetSst())
+		}
+	}
+	for i, snssai := range p.AllowedNssais {
+		if snssai.GetSst() < 0 || snssai.GetSst() > 255 {
+			return fmt.Errorf("allowedNssais[%d].sst %d out of range [0, 255]", i, snssai.GetSst())
+		}
+	}
+	return nil
 }
 
 func ConvertNFProfileDiscoveryToNFProfile(discovery models.NFProfileDiscovery) models.NFProfile {
