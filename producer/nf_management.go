@@ -527,7 +527,12 @@ func handleNFProfileUpdateOrCreate(
 	putData bson.M,
 ) (http.Header, *models.NFProfile, *models.ProblemDetails) {
 	var header http.Header
-	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok { // update existing document
+	ok, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
+	if err != nil {
+		logger.ManagementLog.Errorln("RestfulAPIPutOne error:", err)
+		return nil, nil, utils.ProblemDetailsSystemFailure(err.Error())
+	}
+	if ok { // update existing document
 		logger.ManagementLog.Infoln("RestfulAPIPutOne update")
 		uriList := nrfContext.GetNotificationUri(nf)
 		// set info for NotificationData

@@ -1655,8 +1655,6 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	filter = bson.M{
 		logicalOperator: []bson.M{},
 	}
-	// targetNfType := queryParameters[queryParamTargetNFType].value
-
 	targetNfType := addTargetNfTypeFilter(queryParameters, filter, logicalOperator)
 	addServiceNamesFilter(queryParameters, filter, logicalOperator)
 	addRequesterNfInstanceFqdnFilter(queryParameters, filter, logicalOperator)
@@ -2407,6 +2405,10 @@ func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 	if queryParameters["gpsi"] != nil {
 		var gpsiFilter bson.M
 		gpsi := queryParameters["gpsi"].value
+		if len(gpsi) < 7 {
+			logger.DiscoveryLog.Warnln("[NRF] Invalid GPSI received: length is less than 7, skipping GPSI filter")
+			return
+		}
 		gpsi = gpsi[7:]
 		switch targetNfType {
 		case "CHF":
