@@ -26,8 +26,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 const (
@@ -68,6 +67,21 @@ const (
 	queryParamRequesterNfInstanceFqdn = "requester-nfinstance-fqdn"
 	queryParamTargetNfInstanceID      = "target-nf-instanceid"
 )
+
+// rawExpireAtToTime converts an expireAt value from a raw MongoDB document to
+// time.Time. The value may be bson.DateTime (returned by the driver when
+// decoding into an `any`) or time.Time (if the field was set directly in an
+// in-memory map before being persisted). Returns false when the conversion is
+// not possible.
+func rawExpireAtToTime(v any) (time.Time, bool) {
+	switch t := v.(type) {
+	case bson.DateTime:
+		return t.Time(), true
+	case time.Time:
+		return t, true
+	}
+	return time.Time{}, false
+}
 
 func cloneDiscoveryQueryParameters(queryParameters url.Values) url.Values {
 	cloned := make(url.Values, len(queryParameters))
@@ -366,6 +380,20 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	}
 	logger.DiscoveryLog.Debugf("primary discovery raw count: %d", len(nfProfilesRaw))
 
+	// sort nfprofiles based on expiry timestamp before decoding so that the
+	// ordering is reflected in the returned SearchResult.
+	sort.Slice(nfProfilesRaw, func(i, j int) bool {
+		timeI, okI := rawExpireAtToTime(nfProfilesRaw[i]["expireAt"])
+		timeJ, okJ := rawExpireAtToTime(nfProfilesRaw[j]["expireAt"])
+		if okI != okJ {
+			return okI // profiles with an expireAt sort before those without
+		}
+		if !okI {
+			return false // both missing expireAt: treat as equal
+		}
+		return timeI.Before(timeJ)
+	})
+
 	// nfProfile data for response
 	var nfProfilesStruct []models.NFProfileDiscovery
 
@@ -385,17 +413,6 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
 		}
 	}
-
-	// sort nfprofiles based on timestamp
-	sort.Slice(nfProfilesRaw, func(i, j int) bool {
-		var updatedTimeVal time.Time
-		if nfProfilesRaw[i]["expireAt"] == nil {
-			return false
-		}
-		updatedTimeVal = nfProfilesRaw[j]["expireAt"].(primitive.DateTime).Time()
-
-		return nfProfilesRaw[i]["expireAt"].(primitive.DateTime).Time().Before(updatedTimeVal)
-	})
 
 	// handle ipv4 & ipv6
 	if queryParameters[queryParamTargetNFType][0] == "BSF" {
@@ -2405,17 +2422,12 @@ func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 	if queryParameters["gpsi"] != nil {
 		var gpsiFilter bson.M
 		gpsi := queryParameters["gpsi"].value
-		if len(gpsi) < 7 {
-			logger.DiscoveryLog.Warnln("[NRF] Invalid GPSI received: length is less than 7, skipping GPSI filter")
-			return
-		}
-		gpsi = gpsi[7:]
 		switch targetNfType {
 		case "CHF":
 			gpsiFilter = bson.M{
-				"$or": []bson.M{
-					{
-						"chfinfo.gpsirangelist": bson.M{
+				"chfinfo": bson.M{
+					mongoOpElemMatch: bson.M{
+						"gpsirangelist": bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
 									"$lte": gpsi,
@@ -2424,74 +2436,48 @@ func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 									"$gte": gpsi,
 								},
 							},
-						},
-					},
-					{
-						"chfinfo.gpsirangelist": bson.M{
-							mongoOpExists: false,
 						},
 					},
 				},
 			}
 		case "UDM":
 			gpsiFilter = bson.M{
-				"$or": []bson.M{
-					{
-						fieldUdmInfoGpsiRanges: bson.M{
+				"udminfo": bson.M{
+					mongoOpElemMatch: bson.M{
+						"gpsirangelist": bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
-									"$lte": gpsi,
+									"$lte": gpsi[0],
 								},
 								"end": bson.M{
-									"$gte": gpsi,
+									"$gte": gpsi[0],
 								},
 							},
-						},
-					},
-					{
-						fieldUdmInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmExtGrpIDRanges: bson.M{
-							mongoOpExists: false,
 						},
 					},
 				},
 			}
 		case "UDR":
 			gpsiFilter = bson.M{
-				"$or": []bson.M{
-					{
-						fieldUdrInfoGpsiRanges: bson.M{
+				"udrinfo": bson.M{
+					mongoOpElemMatch: bson.M{
+						"gpsirangelist": bson.M{
 							mongoOpElemMatch: bson.M{
 								"start": bson.M{
-									"$lte": gpsi,
+									"$lte": gpsi[0],
 								},
 								"end": bson.M{
-									"$gte": gpsi,
+									"$gte": gpsi[0],
 								},
 							},
 						},
 					},
-					{
-						fieldUdrInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrExtGroupIDRanges: bson.M{
-							mongoOpExists: false,
-						},
-					},
 				},
+			}
+		}
+		if queryParameters["gpsi"].negative {
+			gpsiFilter = bson.M{
+				"$not": gpsiFilter,
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), gpsiFilter)

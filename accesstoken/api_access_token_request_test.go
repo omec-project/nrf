@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/omec-project/nrf/accesstoken"
-	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/openapi/v2/Nnrf_AccessToken"
@@ -39,9 +38,6 @@ func TestAccessTokenRequest(t *testing.T) {
 		_ = server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key")
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
-
-	// connect to mongoDB
-	dbadapter.ConnectToDBClient("aether", "mongodb://140.113.214.205:30030", false, false)
 
 	// Set client and set url
 	configuration := Nnrf_AccessToken.NewConfiguration()

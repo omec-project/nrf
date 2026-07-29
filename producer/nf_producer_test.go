@@ -19,7 +19,7 @@ import (
 	"github.com/omec-project/nrf/producer"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/util/httpwrapper"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type MockMongoDBClient struct {
