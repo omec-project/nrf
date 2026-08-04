@@ -30,7 +30,16 @@ func (c *nfProfileCache) get(nfInstanceID string) (models.NFProfileDiscovery, bo
 	c.mu.RLock()
 	entry, ok := c.entries[nfInstanceID]
 	c.mu.RUnlock()
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok {
+		return models.NFProfileDiscovery{}, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		// Delete under write lock; re-check to avoid a concurrent set racing with us.
+		c.mu.Lock()
+		if e, stillPresent := c.entries[nfInstanceID]; stillPresent && time.Now().After(e.expiresAt) {
+			delete(c.entries, nfInstanceID)
+		}
+		c.mu.Unlock()
 		return models.NFProfileDiscovery{}, false
 	}
 	return entry.profile, true

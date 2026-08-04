@@ -543,16 +543,32 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 		if len(rawBatch) > 0 {
 			decoded, decodeErr := util.Decode(rawBatch, time.RFC3339)
 			if decodeErr != nil {
-				logger.DiscoveryLog.Warnf("fallback profile batch decode error: %v", decodeErr)
-				return nil, nil
-			}
-			for i, p := range decoded {
-				if p.GetNfInstanceId() == "" {
-					continue
+				// Fall back to per-document decode so one malformed entry doesn't
+				// discard the entire batch (mirrors the original per-profile loop).
+				logger.DiscoveryLog.Warnf("fallback profile batch decode error, retrying per-profile: %v", decodeErr)
+				for _, raw := range rawBatch {
+					rawDoc, _ := raw.(map[string]any)
+					single, sErr := util.Decode([]any{raw}, time.RFC3339)
+					if sErr != nil {
+						logger.DiscoveryLog.Warnf("fallback profile decode error: %v", sErr)
+						continue
+					}
+					if len(single) == 0 || single[0].GetNfInstanceId() == "" {
+						continue
+					}
+					p := single[0]
+					decodedByID[p.GetNfInstanceId()] = p
+					cacheProfileWithExpiry(p, rawDoc)
 				}
-				decodedByID[p.GetNfInstanceId()] = p
-				rawDoc, _ := rawBatch[i].(map[string]any)
-				cacheProfileWithExpiry(p, rawDoc)
+			} else {
+				for i, p := range decoded {
+					if p.GetNfInstanceId() == "" {
+						continue
+					}
+					decodedByID[p.GetNfInstanceId()] = p
+					rawDoc, _ := rawBatch[i].(map[string]any)
+					cacheProfileWithExpiry(p, rawDoc)
+				}
 			}
 		}
 	}
