@@ -20,6 +20,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
+	"github.com/omec-project/nrf/factory"
 	"github.com/omec-project/nrf/logger"
 	stats "github.com/omec-project/nrf/metrics"
 	"github.com/omec-project/nrf/util"
@@ -427,6 +428,15 @@ func sortNFProfiles(
 	}
 	logger.DiscoveryLog.Debugf("primary discovery decoded count: %d", len(nfProfilesStruct))
 
+	// Populate cache so subsequent fallback calls can skip MongoDB+decode.
+	for i, p := range nfProfilesStruct {
+		var rawDoc map[string]any
+		if i < len(nfProfilesRaw) {
+			rawDoc = nfProfilesRaw[i]
+		}
+		cacheProfileWithExpiry(p, rawDoc)
+	}
+
 	if len(nfProfilesStruct) == 0 {
 		allProfiles, fallbackErr := loadDiscoveryProfilesFromURIList(queryParameters)
 		if fallbackErr != nil {
@@ -518,48 +528,103 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 		return nil, nil
 	}
 
-	profileListRaw, err := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", bson.M{
-		"nfinstanceid": bson.M{"$in": uniqueInstanceIDs},
-	})
-	if err != nil {
-		return nil, err
+	// Serve cached profiles; only fetch the remainder from MongoDB.
+	decodedByID := make(map[string]models.NFProfileDiscovery, len(uniqueInstanceIDs))
+	uncachedIDs := make([]string, 0, len(uniqueInstanceIDs))
+	for _, id := range uniqueInstanceIDs {
+		if p, ok := profileCache.get(id); ok {
+			decodedByID[id] = p
+		} else {
+			uncachedIDs = append(uncachedIDs, id)
+		}
 	}
 
-	profilesByInstanceID := make(map[string]map[string]interface{}, len(profileListRaw))
-	for _, profileRaw := range profileListRaw {
-		if profileRaw == nil {
-			continue
+	if len(uncachedIDs) > 0 {
+		profileListRaw, dbErr := dbadapter.DBClient.RestfulAPIGetMany("NfProfile", bson.M{
+			"nfinstanceid": bson.M{"$in": uncachedIDs},
+		})
+		if dbErr != nil {
+			return nil, dbErr
 		}
-		if nfInstanceID, ok := profileRaw["nfinstanceid"].(string); ok && nfInstanceID != "" {
-			profilesByInstanceID[nfInstanceID] = profileRaw
+
+		profilesByInstanceID := make(map[string]map[string]interface{}, len(profileListRaw))
+		for _, profileRaw := range profileListRaw {
+			if profileRaw == nil {
+				continue
+			}
+			if nfInstanceID, ok := profileRaw["nfinstanceid"].(string); ok && nfInstanceID != "" {
+				profilesByInstanceID[nfInstanceID] = profileRaw
+			}
+		}
+
+		// Batch-decode all uncached profiles in a single util.Decode call.
+		rawBatch := make([]any, 0, len(uncachedIDs))
+		for _, nfInstanceID := range uncachedIDs {
+			if profileRaw := profilesByInstanceID[nfInstanceID]; profileRaw != nil {
+				rawBatch = append(rawBatch, profileRaw)
+			}
+		}
+
+		if len(rawBatch) > 0 {
+			decoded, decodeErr := util.Decode(rawBatch, time.RFC3339)
+			if decodeErr != nil {
+				// Fall back to per-document decode so one malformed entry doesn't
+				// discard the entire batch (mirrors the original per-profile loop).
+				logger.DiscoveryLog.Warnf("fallback profile batch decode error, retrying per-profile: %v", decodeErr)
+				for _, raw := range rawBatch {
+					rawDoc, _ := raw.(map[string]any)
+					single, sErr := util.Decode([]any{raw}, time.RFC3339)
+					if sErr != nil {
+						logger.DiscoveryLog.Warnf("fallback profile decode error: %v", sErr)
+						continue
+					}
+					if len(single) == 0 || single[0].GetNfInstanceId() == "" {
+						continue
+					}
+					p := single[0]
+					decodedByID[p.GetNfInstanceId()] = p
+					cacheProfileWithExpiry(p, rawDoc)
+				}
+			} else {
+				for i, p := range decoded {
+					if p.GetNfInstanceId() == "" {
+						continue
+					}
+					decodedByID[p.GetNfInstanceId()] = p
+					rawDoc, _ := rawBatch[i].(map[string]any)
+					cacheProfileWithExpiry(p, rawDoc)
+				}
+			}
 		}
 	}
 
 	profiles := make([]models.NFProfileDiscovery, 0, len(orderedInstanceIDs))
 	for _, nfInstanceID := range orderedInstanceIDs {
-		profileRaw := profilesByInstanceID[nfInstanceID]
-
-		if profileRaw == nil {
-			continue
+		if p, ok := decodedByID[nfInstanceID]; ok {
+			profiles = append(profiles, p)
 		}
-
-		decodedProfiles, decodeErr := util.Decode([]any{profileRaw}, time.RFC3339)
-		if decodeErr != nil {
-			logger.DiscoveryLog.Warnf("fallback profile decode error for %s: %v", nfInstanceID, decodeErr)
-			continue
-		}
-		if len(decodedProfiles) == 0 {
-			continue
-		}
-		decodedProfile := decodedProfiles[0]
-		if decodedProfile.GetNfInstanceId() == "" {
-			continue
-		}
-
-		profiles = append(profiles, decodedProfile)
 	}
 
 	return profiles, nil
+}
+
+// cacheProfileWithExpiry stores p in the profile cache, deriving TTL from the
+// raw document's expireAt field or the NRF keep-alive configuration.
+func cacheProfileWithExpiry(p models.NFProfileDiscovery, rawDoc map[string]any) {
+	var expiresAt time.Time
+	if rawDoc != nil {
+		if t, ok := rawExpireAtToTime(rawDoc["expireAt"]); ok && t.After(time.Now()) {
+			expiresAt = t
+		}
+	}
+	if expiresAt.IsZero() {
+		ttl := time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime) * time.Second
+		if ttl <= 0 {
+			ttl = 60 * time.Second
+		}
+		expiresAt = time.Now().Add(ttl)
+	}
+	profileCache.set(p, expiresAt)
 }
 
 func getNFInstanceIDFromURI(uri string) string {

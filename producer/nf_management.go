@@ -307,6 +307,7 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 		problemDetails = utils.ProblemDetails("NF Profiles Deletion Failed", http.StatusInternalServerError, err.Error())
 		return problemDetails
 	}
+	profileCache.evictByNfType(nfType)
 
 	logger.ManagementLog.Infof("successfully deleted NF profiles of type %s", nfType)
 	return nil
@@ -332,6 +333,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 		problemDetails = utils.ProblemDetailsWithCause("NF delete error", http.StatusInternalServerError, deleteManyErr.Error(), utils.CauseNfDeleteError)
 		return "", problemDetails
 	}
+	profileCache.evict(nfInstanceID)
 
 	// nfProfile data for response
 	nfProfiles, err := util.Decode(nfProfilesRaw, time.RFC3339)
@@ -447,6 +449,7 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 		logger.ManagementLog.Errorf("nf profile [%s] update failed: %v", nfProfiles[0].NfType, putErr)
 		return nil, fmt.Errorf("NF profile update is failed: %v", putErr)
 	}
+	profileCache.evict(nfInstanceID)
 
 	logger.ManagementLog.Infof("nf profile [%s] update success", nfProfiles[0].NfType)
 	updatedProfile := util.ConvertNFProfileDiscoveryToNFProfile(nfProfiles[0])
@@ -533,6 +536,7 @@ func handleNFProfileUpdateOrCreate(
 		return nil, nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
 	if ok { // update existing document
+		profileCache.evict(nf.GetNfInstanceId())
 		logger.ManagementLog.Infoln("RestfulAPIPutOne update")
 		uriList := nrfContext.GetNotificationUri(nf)
 		// set info for NotificationData

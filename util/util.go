@@ -11,71 +11,22 @@ package util
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"time"
 
-	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/openapi/v2/models"
 )
 
 // Decode converts source (any []map[string]any or []any value) into []models.NFProfileDiscovery.
-// format is the time layout used for time.Time fields (e.g. time.RFC3339).
-func Decode(source any, format string) ([]models.NFProfileDiscovery, error) {
+// format is retained for API compatibility but is no longer used.
+func Decode(source any, _ string) ([]models.NFProfileDiscovery, error) {
+	// json.Unmarshal uses pre-compiled field offsets (faster than mapstructure reflection).
+	// Pre-process first to decode any JSON-string-encoded arrays/objects in the source.
+	b, err := json.Marshal(preprocessJSONStrings(source))
+	if err != nil {
+		return nil, fmt.Errorf("marshal failed: %w", err)
+	}
 	var target []models.NFProfileDiscovery
-
-	// Enhanced decode hook to handle various data types including JSON strings
-	decodeHook := mapstructure.ComposeDecodeHookFunc(
-		// Handle time parsing
-		func(f reflect.Type, t reflect.Type, data any) (any, error) {
-			if t == reflect.TypeFor[time.Time]() && f == reflect.TypeFor[string]() {
-				return time.Parse(format, data.(string))
-			}
-			return data, nil
-		},
-
-		// Handle JSON string to slice/map conversion
-		func(f reflect.Type, t reflect.Type, data any) (any, error) {
-			if f == nil || t == nil || f.Kind() != reflect.String {
-				return data, nil
-			}
-			str, ok := data.(string)
-			if !ok {
-				return data, nil
-			}
-			// Unwrap one level of pointer to reach the effective target kind.
-			effectiveType := t
-			isPtr := t.Kind() == reflect.Ptr
-			if isPtr {
-				effectiveType = t.Elem()
-			}
-			if effectiveType.Kind() != reflect.Slice && effectiveType.Kind() != reflect.Map {
-				return data, nil
-			}
-			ptr := reflect.New(effectiveType)
-			if err := json.Unmarshal([]byte(str), ptr.Interface()); err != nil {
-				return nil, fmt.Errorf("invalid JSON string: %w", err)
-			}
-			if isPtr {
-				return ptr.Interface(), nil
-			}
-			return ptr.Elem().Interface(), nil
-		},
-	)
-
-	config := mapstructure.DecoderConfig{
-		DecodeHook:       decodeHook,
-		Result:           &target,
-		WeaklyTypedInput: true,
-	}
-
-	decoder, err := mapstructure.NewDecoder(&config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create decoder: %w", err)
-	}
-
-	err = decoder.Decode(source)
-	if err != nil {
-		return nil, fmt.Errorf("decoding failed: %w", err)
+	if err := json.Unmarshal(b, &target); err != nil {
+		return nil, fmt.Errorf("unmarshal failed: %w", err)
 	}
 	for i, p := range target {
 		if err := validateNFProfileDiscovery(p); err != nil {
@@ -83,6 +34,89 @@ func Decode(source any, format string) ([]models.NFProfileDiscovery, error) {
 		}
 	}
 	return target, nil
+}
+
+// preprocessJSONStrings recursively copies v, decoding string values that contain
+// a JSON array or object into their native Go types. This preserves backward
+// compatibility with documents that stored structured fields as JSON strings.
+// For Go struct/pointer/slice values (e.g. from unit tests), it converts them
+// through a JSON round-trip and strips empty-string fields to avoid enum
+// validation errors on the outer unmarshal (MongoDB data never stores empty
+// strings for validated enum fields).
+func preprocessJSONStrings(v any) any {
+	switch val := v.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, elem := range val {
+			out[k] = preprocessJSONStrings(elem)
+		}
+		return out
+	case []map[string]any:
+		out := make([]any, len(val))
+		for i, elem := range val {
+			out[i] = preprocessJSONStrings(elem)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, elem := range val {
+			out[i] = preprocessJSONStrings(elem)
+		}
+		return out
+	case string:
+		if len(val) > 0 && (val[0] == '[' || val[0] == '{') {
+			var parsed any
+			if json.Unmarshal([]byte(val), &parsed) == nil {
+				return parsed
+			}
+		}
+		return val
+	default:
+		// Pass primitive types through without a JSON round-trip to avoid recursion.
+		switch val.(type) {
+		case bool,
+			int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64,
+			float32, float64:
+			return val
+		}
+		// For Go structs/pointers/slices: convert through JSON, then strip empty
+		// strings so zero-value enum fields don't fail custom UnmarshalJSON.
+		b, err := json.Marshal(val)
+		if err != nil {
+			return val
+		}
+		var intermediate any
+		if json.Unmarshal(b, &intermediate) != nil {
+			return val
+		}
+		return removeEmptyStrings(preprocessJSONStrings(intermediate))
+	}
+}
+
+// removeEmptyStrings removes empty-string entries from maps/slices. Only called
+// for data that came through the Go struct → JSON round-trip path.
+func removeEmptyStrings(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		for k, elem := range val {
+			if s, ok := elem.(string); ok && s == "" {
+				delete(val, k)
+			} else {
+				val[k] = removeEmptyStrings(elem)
+			}
+		}
+		return val
+	case []any:
+		for i, elem := range val {
+			val[i] = removeEmptyStrings(elem)
+		}
+		return val
+	default:
+		return val
+	}
 }
 
 // validateNFProfileDiscovery enforces the numeric range constraints defined in

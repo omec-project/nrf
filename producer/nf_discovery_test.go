@@ -692,3 +692,171 @@ func TestNFDiscoveryProcedureSortsMixedExpireAtTypesAndMissing(t *testing.T) {
 		t.Errorf("expected amf-no-expiry last (missing expireAt), got %q", got)
 	}
 }
+
+func TestProfileCacheGetReturnsHitForValidEntry(t *testing.T) {
+	c := &nfProfileCache{entries: make(map[string]profileCacheEntry)}
+	p := models.NFProfileDiscovery{NfInstanceId: "hit-test", NfType: models.NFTYPE_AMF}
+	c.set(p, time.Now().Add(60*time.Second))
+
+	got, ok := c.get("hit-test")
+	if !ok {
+		t.Fatal("expected cache hit for valid entry")
+	}
+	if got.NfInstanceId != "hit-test" {
+		t.Fatalf("unexpected profile: %+v", got)
+	}
+}
+
+func TestProfileCacheGetReturnsMissForExpiredEntry(t *testing.T) {
+	c := &nfProfileCache{entries: make(map[string]profileCacheEntry)}
+	c.entries["expired"] = profileCacheEntry{
+		profile:   models.NFProfileDiscovery{NfInstanceId: "expired"},
+		expiresAt: time.Now().Add(-time.Second),
+	}
+
+	if _, ok := c.get("expired"); ok {
+		t.Fatal("expected cache miss for expired entry")
+	}
+}
+
+func TestProfileCacheGetDeletesExpiredEntryOnRead(t *testing.T) {
+	c := &nfProfileCache{entries: make(map[string]profileCacheEntry)}
+	c.entries["stale"] = profileCacheEntry{
+		profile:   models.NFProfileDiscovery{NfInstanceId: "stale"},
+		expiresAt: time.Now().Add(-time.Second),
+	}
+
+	c.get("stale") // should evict
+
+	c.mu.RLock()
+	_, stillPresent := c.entries["stale"]
+	c.mu.RUnlock()
+	if stillPresent {
+		t.Fatal("expected expired entry to be deleted from cache on read")
+	}
+}
+
+// mockCacheTestDBClient returns no NfProfile results to verify the cache path.
+type mockCacheTestDBClient struct {
+	dbadapter.DBInterface
+	getManyCalled bool
+}
+
+func (db *mockCacheTestDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	if collName == "urilist" {
+		return map[string]interface{}{
+			"nfType": "AMF",
+			"_link": map[string]interface{}{
+				"item": []map[string]interface{}{{
+					"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-cached",
+				}},
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+func (db *mockCacheTestDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	db.getManyCalled = true
+	return nil, nil
+}
+
+func TestLoadDiscoveryProfilesFromURIListServesFromCache(t *testing.T) {
+	const testID = "amf-cached"
+	profileCache.evict(testID)
+	defer profileCache.evict(testID)
+
+	p := models.NFProfileDiscovery{
+		NfInstanceId: testID,
+		NfType:       models.NFTYPE_AMF,
+		NfStatus:     models.NFSTATUS_REGISTERED,
+	}
+	profileCache.set(p, time.Now().Add(60*time.Second))
+
+	mockDB := &mockCacheTestDBClient{}
+	originalDBClient := dbadapter.DBClient
+	dbadapter.DBClient = mockDB
+	defer func() { dbadapter.DBClient = originalDBClient }()
+
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+
+	profiles, err := loadDiscoveryProfilesFromURIList(query)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 cached profile, got %d", len(profiles))
+	}
+	if profiles[0].NfInstanceId != testID {
+		t.Fatalf("unexpected profile id: %s", profiles[0].NfInstanceId)
+	}
+	if mockDB.getManyCalled {
+		t.Fatal("expected DB not to be queried when all profiles are cached")
+	}
+}
+
+// mockMalformedBatchDBClient returns one valid and one constraint-violating profile.
+type mockMalformedBatchDBClient struct {
+	dbadapter.DBInterface
+}
+
+func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	if collName == "urilist" {
+		return map[string]interface{}{
+			"nfType": "AMF",
+			"_link": map[string]interface{}{
+				"item": []map[string]interface{}{
+					{"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-valid"},
+					{"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-invalid"},
+				},
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+func (db *mockMalformedBatchDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	return []map[string]any{
+		{
+			"nfinstanceid": "amf-valid",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+		},
+		{
+			"nfinstanceid": "amf-invalid",
+			"nftype":       "AMF",
+			"nfstatus":     "REGISTERED",
+			"priority":     999999, // violates TS 29.510 constraint [0, 65535]
+		},
+	}, nil
+}
+
+func TestLoadDiscoveryProfilesFromURIListBatchDecodeErrorFallsBackToPerProfile(t *testing.T) {
+	profileCache.evict("amf-valid")
+	profileCache.evict("amf-invalid")
+	defer func() {
+		profileCache.evict("amf-valid")
+		profileCache.evict("amf-invalid")
+	}()
+
+	originalDBClient := dbadapter.DBClient
+	dbadapter.DBClient = &mockMalformedBatchDBClient{}
+	defer func() { dbadapter.DBClient = originalDBClient }()
+
+	query := url.Values{}
+	query.Set("target-nf-type", "AMF")
+	query.Set("requester-nf-type", "SMF")
+
+	profiles, err := loadDiscoveryProfilesFromURIList(query)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 valid profile (invalid entry dropped), got %d", len(profiles))
+	}
+	if profiles[0].NfInstanceId != "amf-valid" {
+		t.Fatalf("unexpected profile id: %s", profiles[0].NfInstanceId)
+	}
+}
