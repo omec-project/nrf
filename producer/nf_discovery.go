@@ -349,23 +349,8 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		return nil, problemDetails
 	}
 
-	if queryParameters["complexQuery"] != nil {
-		// IF SUPPORT COMPLEX QUERY
-		// translate raw data to complexQuery structure
-		complexQuery := queryParameters["complexQuery"][0]
-		complexQueryStruct := &models.ComplexQuery{}
-		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
-		if err != nil {
-			logger.DiscoveryLog.Warnln("unmarshal complexQuery Error:", err)
-		}
-		// Check either CNF or DNF
-		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
-			problemDetails = utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "CNF and DNF are mutually exclusive", utils.CauseInvalidRequest)
-			problemDetails.SetInvalidParams([]models.InvalidParam{
-				{Param: "complexQuery"},
-			})
-			return nil, problemDetails
-		}
+	if problem := validateComplexQuery(queryParameters); problem != nil {
+		return nil, problem
 	}
 
 	// Check ComplexQuery (FOR REPORT PROBLEM!)
@@ -383,6 +368,44 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 
 	// sort nfprofiles based on expiry timestamp before decoding so that the
 	// ordering is reflected in the returned SearchResult.
+	// Sort profiles
+	nfProfilesStruct := sortNFProfiles(nfProfilesRaw, queryParameters)
+
+	// Handle IPv4 & IPv6 conversion for BSF profiles
+	handleBSFIpConversion(queryParameters, nfProfilesStruct)
+
+	// Build SearchResult model
+	searchResult := models.NewSearchResult(100, nfProfilesStruct)
+
+	return searchResult, nil
+}
+
+func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
+	if values := queryParameters["complexQuery"]; len(values) > 0 {
+		// IF SUPPORT COMPLEX QUERY
+		// translate raw data to complexQuery structure
+		complexQuery := values[0]
+		complexQueryStruct := &models.ComplexQuery{}
+		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
+		if err != nil {
+			logger.DiscoveryLog.Warnln("unmarshal complexQuery Error:", err)
+		}
+		// Check either CNF or DNF
+		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "CNF and DNF are mutually exclusive", utils.CauseInvalidRequest)
+			problemDetails.SetInvalidParams([]models.InvalidParam{
+				{Param: "complexQuery"},
+			})
+			return problemDetails
+		}
+	}
+	return nil
+}
+
+func sortNFProfiles(
+	nfProfilesRaw []map[string]interface{},
+	queryParameters url.Values,
+) []models.NFProfileDiscovery {
 	sort.Slice(nfProfilesRaw, func(i, j int) bool {
 		timeI, okI := rawExpireAtToTime(nfProfilesRaw[i]["expireAt"])
 		timeJ, okJ := rawExpireAtToTime(nfProfilesRaw[j]["expireAt"])
@@ -398,7 +421,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	// nfProfile data for response
 	var nfProfilesStruct []models.NFProfileDiscovery
 
-	nfProfilesStruct, err = util.Decode(nfProfilesRaw, time.RFC3339)
+	nfProfilesStruct, err := util.Decode(nfProfilesRaw, time.RFC3339)
 	if err != nil {
 		logger.DiscoveryLog.Warnln("NF Profile Raw decode error:", err)
 	}
@@ -423,8 +446,13 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
 		}
 	}
+	return nfProfilesStruct
+}
 
-	// handle ipv4 & ipv6
+func handleBSFIpConversion(
+	queryParameters url.Values,
+	nfProfilesStruct []models.NFProfileDiscovery,
+) {
 	if queryParameters[queryParamTargetNFType][0] == "BSF" {
 		for i, nfProfile := range nfProfilesStruct {
 			if nfProfile.BsfInfo == nil {
@@ -459,10 +487,6 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 			}
 		}
 	}
-	// Build SearchResult model
-	searchResult := models.NewSearchResult(100, nfProfilesStruct)
-
-	return searchResult, nil
 }
 
 func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFProfileDiscovery, error) {
@@ -681,10 +705,51 @@ func buildFilter(queryParameters url.Values) bson.M {
 	}
 
 	targetNfType := ""
+	if values := queryParameters[queryParamTargetNFType]; len(values) > 0 {
+		targetNfType = values[0]
+	}
 
+	handleTargetNfType(queryParameters, filter)
+	handleRequesterNfType(queryParameters, filter)
+	handleServiceNames(queryParameters, filter)
+	handleRequesterNfInstanceFqdn(queryParameters, filter)
+	handleTargetPlmnList(queryParameters, filter)
+	handleTargetNfInstanceID(queryParameters, filter)
+	handleTargetNfFqdn(queryParameters, filter)
+	handleSnssais(queryParameters, filter)
+	handleNsiList(queryParameters, filter)
+	handleDnn(queryParameters, filter, targetNfType)
+	handleSmfServingArea(queryParameters, filter, targetNfType)
+	handleTai(queryParameters, filter, targetNfType)
+	handleAmfRegionID(queryParameters, filter, targetNfType)
+	handleAmfSetID(queryParameters, filter, targetNfType)
+	handleGuami(queryParameters, filter, targetNfType)
+	handleSupi(queryParameters, filter, targetNfType)
+	handleUeIpv4(queryParameters, filter, targetNfType)
+	handleIpDomain(queryParameters, filter, targetNfType)
+	handleUeIpv6Prefix(queryParameters, filter, targetNfType)
+	handlePgwInd(queryParameters, filter)
+	handlePgw(queryParameters, filter)
+	handleGpsi(queryParameters, filter, targetNfType)
+	handleExternalGroupIdentity(queryParameters, filter, targetNfType)
+	handleDataSet(queryParameters, filter, targetNfType)
+	handleRoutingIndicator(queryParameters, filter, targetNfType)
+	handleGroupIDList(queryParameters, filter, targetNfType)
+	handleDnaiList(queryParameters, filter, targetNfType)
+	handleUpfIwkEpsInd(queryParameters, filter, targetNfType)
+	handleChfSupportedPlmn(queryParameters, filter, targetNfType)
+	handlePreferredLocality(queryParameters, filter)
+	handleAccessType(queryParameters, filter)
+	handleSupportedFeatures(queryParameters, filter)
+	handleComplexQuery(queryParameters, filter)
+
+	return filter
+}
+
+func handleTargetNfType(queryParameters url.Values, filter bson.M) {
 	// [Query-1] target-nf-type
 	if len(queryParameters[queryParamTargetNFType]) > 0 {
-		targetNfType = queryParameters[queryParamTargetNFType][0]
+		targetNfType := queryParameters[queryParamTargetNFType][0]
 		if targetNfType != "" {
 			targetNfTypeFilter := bson.M{
 				"nftype": targetNfType,
@@ -692,7 +757,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), targetNfTypeFilter)
 		}
 	}
+}
 
+func handleRequesterNfType(queryParameters url.Values, filter bson.M) {
 	// [Query-2] request-nf-type
 	requesterNfType := queryParameters[queryParamRequesterNFType][0]
 	if requesterNfType != "" {
@@ -704,7 +771,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), requesterNfTypeFilter)
 	}
+}
 
+func handleServiceNames(queryParameters url.Values, filter bson.M) {
 	// [Query-3] service-names
 	// TODO: return exist service name
 	if queryParameters[queryParamServiceNames] != nil {
@@ -729,7 +798,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), serviceNamesFilter)
 	}
+}
 
+func handleRequesterNfInstanceFqdn(queryParameters url.Values, filter bson.M) {
 	// [Query-4] requester-nfinstance-fqdn
 	if queryParameters["requester-nf-instance-fqdn"] != nil {
 		requesterNfinstanceFqdn := queryParameters["requester-nf-instance-fqdn"][0]
@@ -756,7 +827,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), requesterNfinstanceFqdnFilter)
 	}
+}
 
+func handleTargetPlmnList(queryParameters url.Values, filter bson.M) {
 	// [Query-5] target-plmn-list [C] = Mcc + Mnc
 	// Mcc: Pattern: '^[0-9]{3}$'
 	// Mnc: Pattern: '^[0-9]{2,3}$'
@@ -801,13 +874,14 @@ func buildFilter(queryParameters url.Values) bson.M {
 
 		filter["$and"] = append(filter["$and"].([]bson.M), targetPlmnListFilter)
 	}
-
 	// [Query-6] requester-plmn-list
 	// if queryParameters["requester-plmn-list"] != nil {
 	// requesterPlmnPist := queryParameters["requester-plmn-list"][0]
 	// TODO
 	// }
+}
 
+func handleTargetNfInstanceID(queryParameters url.Values, filter bson.M) {
 	// [Query-7] target-nf-instance-id
 	if queryParameters["target-nf-instance-id"] != nil {
 		targetNfInstanceid := queryParameters["target-nf-instance-id"][0]
@@ -816,7 +890,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), nfInstanceIdFilter)
 	}
+}
 
+func handleTargetNfFqdn(queryParameters url.Values, filter bson.M) {
 	// [Query-8] target-nf-fqdn
 	if queryParameters[queryParamTargetNfFqdn] != nil {
 		targetNfFqdn := queryParameters[queryParamTargetNfFqdn][0]
@@ -825,10 +901,11 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), fqdnFilter)
 	}
+}
 
-	// [Query-9] hnrf-uri
-	// for Roaming
-
+// [Query-9] hnrf-uri
+// for Roaming
+func handleSnssais(queryParameters url.Values, filter bson.M) {
 	// [Query-10] snssais
 	// Pattern: '^[A-Fa-f0-9]{6}$'
 	if queryParameters["snssais"] != nil {
@@ -850,7 +927,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), snssaisFilter)
 		}
 	}
+}
 
+func handleNsiList(queryParameters url.Values, filter bson.M) {
 	// [Query-11] nsi-list
 	if queryParameters[queryParamNsiList] != nil {
 		nsiList := queryParameters[queryParamNsiList][0]
@@ -866,7 +945,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), nsiListFilter)
 	}
+}
 
+func handleDnn(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-12] dnn
 	if queryParameters["dnn"] != nil {
 		dnn := queryParameters["dnn"][0]
@@ -928,7 +1009,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), dnnFilter)
 	}
+}
 
+func handleSmfServingArea(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-13] smf-serving-area
 	if queryParameters[queryParamSmfServingArea] != nil {
 		var smfServingAreaFilter bson.M
@@ -949,7 +1032,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), smfServingAreaFilter)
 	}
+}
 
+func handleTai(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-14] tai
 	if queryParameters["tai"] != nil {
 		var taiFilter bson.M
@@ -987,7 +1072,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), taiFilter)
 	}
+}
 
+func handleAmfRegionID(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-15] amf-region-id
 	if queryParameters[queryParamAmfRegionID] != nil {
 		if targetNfType == "AMF" {
@@ -998,7 +1085,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), amfRegionIdFilter)
 		}
 	}
+}
 
+func handleAmfSetID(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-16] amf-set-id
 	if queryParameters[queryParamAmfSetID] != nil {
 		if targetNfType == "AMF" {
@@ -1009,7 +1098,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), amfSetIdFilter)
 		}
 	}
+}
 
+func handleGuami(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// Query-17: guami
 	// TODO: NOTE[1]
 	if queryParameters["guami"] != nil {
@@ -1042,7 +1133,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), guamiFilter)
 		}
 	}
+}
 
+func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-18] supi
 	var supi string
 	if queryParameters["supi"] != nil {
@@ -1182,7 +1275,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), supiFilter)
 	}
+}
 
+func handleUeIpv4(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-19] ue-ipv4-address
 	if queryParameters[queryParamUeIpv4Address] != nil {
 		var ueIpv4AddressFilter bson.M
@@ -1213,7 +1308,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), ueIpv4AddressFilter)
 	}
+}
 
+func handleIpDomain(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-20] ip-domain
 	if queryParameters[queryParamIpDomain] != nil {
 		var ipDomainFilter bson.M
@@ -1234,7 +1331,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), ipDomainFilter)
 	}
+}
 
+func handleUeIpv6Prefix(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-21] ue-ipv6-prefix
 	if queryParameters[queryParamUeIpv6Prefix] != nil {
 		var ueIpv6PrefixFilter bson.M
@@ -1265,7 +1364,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), ueIpv6PrefixFilter)
 	}
+}
 
+func handlePgwInd(queryParameters url.Values, filter bson.M) {
 	// [Query-22] pgw-ind
 	if queryParameters[queryParamPgwInd] != nil {
 		pgwInd := queryParameters[queryParamPgwInd][0]
@@ -1278,7 +1379,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 			filter["$and"] = append(filter["$and"].([]bson.M), pgwIndFilter)
 		}
 	}
+}
 
+func handlePgw(queryParameters url.Values, filter bson.M) {
 	// [Query-23] pgw
 	if queryParameters["pgw"] != nil {
 		pgw := queryParameters["pgw"][0]
@@ -1287,7 +1390,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), pgwFilter)
 	}
+}
 
+func handleGpsi(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-24] gpsi
 	if queryParameters["gpsi"] != nil {
 		var gpsiFilter bson.M
@@ -1379,7 +1484,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), gpsiFilter)
 	}
+}
 
+func handleExternalGroupIdentity(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-25] external-group-identity
 	if queryParameters[queryParamExternalGroupIdentity] != nil {
 		var externalGroupIdentityFilter bson.M
@@ -1450,7 +1557,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), externalGroupIdentityFilter)
 	}
+}
 
+func handleDataSet(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-26] data-set
 	if queryParameters[queryParamDataSet] != nil {
 		var dataSetFilter bson.M
@@ -1471,7 +1580,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), dataSetFilter)
 	}
+}
 
+func handleRoutingIndicator(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-27] routing-indicator
 	if queryParameters[queryParamRoutingIndicator] != nil {
 		var routingIndicatorFilter bson.M
@@ -1506,7 +1617,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), routingIndicatorFilter)
 	}
+}
 
+func handleGroupIDList(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-28] group-id-list
 	if queryParameters[queryParamGroupIDList] != nil {
 		var groupIdListFilter bson.M
@@ -1540,7 +1653,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), groupIdListFilter)
 	}
+}
 
+func handleDnaiList(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-29] dnai-list
 	if queryParameters[queryParamDnaiList] != nil {
 		var dnaiFilter bson.M
@@ -1568,7 +1683,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), dnaiFilter)
 	}
+}
 
+func handleUpfIwkEpsInd(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-30] upf-iwk-eps-ind
 	if queryParameters[queryParamUpfIwkEpsInd] != nil {
 		var upfIwkEpsIndFilter bson.M
@@ -1580,7 +1697,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), upfIwkEpsIndFilter)
 	}
+}
 
+func handleChfSupportedPlmn(queryParameters url.Values, filter bson.M, targetNfType string) {
 	// [Query-31] chf-supported-plmn
 	if queryParameters[queryParamChfSupportedPlmn] != nil {
 		var chfSupportedPlmnFilter bson.M
@@ -1618,7 +1737,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), chfSupportedPlmnFilter)
 	}
+}
 
+func handlePreferredLocality(queryParameters url.Values, filter bson.M) {
 	// [Query-32]  preferred-locality
 	// TODO: if no match
 	if queryParameters[queryParamPreferredLocality] != nil {
@@ -1628,7 +1749,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), preferredLocalityFilter)
 	}
+}
 
+func handleAccessType(queryParameters url.Values, filter bson.M) {
 	// [Query-33] access-type
 	if queryParameters[queryParamAccessType] != nil {
 		accessType := queryParameters[queryParamAccessType][0]
@@ -1646,7 +1769,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), accessTypeFilter)
 	}
+}
 
+func handleSupportedFeatures(queryParameters url.Values, filter bson.M) {
 	// [Query-34] supported-features
 	if queryParameters[queryParamSupportedFeatures] != nil {
 		supportedFeatures := queryParameters[queryParamSupportedFeatures][0]
@@ -1659,7 +1784,9 @@ func buildFilter(queryParameters url.Values) bson.M {
 		}
 		filter["$and"] = append(filter["$and"].([]bson.M), supportedFeaturesFilter)
 	}
+}
 
+func handleComplexQuery(queryParameters url.Values, filter bson.M) {
 	// [Query-35] complexQuery
 	if queryParameters["complexQuery"] != nil {
 		// translate raw data to complexQuery structure
@@ -1672,7 +1799,6 @@ func buildFilter(queryParameters url.Values) bson.M {
 		complexQueryFilter := complexQueryFilter(complexQueryStruct)
 		filter["$and"] = append(filter["$and"].([]bson.M), complexQueryFilter)
 	}
-	return filter
 }
 
 const (
