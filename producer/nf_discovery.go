@@ -370,8 +370,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	// Sort profiles
 	nfProfilesStruct := sortNFProfiles(nfProfilesRaw, queryParameters)
 
-	// handle ipv4 & ipv6
-	// handle ipv4 & ipv6
+	// Handle IPv4 & IPv6 conversion for BSF profiles
 	handleBSFIpConversion(queryParameters, nfProfilesStruct)
 
 	// Build SearchResult model
@@ -381,10 +380,10 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 }
 
 func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
-	if queryParameters["complexQuery"] != nil {
+	if values := queryParameters["complexQuery"]; len(values) > 0 {
 		// IF SUPPORT COMPLEX QUERY
 		// translate raw data to complexQuery structure
-		complexQuery := queryParameters["complexQuery"][0]
+		complexQuery := values[0]
 		complexQueryStruct := &models.ComplexQuery{}
 		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
 		if err != nil {
@@ -640,7 +639,10 @@ func buildFilter(queryParameters url.Values) bson.M {
 		"$and": []bson.M{},
 	}
 
-	targetNfType := queryParameters[queryParamTargetNFType][0]
+	targetNfType := ""
+	if values := queryParameters[queryParamTargetNFType]; len(values) > 0 {
+		targetNfType = values[0]
+	}
 
 	handleTargetNfType(queryParameters, filter)
 	handleRequesterNfType(queryParameters, filter)
