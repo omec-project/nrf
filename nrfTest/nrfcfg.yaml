@@ -1,17 +1,15 @@
 # SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 # SPDX-License-Identifier: Apache-2.0
-
 info:
   version: 1.0.0
   description: NRF initial local configuration
-
 configuration:
   MongoDBName: aether # database name in MongoDB
   MongoDBUrl: mongodb://127.0.0.1:27017 # a valid URL of the mongodb
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)
     registerIPv4: 127.0.0.10 # IP used to serve NFs or register to another NRF
-    bindingIPv4: 127.0.0.10  # IP used to bind the service
+    bindingIPv4: 127.0.0.10 # IP used to bind the service
     port: 8000 # port used to bind the service
     tls: # the local path of TLS key
       pem: config/TLS/nrf.pem # NRF TLS Certificate
@@ -19,7 +17,6 @@ configuration:
   serviceNameList: # the SBI services provided by this NRF, refer to TS 29.510
     - nnrf-nfm # Nnrf_NFManagement service
     - nnrf-disc # Nnrf_NFDiscovery service
-
 # the kind of log output
 # debugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
 # ReportCaller: enable the caller report or not, value: true or false

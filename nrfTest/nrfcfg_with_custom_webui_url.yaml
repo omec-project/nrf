@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2024 Canonical Ltd.
-
 info:
   version: 1.0.0
   description: NRF initial local configuration
-
 configuration:
   webuiUri: https://myspecialwebui:5002 # a valid URI of Webui
