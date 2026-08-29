@@ -8,6 +8,8 @@ package producer_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
 	"testing"
 
@@ -26,10 +28,12 @@ type MockMongoDBClient struct {
 	dbadapter.DBInterface
 }
 
-func init() {
+func TestMain(m *testing.M) {
 	if err := factory.InitConfigFactory("../nrfTest/nrfcfg.yaml"); err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, "error in InitConfigFactory:", err)
+		os.Exit(1)
 	}
+	os.Exit(m.Run())
 }
 
 func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {

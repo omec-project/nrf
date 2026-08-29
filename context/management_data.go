@@ -506,12 +506,14 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 	ul, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil {
 		logger.ManagementLog.Error(err)
+		return locationHeader[0]
 	}
 
 	var originalUL UriList
 	err = mapstructure.Decode(ul, &originalUL)
 	if err != nil {
-		panic(err)
+		logger.ManagementLog.Error(err)
+		return locationHeader[0]
 	}
 
 	// obtain location header = NF URI

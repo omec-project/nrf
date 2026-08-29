@@ -5,6 +5,7 @@ package dbadapter
 
 import (
 	"context"
+	"time"
 
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/util/mongoapi"
@@ -49,6 +50,7 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		MongoClient, err := mongoapi.NewMongoClient(url, dbName)
 		if err != nil || MongoClient == nil {
 			logger.AppLog.Infoln("MongoDB Connection Failed:", err)
+			time.Sleep(2 * time.Second)
 			continue
 		}
 		logger.AppLog.Infoln("MongoDB Connection Successful")

@@ -243,6 +243,7 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 		putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("Post error in CreateSubscriptionProcedure: ", err)
+		return nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
 	if !ok { // subscription id not exist before
 		return putData, nil
@@ -294,6 +295,7 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.Uri
 	UL, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil {
 		logger.ManagementLog.Warnln("Error fetching urilist in GetNFInstancesProcedure: ", err)
+		return nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
 	logger.ManagementLog.Infoln("UL: ", UL)
 	originalUL := &nrfContext.UriList{}
@@ -526,6 +528,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		nfs, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 		if getErr != nil {
 			logger.ManagementLog.Warnln("Error fetching existing NF profile: ", getErr)
+			return nil, nil, utils.ProblemDetailsSystemFailure(getErr.Error())
 		}
 		if len(nfs) == 0 {
 			putData["createdAt"] = time.Now()
