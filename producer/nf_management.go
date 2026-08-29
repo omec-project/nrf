@@ -239,8 +239,12 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 	}
 
 	// TODO: need to store Condition !
-	if ok, _ := dbadapter.DBClient.RestfulAPIPost("Subscriptions", bson.M{"subscriptionId": subscription.GetSubscriptionId()},
-		putData); !ok { // subscription id not exist before
+	ok, err := dbadapter.DBClient.RestfulAPIPost(collSubscriptions, bson.M{fieldSubscriptionId: subscription.GetSubscriptionId()},
+		putData)
+	if err != nil {
+		logger.ManagementLog.Errorln("Post error in CreateSubscriptionProcedure: ", err)
+	}
+	if !ok { // subscription id not exist before
 		return putData, nil
 	} else {
 		problemDetails = utils.ProblemDetailsWithCause("Create subscription error", http.StatusBadRequest, "", utils.CauseCreateSubscriptionError)
@@ -249,12 +253,16 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 }
 
 func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (response map[string]interface{}) {
-	collName := "Subscriptions"
-	filter := bson.M{"subscriptionId": subscriptionID}
+	collName := collSubscriptions
+	filter := bson.M{fieldSubscriptionId: subscriptionID}
 
 	err := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
 	if err == nil {
-		response, _ = dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+		var getErr error
+		response, getErr = dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+		if getErr != nil {
+			logger.ManagementLog.Warnln("Error fetching updated subscription: ", getErr)
+		}
 		return response
 	} else {
 		logger.ManagementLog.Warnln("Error UpdateSubscriptionProcedure: ", err)
@@ -263,8 +271,8 @@ func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (respo
 }
 
 func RemoveSubscriptionProcedure(subscriptionID string) {
-	collName := "Subscriptions"
-	filter := bson.M{"subscriptionId": subscriptionID}
+	collName := collSubscriptions
+	filter := bson.M{fieldSubscriptionId: subscriptionID}
 	logger.ManagementLog.Infoln("removing SubscriptionId:", subscriptionID)
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
@@ -280,13 +288,16 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.Uri
 ) {
 	// nfType := c.Query("nf-type")
 	// limit, err := strconv.Atoi(c.Query("limit"))
-	collName := "urilist"
-	filter := bson.M{"nfType": nfType}
+	collName := collUriList
+	filter := bson.M{fieldNfType: nfType}
 
-	UL, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	UL, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if err != nil {
+		logger.ManagementLog.Warnln("Error fetching urilist in GetNFInstancesProcedure: ", err)
+	}
 	logger.ManagementLog.Infoln("UL: ", UL)
 	originalUL := &nrfContext.UriList{}
-	err := mapstructure.Decode(UL, originalUL)
+	err = mapstructure.Decode(UL, originalUL)
 	if err != nil {
 		logger.ManagementLog.Errorln("Decode error in GetNFInstancesProcedure: ", err)
 		problemDetail := utils.ProblemDetailsSystemFailure(err.Error())
@@ -298,8 +309,8 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.Uri
 }
 
 func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
-	collName := "NfProfile"
-	filter := bson.M{"nftype": nfType}
+	collName := collNfProfile
+	filter := bson.M{fieldNfTypeLower: nfType}
 
 	err := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
 	if err != nil {
@@ -314,8 +325,8 @@ func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {
 }
 
 func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *models.ProblemDetails) {
-	collName := "NfProfile"
-	filter := bson.M{"nfinstanceid": nfInstanceID}
+	collName := collNfProfile
+	filter := bson.M{fieldNfInstanceId: nfInstanceID}
 	nfType = GetNfTypeByNfInstanceID(nfInstanceID)
 
 	nfProfilesRaw, err := dbadapter.DBClient.RestfulAPIGetMany(collName, filter)
@@ -362,7 +373,7 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 
 	// delete subscriptions of deregistered NF instance
 	filter = bson.M{"subscrCond.nfInstanceId": nfInstanceID}
-	deleteErr := dbadapter.DBClient.RestfulAPIDeleteMany("Subscriptions", filter)
+	deleteErr := dbadapter.DBClient.RestfulAPIDeleteMany(collSubscriptions, filter)
 	if deleteErr != nil {
 		logger.ManagementLog.Warnln("error in deleting subscriptions:", deleteErr)
 		problemDetails = utils.ProblemDetailsWithCause("Subscription delete error", http.StatusInternalServerError, deleteErr.Error(), utils.CauseSubscriptionDeleteError)
@@ -405,8 +416,8 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 		logger.ManagementLog.Errorln("nf Instance ID is required")
 		return nil, fmt.Errorf("NF Instance ID is required")
 	}
-	collName := "NfProfile"
-	filter := bson.M{"nfinstanceid": nfInstanceID}
+	collName := collNfProfile
+	filter := bson.M{fieldNfInstanceId: nfInstanceID}
 
 	// Patch the existing NF Instance
 	patchError := dbadapter.DBClient.RestfulAPIJSONPatch(collName, filter, patchJSON)
@@ -441,7 +452,7 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 	// We should update it to be configurable : TBD
 	if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
 		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
-		nf["expireAt"] = timein
+		nf[fieldExpireAt] = timein
 	}
 	// Put the updated NF instance
 	_, putErr := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, nf)
@@ -457,8 +468,8 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 }
 
 func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
-	collName := "NfProfile"
-	filter := bson.M{"nfinstanceid": nfInstanceID}
+	collName := collNfProfile
+	filter := bson.M{fieldNfInstanceId: nfInstanceID}
 	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil || response == nil {
 		return nil
@@ -503,16 +514,19 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		return nil, nil, problemDetails
 	}
 	// set db info
-	collName := "NfProfile"
+	collName := collNfProfile
 	nfInstanceId := nf.GetNfInstanceId()
-	filter := bson.M{"nfinstanceid": nfInstanceId}
+	filter := bson.M{fieldNfInstanceId: nfInstanceId}
 	// fallback to older approach
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
 		NFDeleteAll(string(nf.NfType))
 	} else {
 		timein := time.Now().Local().Add(time.Second * time.Duration(nf.GetHeartBeatTimer()*3))
-		putData["expireAt"] = timein
-		nfs, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+		putData[fieldExpireAt] = timein
+		nfs, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+		if getErr != nil {
+			logger.ManagementLog.Warnln("Error fetching existing NF profile: ", getErr)
+		}
 		if len(nfs) == 0 {
 			putData["createdAt"] = time.Now()
 		}
@@ -570,29 +584,29 @@ func handleNFProfileUpdateOrCreate(
 }
 
 func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
-	collName := "Subscriptions"
-	filter := bson.M{"subscriptionId": subscriptionID}
+	collName := collSubscriptions
+	filter := bson.M{fieldSubscriptionId: subscriptionID}
 	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil {
-		return "UNKNOWN_NF"
+		return nfTypeUnknown
 	}
 	if response["reqNfType"] != nil {
 		return fmt.Sprint(response["reqNfType"])
 	}
-	return "UNKNOWN_NF"
+	return nfTypeUnknown
 }
 
 func GetNfTypeByNfInstanceID(nfInstanceID string) (nfType string) {
-	collName := "NfProfile"
-	filter := bson.M{"nfinstanceid": nfInstanceID}
+	collName := collNfProfile
+	filter := bson.M{fieldNfInstanceId: nfInstanceID}
 	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil {
-		return "UNKNOWN_NF"
+		return nfTypeUnknown
 	}
-	if response["nftype"] != nil {
-		return fmt.Sprint(response["nftype"])
+	if response[fieldNfTypeLower] != nil {
+		return fmt.Sprint(response[fieldNfTypeLower])
 	}
-	return "UNKNOWN_NF"
+	return nfTypeUnknown
 }
 
 func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInstanceUri string,

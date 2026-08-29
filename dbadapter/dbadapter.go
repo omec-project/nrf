@@ -46,14 +46,14 @@ func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream)
 
 func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
 	for {
-		MongoClient, _ := mongoapi.NewMongoClient(url, dbName)
-		if MongoClient != nil {
-			logger.AppLog.Infoln("MongoDB Connection Successful")
-			DBClient = MongoClient
-			break
-		} else {
-			logger.AppLog.Infoln("MongoDB Connection Failed")
+		MongoClient, err := mongoapi.NewMongoClient(url, dbName)
+		if err != nil || MongoClient == nil {
+			logger.AppLog.Infoln("MongoDB Connection Failed:", err)
+			continue
 		}
+		logger.AppLog.Infoln("MongoDB Connection Successful")
+		DBClient = MongoClient
+		break
 	}
 
 	db := DBClient.(*mongoapi.MongoClient)

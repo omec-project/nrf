@@ -24,6 +24,13 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+const (
+	fieldNfType     = "nfType"
+	fieldSubscrCond = "subscrCond"
+	fieldNfGroupId  = "nfGroupId"
+	mongoOpOr       = "$or"
+)
+
 func NnrfNFManagementDataModel(nf *models.NFProfile, nfprofile models.NFProfile) error {
 	if nfprofile.GetNfInstanceId() == "" {
 		return fmt.Errorf("NfInstanceId field is required")
@@ -494,12 +501,15 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 
 	collName := "urilist"
 	nfType := nfprofile.GetNfType()
-	filter := bson.M{"nfType": nfType}
+	filter := bson.M{fieldNfType: nfType}
 
-	ul, _ := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	ul, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if err != nil {
+		logger.ManagementLog.Error(err)
+	}
 
 	var originalUL UriList
-	err := mapstructure.Decode(ul, &originalUL)
+	err = mapstructure.Decode(ul, &originalUL)
 	if err != nil {
 		panic(err)
 	}
@@ -518,7 +528,11 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 		logger.ManagementLog.Error(err)
 	}
 
-	if ok, _ := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData); ok {
+	ok, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
+	if err != nil {
+		logger.ManagementLog.Error(err)
+	}
+	if ok {
 		logger.ManagementLog.Info("urilist update")
 	} else {
 		logger.ManagementLog.Info("urilist create")
@@ -528,7 +542,10 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 }
 
 func setUriListByFilter(filter bson.M, uriList *[]string) {
-	filterNfTypeResultsRaw, _ := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
+	filterNfTypeResultsRaw, err := dbadapter.DBClient.RestfulAPIGetMany("Subscriptions", filter)
+	if err != nil {
+		logger.ManagementLog.Error(err)
+	}
 	var filterNfTypeResults []models.SubscriptionData
 	stringToDateTimeHook := func(
 		f reflect.Type,
@@ -546,15 +563,14 @@ func setUriListByFilter(filter bson.M, uriList *[]string) {
 		Result:     &filterNfTypeResults,
 	}
 
-	decoder, err := mapstructure.NewDecoder(&config)
-	if err != nil {
-		logger.ManagementLog.Errorf("converter setup failed: %v", err)
+	decoder, decoderErr := mapstructure.NewDecoder(&config)
+	if decoderErr != nil {
+		logger.ManagementLog.Errorf("converter setup failed: %v", decoderErr)
 		return
 	}
 
-	err = decoder.Decode(filterNfTypeResultsRaw)
-	if err != nil {
-		logger.ManagementLog.Error(err)
+	if decodeErr := decoder.Decode(filterNfTypeResultsRaw); decodeErr != nil {
+		logger.ManagementLog.Error(decodeErr)
 	}
 
 	for _, subscr := range filterNfTypeResults {
@@ -611,8 +627,8 @@ func GetNotificationUri(nfProfile models.NFProfile) []string {
 func addNfTypeCond(nfProfile models.NFProfile, uriList *[]string) {
 	// nfTypeCond
 	nfTypeCond := bson.M{
-		"subscrCond": bson.M{
-			"nfType": nfProfile.GetNfType(),
+		fieldSubscrCond: bson.M{
+			fieldNfType: nfProfile.GetNfType(),
 		},
 	}
 	setUriListByFilter(nfTypeCond, uriList)
@@ -621,7 +637,7 @@ func addNfTypeCond(nfProfile models.NFProfile, uriList *[]string) {
 func addNfInstanceIDCond(nfProfile models.NFProfile, uriList *[]string) {
 	// NfInstanceIdCond
 	nfInstanceIDCond := bson.M{
-		"subscrCond": bson.M{
+		fieldSubscrCond: bson.M{
 			"nfInstanceId": nfProfile.GetNfInstanceId(),
 		},
 	}
@@ -649,7 +665,7 @@ func addAmfCond(nfProfile models.NFProfile, uriList *[]string) {
 	// AmfCond
 	if amfInfo, ok := nfProfile.GetAmfInfoOk(); ok {
 		amfCond := bson.M{
-			"subscrCond": bson.M{
+			fieldSubscrCond: bson.M{
 				"amfSetId":    amfInfo.GetAmfSetId(),
 				"amfRegionId": amfInfo.GetAmfRegionId(),
 			},
@@ -674,10 +690,10 @@ func addGuamiListCond(nfProfile models.NFProfile, uriList *[]string) {
 					logger.ManagementLog.Error(err)
 				}
 
-				guamiListBsonArray = append(guamiListBsonArray, bson.M{"subscrCond": bson.M{"$elemMatch": guamiMarshal}})
+				guamiListBsonArray = append(guamiListBsonArray, bson.M{fieldSubscrCond: bson.M{"$elemMatch": guamiMarshal}})
 			}
 			guamiListFilter = bson.M{
-				"$or": guamiListBsonArray,
+				mongoOpOr: guamiListBsonArray,
 			}
 			setUriListByFilter(guamiListFilter, uriList)
 		}
@@ -700,7 +716,7 @@ func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 				logger.ManagementLog.Error(err)
 			}
 
-			snssaisBsonArray = append(snssaisBsonArray, bson.M{"subscrCond": bson.M{"$elemMatch": snssaiMarshal}})
+			snssaisBsonArray = append(snssaisBsonArray, bson.M{fieldSubscrCond: bson.M{"$elemMatch": snssaiMarshal}})
 		}
 
 		var nsiListBsonArray bson.A
@@ -719,7 +735,7 @@ func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 						},
 					},
 					bson.M{
-						"$or": snssaisBsonArray,
+						mongoOpOr: snssaisBsonArray,
 					},
 				},
 			}
@@ -727,7 +743,7 @@ func addNetworkSliceCond(nfProfile models.NFProfile, uriList *[]string) {
 			networkSliceFilter = bson.M{
 				"$and": bson.A{
 					bson.M{
-						"$or": snssaisBsonArray,
+						mongoOpOr: snssaisBsonArray,
 					},
 				},
 			}
@@ -745,25 +761,25 @@ func addNfGroupCond(nfProfile models.NFProfile, uriList *[]string) {
 	switch {
 	case okUdr:
 		nfGroupCond := bson.M{
-			"subscrCond": bson.M{
-				"nfType":    nfType,
-				"nfGroupId": udrInfo.GetGroupId(),
+			fieldSubscrCond: bson.M{
+				fieldNfType:    nfType,
+				fieldNfGroupId: udrInfo.GetGroupId(),
 			},
 		}
 		setUriListByFilter(nfGroupCond, uriList)
 	case okUdm:
 		nfGroupCond := bson.M{
-			"subscrCond": bson.M{
-				"nfType":    nfType,
-				"nfGroupId": udmInfo.GetGroupId(),
+			fieldSubscrCond: bson.M{
+				fieldNfType:    nfType,
+				fieldNfGroupId: udmInfo.GetGroupId(),
 			},
 		}
 		setUriListByFilter(nfGroupCond, uriList)
 	case okAusf:
 		nfGroupCond := bson.M{
-			"subscrCond": bson.M{
-				"nfType":    nfType,
-				"nfGroupId": ausfInfo.GetGroupId(),
+			fieldSubscrCond: bson.M{
+				fieldNfType:    nfType,
+				fieldNfGroupId: ausfInfo.GetGroupId(),
 			},
 		}
 		setUriListByFilter(nfGroupCond, uriList)

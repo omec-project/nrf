@@ -24,7 +24,10 @@ import (
 func TestAccessTokenRequest(t *testing.T) {
 	// run accesstoken Server Routine
 	go func() {
-		kl, _ := os.OpenFile("/home/sslkey.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		kl, err := os.OpenFile("/home/sslkey.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			logger.AccessTokenLog.Warnln("failed to open ssl key log file:", err)
+		}
 		router := accesstoken.NewRouter()
 
 		server := http.Server{
@@ -35,7 +38,9 @@ func TestAccessTokenRequest(t *testing.T) {
 
 			Handler: router,
 		}
-		_ = server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key")
+		if err := server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key"); err != nil {
+			logger.AccessTokenLog.Warnln("access token test server error:", err)
+		}
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
 

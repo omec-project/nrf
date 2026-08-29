@@ -17,6 +17,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+const (
+	testFieldLink            = "_link"
+	testNfInstanceAmfLater   = "amf-later"
+	testNfInstanceAmfEarlier = "amf-earlier"
+	testFieldItem            = "item"
+	testFieldHref            = "href"
+	testNfInstanceUdm1       = "udm-1"
+	testFieldNfStatus        = "nfstatus"
+)
+
 type mockDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
@@ -27,24 +37,24 @@ type mockBSFDiscoveryDBClient struct {
 
 func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
 	switch collName {
-	case "urilist":
+	case collUriList:
 		return map[string]interface{}{
-			"nfType": "UDM",
-			"_link": map[string]interface{}{
-				"item": []map[string]interface{}{{
-					"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/udm-1",
+			fieldNfType: nfTypeUDM,
+			testFieldLink: map[string]interface{}{
+				testFieldItem: []map[string]interface{}{{
+					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/udm-1",
 				}},
 			},
 		}, nil
-	case "NfProfile":
-		if filter["nfinstanceid"] == "udm-1" {
+	case collNfProfile:
+		if filter[fieldNfInstanceId] == testNfInstanceUdm1 {
 			return map[string]interface{}{
-				"nfinstanceid": "udm-1",
-				"nftype":       "UDM",
-				"nfstatus":     "REGISTERED",
-				"nfservices": []map[string]interface{}{{
-					"servicename":     "nudm-ueau",
-					"nfservicestatus": "REGISTERED",
+				fieldNfInstanceId: testNfInstanceUdm1,
+				fieldNfTypeLower:  nfTypeUDM,
+				testFieldNfStatus: nfServiceStatusRegistered,
+				fieldNfServices: []map[string]interface{}{{
+					fieldServiceName:     "nudm-ueau",
+					fieldNfServiceStatus: nfServiceStatusRegistered,
 				}},
 			}, nil
 		}
@@ -54,16 +64,16 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M
 }
 
 func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
-	if collName == "NfProfile" {
+	if collName == collNfProfile {
 		return []map[string]any{
 			{
-				"nfinstanceid": "udm-1",
-				"nftype":       "UDM",
-				"nfstatus":     "REGISTERED",
-				"nfservices": []map[string]any{
+				fieldNfInstanceId: testNfInstanceUdm1,
+				fieldNfTypeLower:  nfTypeUDM,
+				testFieldNfStatus: nfServiceStatusRegistered,
+				fieldNfServices: []map[string]any{
 					{
-						"servicename":     "nudm-ueau",
-						"nfservicestatus": "REGISTERED",
+						fieldServiceName:     "nudm-ueau",
+						fieldNfServiceStatus: nfServiceStatusRegistered,
 					},
 				},
 			},
@@ -73,26 +83,26 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.
 }
 
 func (db *mockBSFDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
-	if collName != "NfProfile" {
+	if collName != collNfProfile {
 		return nil, nil
 	}
 
 	return []map[string]interface{}{{
-		"nfinstanceid": "bsf-1",
-		"nftype":       "BSF",
-		"nfstatus":     "REGISTERED",
+		fieldNfInstanceId: "bsf-1",
+		fieldNfTypeLower:  nfTypeBSF,
+		testFieldNfStatus: nfServiceStatusRegistered,
 	}}, nil
 }
 
 func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "AUSF")
-	query.Set("requester-nf-type", "AMF")
+	query.Set("target-nf-type", nfTypeAUSF)
+	query.Set("requester-nf-type", nfTypeAMF)
 
 	filter := buildFilter(query)
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 
 	if len(andFilters) != 2 {
@@ -100,16 +110,16 @@ func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
 	}
 
 	requesterFilter := andFilters[1]
-	orFilters, ok := requesterFilter["$or"].([]bson.M)
+	orFilters, ok := requesterFilter[mongoOpOr].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $or filter type: %T", requesterFilter["$or"])
+		t.Fatalf("unexpected $or filter type: %T", requesterFilter[mongoOpOr])
 	}
 
 	if len(orFilters) != 2 {
 		t.Fatalf("expected 2 requester alternatives, got %d", len(orFilters))
 	}
 
-	if got := orFilters[0]["allowednftypes"]; got != "AMF" {
+	if got := orFilters[0]["allowednftypes"]; got != nfTypeAMF {
 		t.Fatalf("expected requester filter to match AMF, got %#v", got)
 	}
 
@@ -120,8 +130,8 @@ func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
 
 func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "AUSF")
-	query.Set("requester-nf-type", "AMF")
+	query.Set("target-nf-type", nfTypeAUSF)
+	query.Set("requester-nf-type", nfTypeAMF)
 	query.Set("service-names", "nausf-auth")
 
 	profiles := []models.NFProfileDiscovery{
@@ -148,14 +158,14 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 
 func TestBuildFilterMatchesFullSmfDnn(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "SMF")
-	query.Set("requester-nf-type", "AMF")
-	query.Set("dnn", "internet")
+	query.Set("target-nf-type", nfTypeSMF)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set(queryParamDnn, "internet")
 
 	filter := buildFilter(query)
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 
 	var dnnFilter bson.M
@@ -185,20 +195,20 @@ func TestBuildFilterMatchesFullSmfDnn(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected DNN $elemMatch type: %T", dnnListFilter["$elemMatch"])
 	}
-	orFilters, ok := dnnElemMatch["$or"].([]bson.M)
+	orFilters, ok := dnnElemMatch[mongoOpOr].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected DNN matcher type: %T", dnnElemMatch["$or"])
+		t.Fatalf("unexpected DNN matcher type: %T", dnnElemMatch[mongoOpOr])
 	}
 	if len(orFilters) != 2 {
 		t.Fatalf("expected 2 DNN matcher alternatives, got %d", len(orFilters))
 	}
-	if got := orFilters[0]["dnn"]; got != "internet" {
+	if got := orFilters[0][queryParamDnn]; got != "internet" {
 		t.Fatalf("expected plain DNN match 'internet', got %#v", got)
 	}
 	if got := orFilters[1]["dnn.string"]; got != "internet" {
 		t.Fatalf("expected object DNN match 'internet', got %#v", got)
 	}
-	if got := orFilters[0]["dnn"]; got == "i" {
+	if got := orFilters[0][queryParamDnn]; got == "i" {
 		t.Fatalf("unexpected first-character DNN match: %#v", got)
 	}
 }
@@ -211,8 +221,8 @@ func TestLoadDiscoveryProfilesFromURIList(t *testing.T) {
 	}()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "UDM")
-	query.Set("requester-nf-type", "AMF")
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
 
 	profiles, err := loadDiscoveryProfilesFromURIList(query)
 	if err != nil {
@@ -221,7 +231,7 @@ func TestLoadDiscoveryProfilesFromURIList(t *testing.T) {
 	if len(profiles) != 1 {
 		t.Fatalf("expected 1 profile, got %d", len(profiles))
 	}
-	if profiles[0].NfInstanceId != "udm-1" {
+	if profiles[0].NfInstanceId != testNfInstanceUdm1 {
 		t.Fatalf("unexpected profile id: %+v", profiles[0])
 	}
 	if profiles[0].NfType != models.NFTYPE_UDM {
@@ -236,8 +246,8 @@ func TestNFDiscoveryProcedureHandlesBSFProfileWithoutBsfInfo(t *testing.T) {
 	}()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "BSF")
-	query.Set("requester-nf-type", "AMF")
+	query.Set("target-nf-type", nfTypeBSF)
+	query.Set("requester-nf-type", nfTypeAMF)
 
 	dbadapter.DBClient = &mockBSFDiscoveryDBClient{}
 
@@ -259,7 +269,7 @@ func TestNFDiscoveryProcedureHandlesBSFProfileWithoutBsfInfo(t *testing.T) {
 func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *testing.T) {
 	query := url.Values{}
 	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
-	openapi.ParameterAddToHeaderOrQuery(query, "snssais", []models.Snssai{{Sst: 1, Sd: openapi.PtrString("010203")}}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, fieldSnssais, []models.Snssai{{Sst: 1, Sd: openapi.PtrString("010203")}}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "tai", models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "guami", models.Guami{PlmnId: models.PlmnIdNid{Mcc: "001", Mnc: "01"}, AmfId: "000001"}, "", "")
 
@@ -268,7 +278,7 @@ func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *te
 	if got := normalized.Get("target-plmn-list"); got == "" || got[0] != '{' {
 		t.Fatalf("expected normalized target-plmn-list JSON, got %q", got)
 	}
-	if got := normalized.Get("snssais"); got == "" || got[0] != '{' {
+	if got := normalized.Get(fieldSnssais); got == "" || got[0] != '{' {
 		t.Fatalf("expected normalized snssais JSON, got %q", got)
 	}
 	if got := normalized.Get("tai"); got == "" || got[0] != '{' {
@@ -281,21 +291,21 @@ func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *te
 
 func TestBuildFilterSupportsExplodedStructuredParams(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
 	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "tai", models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "guami", models.Guami{PlmnId: models.PlmnIdNid{Mcc: "001", Mnc: "01"}, AmfId: "000001"}, "", "")
 
 	filter := buildFilter(normalizeDiscoveryQueryParameters(query))
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 
 	var foundPLMN, foundTAI, foundGUAMI bool
 	for _, candidate := range andFilters {
-		if _, exists := candidate["$or"]; exists {
+		if _, exists := candidate[mongoOpOr]; exists {
 			foundPLMN = true
 		}
 		if _, exists := candidate["amfinfo.tailist"]; exists {
@@ -316,37 +326,37 @@ func TestComplexQueryFilterSubprocessNegatesTargetNfFqdnWithNe(t *testing.T) {
 		queryParamTargetNfFqdn: {value: "example.com", negative: true},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 	if len(andFilters) != 1 {
 		t.Fatalf("expected 1 fqdn filter, got %d", len(andFilters))
 	}
 
-	fqdnFilter, ok := andFilters[0]["fqdn"].(bson.M)
+	fqdnFilter, ok := andFilters[0][fieldFqdn].(bson.M)
 	if !ok {
 		t.Fatalf("expected field-level fqdn filter, got %#v", andFilters[0])
 	}
-	if got := fqdnFilter["$ne"]; got != "example.com" {
+	if got := fqdnFilter[mongoOpNe]; got != "example.com" {
 		t.Fatalf("expected fqdn $ne match, got %#v", fqdnFilter)
 	}
 }
 
 func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchDocument(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		"snssais": {value: `{"sst":1,"sd":"010203"}`},
+		fieldSnssais: {value: `{"sst":1,"sd":"010203"}`},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 	if len(andFilters) != 1 {
 		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
 	}
 
-	snssaisFilter, ok := andFilters[0]["snssais"].(bson.M)
+	snssaisFilter, ok := andFilters[0][fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected snssais field filter, got %#v", andFilters[0])
 	}
@@ -364,25 +374,25 @@ func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchDocument(t *testing.T
 
 func TestBuildFilterSupportsSnssaiWithoutSd(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
-	query.Set("snssais", `{"sst":1}`)
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
+	query.Set(fieldSnssais, `{"sst":1}`)
 
 	filter := buildFilter(query)
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 
 	var snssaisFilter bson.M
 	for _, candidate := range andFilters {
-		if orFilters, exists := candidate["$or"].(bson.A); exists {
+		if orFilters, exists := candidate[mongoOpOr].(bson.A); exists {
 			for _, orFilter := range orFilters {
 				orFilterMap, mapOK := orFilter.(bson.M)
 				if !mapOK {
 					continue
 				}
-				if _, exists := orFilterMap["snssais"]; exists {
+				if _, exists := orFilterMap[fieldSnssais]; exists {
 					snssaisFilter = orFilterMap
 					break
 				}
@@ -396,7 +406,7 @@ func TestBuildFilterSupportsSnssaiWithoutSd(t *testing.T) {
 		t.Fatalf("expected snssais filter in %+v", andFilters)
 	}
 
-	fieldFilter, ok := snssaisFilter["snssais"].(bson.M)
+	fieldFilter, ok := snssaisFilter[fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected snssais field filter, got %#v", snssaisFilter)
 	}
@@ -414,18 +424,18 @@ func TestBuildFilterSupportsSnssaiWithoutSd(t *testing.T) {
 
 func TestBuildFilterSkipsInvalidSnssaisValue(t *testing.T) {
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
-	query.Set("snssais", `{"sst":1`)
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
+	query.Set(fieldSnssais, `{"sst":1`)
 
 	filter := buildFilter(query)
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 
 	for _, candidate := range andFilters {
-		orFilters, exists := candidate["$or"].(bson.A)
+		orFilters, exists := candidate[mongoOpOr].(bson.A)
 		if !exists {
 			continue
 		}
@@ -434,7 +444,7 @@ func TestBuildFilterSkipsInvalidSnssaisValue(t *testing.T) {
 			if !mapOK {
 				continue
 			}
-			if _, hasSnssais := orFilterMap["snssais"]; hasSnssais {
+			if _, hasSnssais := orFilterMap[fieldSnssais]; hasSnssais {
 				t.Fatalf("expected invalid snssais value to be skipped, got %#v", candidate)
 			}
 		}
@@ -443,18 +453,18 @@ func TestBuildFilterSkipsInvalidSnssaisValue(t *testing.T) {
 
 func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchWithoutSd(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		"snssais": {value: `{"sst":1}`},
+		fieldSnssais: {value: `{"sst":1}`},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 	if len(andFilters) != 1 {
 		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
 	}
 
-	snssaisFilter, ok := andFilters[0]["snssais"].(bson.M)
+	snssaisFilter, ok := andFilters[0][fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected snssais field filter, got %#v", andFilters[0])
 	}
@@ -472,12 +482,12 @@ func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchWithoutSd(t *testing.
 
 func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		"snssais": {value: `{"sst":1,"sd":"010203"}`, negative: true},
+		fieldSnssais: {value: `{"sst":1,"sd":"010203"}`, negative: true},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 	if len(andFilters) != 1 {
 		t.Fatalf("expected 1 snssais filter, got %d", len(andFilters))
@@ -491,7 +501,7 @@ func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
 		t.Fatalf("expected 1 negated snssais clause, got %d", len(norFilters))
 	}
 
-	snssaisFilter, ok := norFilters[0]["snssais"].(bson.M)
+	snssaisFilter, ok := norFilters[0][fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected nested snssais field filter, got %#v", norFilters[0])
 	}
@@ -502,12 +512,12 @@ func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
 
 func TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		"snssais": {value: `{"sst":1`},
+		fieldSnssais: {value: `{"sst":1`},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	andFilters, ok := filter["$and"].([]bson.M)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter["$and"])
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 	}
 	if len(andFilters) != 0 {
 		t.Fatalf("expected invalid snssais value to be skipped, got %#v", andFilters)
@@ -520,7 +530,7 @@ func TestBuildSnssaisElemMatchFiltersHandlesMultipleCommaSeparatedObjects(t *tes
 		t.Fatalf("expected 2 snssais filters, got %d: %#v", len(filters), filters)
 	}
 
-	firstFilter, ok := filters[0]["snssais"].(bson.M)
+	firstFilter, ok := filters[0][fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected first snssais field filter, got %#v", filters[0])
 	}
@@ -532,7 +542,7 @@ func TestBuildSnssaisElemMatchFiltersHandlesMultipleCommaSeparatedObjects(t *tes
 		t.Fatalf("expected first snssais sd 010203, got %#v", firstElemMatch)
 	}
 
-	secondFilter, ok := filters[1]["snssais"].(bson.M)
+	secondFilter, ok := filters[1][fieldSnssais].(bson.M)
 	if !ok {
 		t.Fatalf("expected second snssais field filter, got %#v", filters[1])
 	}
@@ -553,7 +563,7 @@ type mockSortingDBClient struct {
 }
 
 func (db *mockSortingDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
-	if collName == "NfProfile" {
+	if collName == collNfProfile {
 		return db.profiles, nil
 	}
 	return nil, nil
@@ -602,16 +612,16 @@ func TestNFDiscoveryProcedureSortsProfilesByExpireAt(t *testing.T) {
 	// Profiles deliberately in reverse order: later expiry first, earlier second.
 	profiles := []map[string]any{
 		{
-			"nfinstanceid": "amf-later",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
-			"expireAt":     later,
+			fieldNfInstanceId: testNfInstanceAmfLater,
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldExpireAt:     later,
 		},
 		{
-			"nfinstanceid": "amf-earlier",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
-			"expireAt":     earlier,
+			fieldNfInstanceId: testNfInstanceAmfEarlier,
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldExpireAt:     earlier,
 		},
 	}
 
@@ -620,8 +630,8 @@ func TestNFDiscoveryProcedureSortsProfilesByExpireAt(t *testing.T) {
 	defer func() { dbadapter.DBClient = originalDBClient }()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
 
 	response, problemDetails := NFDiscoveryProcedure(query)
 	if problemDetails != nil {
@@ -630,10 +640,10 @@ func TestNFDiscoveryProcedureSortsProfilesByExpireAt(t *testing.T) {
 	if response == nil || len(response.NfInstances) != 2 {
 		t.Fatalf("expected 2 NF instances, got %+v", response)
 	}
-	if got := response.NfInstances[0].NfInstanceId; got != "amf-earlier" {
+	if got := response.NfInstances[0].NfInstanceId; got != testNfInstanceAmfEarlier {
 		t.Errorf("expected amf-earlier first (earlier expiry), got %q", got)
 	}
-	if got := response.NfInstances[1].NfInstanceId; got != "amf-later" {
+	if got := response.NfInstances[1].NfInstanceId; got != testNfInstanceAmfLater {
 		t.Errorf("expected amf-later second (later expiry), got %q", got)
 	}
 }
@@ -648,22 +658,22 @@ func TestNFDiscoveryProcedureSortsMixedExpireAtTypesAndMissing(t *testing.T) {
 	// Profiles in scrambled order: later, no-expiry, earlier.
 	profiles := []map[string]any{
 		{
-			"nfinstanceid": "amf-later",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
-			"expireAt":     laterbsonDT,
+			fieldNfInstanceId: testNfInstanceAmfLater,
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldExpireAt:     laterbsonDT,
 		},
 		{
-			"nfinstanceid": "amf-no-expiry",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
+			fieldNfInstanceId: "amf-no-expiry",
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
 			// no expireAt field
 		},
 		{
-			"nfinstanceid": "amf-earlier",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
-			"expireAt":     earliertimeTime,
+			fieldNfInstanceId: testNfInstanceAmfEarlier,
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldExpireAt:     earliertimeTime,
 		},
 	}
 
@@ -672,8 +682,8 @@ func TestNFDiscoveryProcedureSortsMixedExpireAtTypesAndMissing(t *testing.T) {
 	defer func() { dbadapter.DBClient = originalDBClient }()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
 
 	response, problemDetails := NFDiscoveryProcedure(query)
 	if problemDetails != nil {
@@ -682,10 +692,10 @@ func TestNFDiscoveryProcedureSortsMixedExpireAtTypesAndMissing(t *testing.T) {
 	if response == nil || len(response.NfInstances) != 3 {
 		t.Fatalf("expected 3 NF instances, got %+v", response)
 	}
-	if got := response.NfInstances[0].NfInstanceId; got != "amf-earlier" {
+	if got := response.NfInstances[0].NfInstanceId; got != testNfInstanceAmfEarlier {
 		t.Errorf("expected amf-earlier first (earliest expiry), got %q", got)
 	}
-	if got := response.NfInstances[1].NfInstanceId; got != "amf-later" {
+	if got := response.NfInstances[1].NfInstanceId; got != testNfInstanceAmfLater {
 		t.Errorf("expected amf-later second (later expiry), got %q", got)
 	}
 	if got := response.NfInstances[2].NfInstanceId; got != "amf-no-expiry" {
@@ -743,12 +753,12 @@ type mockCacheTestDBClient struct {
 }
 
 func (db *mockCacheTestDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
-	if collName == "urilist" {
+	if collName == collUriList {
 		return map[string]interface{}{
-			"nfType": "AMF",
-			"_link": map[string]interface{}{
-				"item": []map[string]interface{}{{
-					"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-cached",
+			fieldNfType: nfTypeAMF,
+			testFieldLink: map[string]interface{}{
+				testFieldItem: []map[string]interface{}{{
+					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-cached",
 				}},
 			},
 		}, nil
@@ -779,8 +789,8 @@ func TestLoadDiscoveryProfilesFromURIListServesFromCache(t *testing.T) {
 	defer func() { dbadapter.DBClient = originalDBClient }()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
 
 	profiles, err := loadDiscoveryProfilesFromURIList(query)
 	if err != nil {
@@ -803,13 +813,13 @@ type mockMalformedBatchDBClient struct {
 }
 
 func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
-	if collName == "urilist" {
+	if collName == collUriList {
 		return map[string]interface{}{
-			"nfType": "AMF",
-			"_link": map[string]interface{}{
-				"item": []map[string]interface{}{
-					{"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-valid"},
-					{"href": "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-invalid"},
+			fieldNfType: nfTypeAMF,
+			testFieldLink: map[string]interface{}{
+				testFieldItem: []map[string]interface{}{
+					{testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-valid"},
+					{testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-invalid"},
 				},
 			},
 		}, nil
@@ -820,15 +830,15 @@ func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter b
 func (db *mockMalformedBatchDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
 	return []map[string]any{
 		{
-			"nfinstanceid": "amf-valid",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
+			fieldNfInstanceId: "amf-valid",
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
 		},
 		{
-			"nfinstanceid": "amf-invalid",
-			"nftype":       "AMF",
-			"nfstatus":     "REGISTERED",
-			"priority":     999999, // violates TS 29.510 constraint [0, 65535]
+			fieldNfInstanceId: "amf-invalid",
+			fieldNfTypeLower:  nfTypeAMF,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			"priority":        999999, // violates TS 29.510 constraint [0, 65535]
 		},
 	}, nil
 }
@@ -846,8 +856,8 @@ func TestLoadDiscoveryProfilesFromURIListBatchDecodeErrorFallsBackToPerProfile(t
 	defer func() { dbadapter.DBClient = originalDBClient }()
 
 	query := url.Values{}
-	query.Set("target-nf-type", "AMF")
-	query.Set("requester-nf-type", "SMF")
+	query.Set("target-nf-type", nfTypeAMF)
+	query.Set("requester-nf-type", nfTypeSMF)
 
 	profiles, err := loadDiscoveryProfilesFromURIList(query)
 	if err != nil {

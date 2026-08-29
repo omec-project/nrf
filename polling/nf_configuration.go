@@ -18,7 +18,10 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 )
 
-const nfconfigPlmnEndpoint = "/nfconfig/plmn"
+const (
+	nfconfigPlmnEndpoint = "/nfconfig/plmn"
+	contentTypeJSON      = "application/json"
+)
 
 var FetchPlmnConfig = func() ([]models.PlmnId, error) {
 	plmnConfigEndpoint := factory.NrfConfig.Configuration.WebuiUri + nfconfigPlmnEndpoint
@@ -29,7 +32,7 @@ var FetchPlmnConfig = func() ([]models.PlmnId, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", contentTypeJSON)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -39,7 +42,7 @@ var FetchPlmnConfig = func() ([]models.PlmnId, error) {
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
+	if !strings.Contains(contentType, contentTypeJSON) {
 		return nil, fmt.Errorf("unexpected Content-Type: got %s, want application/json", contentType)
 	}
 

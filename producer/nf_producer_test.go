@@ -27,7 +27,9 @@ type MockMongoDBClient struct {
 }
 
 func init() {
-	factory.InitConfigFactory("../nrfTest/nrfcfg.yaml")
+	if err := factory.InitConfigFactory("../nrfTest/nrfcfg.yaml"); err != nil {
+		panic(err)
+	}
 }
 
 func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
