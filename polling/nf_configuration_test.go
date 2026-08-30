@@ -26,7 +26,10 @@ func TestFetchPlmnConfig(t *testing.T) {
 		{Mcc: "001", Mnc: "01"},
 		{Mcc: "002", Mnc: "02"},
 	}
-	validJson, _ := json.Marshal(validPlmnList)
+	validJson, err := json.Marshal(validPlmnList)
+	if err != nil {
+		t.Fatalf("failed to marshal validPlmnList: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -39,7 +42,7 @@ func TestFetchPlmnConfig(t *testing.T) {
 		{
 			name:           "200 OK with valid JSON",
 			statusCode:     http.StatusOK,
-			contentType:    "application/json",
+			contentType:    contentTypeJSON,
 			responseBody:   string(validJson),
 			expectedError:  "",
 			expectedResult: validPlmnList,
@@ -54,28 +57,28 @@ func TestFetchPlmnConfig(t *testing.T) {
 		{
 			name:          "400 Bad Request",
 			statusCode:    http.StatusBadRequest,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "server returned 400 error code",
 		},
 		{
 			name:          "500 Internal Server Error",
 			statusCode:    http.StatusInternalServerError,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "server returned 500 error code",
 		},
 		{
 			name:          "Unexpected Status Code 418",
 			statusCode:    418,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "unexpected status code: 418",
 		},
 		{
 			name:          "200 OK with invalid JSON",
 			statusCode:    http.StatusOK,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "{invalid-json}",
 			expectedError: "failed to parse JSON response:",
 		},
@@ -86,12 +89,14 @@ func TestFetchPlmnConfig(t *testing.T) {
 			originalNrfConfig := factory.NrfConfig
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				accept := r.Header.Get("Accept")
-				if accept != "application/json" {
-					t.Errorf("Accept header mismatch. got = %q, want = %q", accept, "application/json")
+				if accept != contentTypeJSON {
+					t.Errorf("Accept header mismatch. got = %q, want = %q", accept, contentTypeJSON)
 				}
 				w.Header().Set("Content-Type", tc.contentType)
 				w.WriteHeader(tc.statusCode)
-				_, _ = w.Write([]byte(tc.responseBody))
+				if _, err := w.Write([]byte(tc.responseBody)); err != nil {
+					t.Errorf("failed to write response body: %v", err)
+				}
 			}
 			server := httptest.NewServer(http.HandlerFunc(handler))
 			defer func() {

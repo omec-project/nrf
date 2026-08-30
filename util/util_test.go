@@ -16,23 +16,37 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 )
 
+const (
+	fieldNfInstanceId  = "NfInstanceId"
+	fieldNfType        = "NfType"
+	fieldNfStatus      = "NfStatus"
+	fieldSNssais       = "SNssais"
+	fieldAllowedNssais = "AllowedNssais"
+	fieldPriority      = "Priority"
+	fieldCapacity      = "Capacity"
+	fieldLoad          = "Load"
+)
+
 func TestDecode(t *testing.T) {
 	// Set time
 	date := time.Now()
-	dateFormat, _ := time.Parse(time.RFC3339, date.Format(time.RFC3339))
+	dateFormat, err := time.Parse(time.RFC3339, date.Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("failed to parse date: %v", err)
+	}
 
 	testData1 := map[string]any{
-		"NfInstanceId":   "0",
-		"NfType":         models.NFTYPE_NRF,
-		"NfStatus":       models.NFSTATUS_REGISTERED,
-		"HeartBeatTimer": 10,
+		fieldNfInstanceId: "0",
+		fieldNfType:       models.NFTYPE_NRF,
+		fieldNfStatus:     models.NFSTATUS_REGISTERED,
+		"HeartBeatTimer":  10,
 		"PlmnList": &[]models.PlmnId{ // Pattern: '^[0-9]{3}[0-9]{2,3}$'
 			{
 				Mcc: "111",
 				Mnc: "111",
 			},
 		},
-		"SNssais": &[]models.Snssai{ // range 0-255
+		fieldSNssais: &[]models.Snssai{ // range 0-255
 			{
 				Sst: 1, // eMBB per TS 23.501
 				Sd:  openapi.PtrString("010203"),
@@ -61,15 +75,15 @@ func TestDecode(t *testing.T) {
 		"AllowedNfDomains": []string{
 			"nfdomain1",
 		},
-		"AllowedNssais": &[]models.Snssai{
+		fieldAllowedNssais: &[]models.Snssai{
 			{
 				Sst: 2, // URLLC per TS 23.501
 				Sd:  openapi.PtrString("040506"),
 			},
 		},
-		"Priority":             1,
-		"Capacity":             1,
-		"Load":                 1,
+		fieldPriority:          1,
+		fieldCapacity:          1,
+		fieldLoad:              1,
 		"Locality":             "NCTU",
 		"UdrInfo":              &models.UdrInfo{},
 		"UdmInfo":              &models.UdmInfo{},
@@ -131,9 +145,9 @@ func TestDecode(t *testing.T) {
 // 6.1.6.2.2 (NFProfile) and TS 23.501 clause 5.15.2 (S-NSSAI).
 func TestDecodeRangeValidation(t *testing.T) {
 	baseProfile := map[string]any{
-		"NfInstanceId": "range-test",
-		"NfType":       models.NFTYPE_NRF,
-		"NfStatus":     models.NFSTATUS_REGISTERED,
+		fieldNfInstanceId: "range-test",
+		fieldNfType:       models.NFTYPE_NRF,
+		fieldNfStatus:     models.NFSTATUS_REGISTERED,
 	}
 
 	cases := []struct {
@@ -145,77 +159,77 @@ func TestDecodeRangeValidation(t *testing.T) {
 		// AllowedNssais.Sst: must be in [0, 255] per TS 23.501
 		{
 			name:    "AllowedNssais Sst above max (333)",
-			field:   "AllowedNssais",
+			field:   fieldAllowedNssais,
 			value:   &[]models.Snssai{{Sst: 333, Sd: openapi.PtrString("000001")}},
 			wantErr: true,
 		},
 		{
 			name:    "AllowedNssais Sst at max (255)",
-			field:   "AllowedNssais",
+			field:   fieldAllowedNssais,
 			value:   &[]models.Snssai{{Sst: 255}},
 			wantErr: false,
 		},
 		// Capacity: must be in [0, 65535] per TS 29.510
 		{
 			name:    "Capacity above max (70000)",
-			field:   "Capacity",
+			field:   fieldCapacity,
 			value:   int32(70000),
 			wantErr: true,
 		},
 		{
 			name:    "Capacity at max (65535)",
-			field:   "Capacity",
+			field:   fieldCapacity,
 			value:   int32(65535),
 			wantErr: false,
 		},
 		{
 			name:    "Capacity at min (0)",
-			field:   "Capacity",
+			field:   fieldCapacity,
 			value:   int32(0),
 			wantErr: false,
 		},
 		// Load: must be in [0, 100] per TS 29.510
 		{
 			name:    "Load above max (101)",
-			field:   "Load",
+			field:   fieldLoad,
 			value:   int32(101),
 			wantErr: true,
 		},
 		{
 			name:    "Load at max (100)",
-			field:   "Load",
+			field:   fieldLoad,
 			value:   int32(100),
 			wantErr: false,
 		},
 		// Priority: must be in [0, 65535] per TS 29.510
 		{
 			name:    "Priority above max (70000)",
-			field:   "Priority",
+			field:   fieldPriority,
 			value:   int32(70000),
 			wantErr: true,
 		},
 		{
 			name:    "Priority at max (65535)",
-			field:   "Priority",
+			field:   fieldPriority,
 			value:   int32(65535),
 			wantErr: false,
 		},
 		{
 			name:    "Priority at min (0)",
-			field:   "Priority",
+			field:   fieldPriority,
 			value:   int32(0),
 			wantErr: false,
 		},
 		// SNssais.Sst: must be in [0, 255] per TS 23.501
 		{
 			name:    "SNssais Sst above max (256)",
-			field:   "SNssais",
+			field:   fieldSNssais,
 			value:   &[]models.Snssai{{Sst: 256}},
 			wantErr: true,
 		},
 		{
 			name:    "SNssais Sst at max (255)",
-			field:   "SNssais",
+			field:   fieldSNssais,
 			value:   &[]models.Snssai{{Sst: 255}},
 			wantErr: false,
 		},
@@ -266,7 +280,7 @@ func TestDecodeJSONStringHook(t *testing.T) {
 		{
 			// Pointer-to-slice target: AllowedNssais *[]models.Snssai
 			name:      "AllowedNssais from JSON string",
-			field:     "AllowedNssais",
+			field:     fieldAllowedNssais,
 			jsonValue: `[{"sst":1,"sd":"010203"}]`,
 			checkResult: func(t *testing.T, p models.NFProfileDiscovery) {
 				got, ok := p.GetAllowedNssaisOk()
@@ -280,10 +294,10 @@ func TestDecodeJSONStringHook(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			profile := map[string]any{
-				"NfInstanceId": "json-hook-test",
-				"NfType":       models.NFTYPE_NRF,
-				"NfStatus":     models.NFSTATUS_REGISTERED,
-				tc.field:       tc.jsonValue,
+				fieldNfInstanceId: "json-hook-test",
+				fieldNfType:       models.NFTYPE_NRF,
+				fieldNfStatus:     models.NFSTATUS_REGISTERED,
+				tc.field:          tc.jsonValue,
 			}
 			result, err := Decode([]map[string]any{profile}, time.RFC3339)
 			if err != nil {

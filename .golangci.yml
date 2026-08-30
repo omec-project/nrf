@@ -16,18 +16,18 @@ linters:
   enable:
     - asciicheck
     - dogsled
-    - godox
-    - gomodguard
     - govet
+    - goconst
+    - godox
+    - gomodguard_v2
     - misspell
     - nakedret
+    - noctx
     - predeclared
     - staticcheck
     - unconvert
     - unparam
     - whitespace
-  disable:
-    - errcheck
   settings:
     errcheck:
       check-type-assertions: false
