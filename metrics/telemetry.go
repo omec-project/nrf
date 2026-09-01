@@ -22,6 +22,8 @@ type NrfStats struct {
 	nrfNfInstances   *prometheus.CounterVec
 }
 
+const labelResult = "result"
+
 var nrfStats *NrfStats
 
 func initNrfStats() *NrfStats {
@@ -29,15 +31,15 @@ func initNrfStats() *NrfStats {
 		nrfRegistrations: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "nrf_registrations",
 			Help: "Counter of total NRF registration events",
-		}, []string{"query_type", "nf_type", "result"}),
+		}, []string{"query_type", "nf_type", labelResult}),
 		nrfSubscriptions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "nrf_subscriptions",
 			Help: "Counter of total NRF subscription events",
-		}, []string{"query_type", "request_nf_type", "result"}),
+		}, []string{"query_type", "request_nf_type", labelResult}),
 		nrfNfInstances: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "nrf_nf_instances",
 			Help: "Counter of total NRF instances queries",
-		}, []string{"request_nf_type", "target_nf_type", "result"}),
+		}, []string{"request_nf_type", "target_nf_type", labelResult}),
 	}
 }
 

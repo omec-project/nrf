@@ -46,7 +46,10 @@ type routeParamAlias struct {
 	original  string
 }
 
-const nfInstancePath = "/nf-instances/:nfInstanceID"
+const (
+	nfInstancePath = "/nf-instances/:nfInstanceID"
+	sharedDataPath = "/shared-data/:sharedDataId"
+)
 
 // contentTypeJSON is the media type used for JSON request/response bodies.
 const contentTypeJSON = "application/json"
@@ -178,25 +181,25 @@ func getRoutes() []Route {
 		{
 			"DeleteSharedData",
 			http.MethodDelete,
-			"/shared-data/:sharedDataId",
+			sharedDataPath,
 			HTTPDeleteSharedData,
 		},
 		{
 			"GetSharedData",
 			http.MethodGet,
-			"/shared-data/:sharedDataId",
+			sharedDataPath,
 			HTTPGetSharedData,
 		},
 		{
 			"RegisterSharedData",
 			http.MethodPut,
-			"/shared-data/:sharedDataId",
+			sharedDataPath,
 			HTTPRegisterSharedData,
 		},
 		{
 			"UpdateSharedData",
 			http.MethodPatch,
-			"/shared-data/:sharedDataId",
+			sharedDataPath,
 			HTTPUpdateSharedData,
 		},
 		{

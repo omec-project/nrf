@@ -8,6 +8,7 @@ package accesstoken_test
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -22,20 +23,35 @@ import (
 )
 
 func TestAccessTokenRequest(t *testing.T) {
+	kl, err := os.OpenFile("/home/sslkey.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		logger.AccessTokenLog.Warnln("failed to open ssl key log file:", err)
+		kl = nil
+	}
+	router := accesstoken.NewRouter()
+
+	server := &http.Server{
+		Addr: factory.NRF_DEFAULT_IPV4 + ":" + strconv.Itoa(factory.NRF_DEFAULT_PORT),
+		TLSConfig: &tls.Config{
+			KeyLogWriter: kl,
+		},
+
+		Handler: router,
+	}
+	t.Cleanup(func() {
+		if shutdownErr := server.Shutdown(context.Background()); shutdownErr != nil {
+			logger.AccessTokenLog.Warnln("access token test server shutdown error:", shutdownErr)
+		}
+		if kl != nil {
+			_ = kl.Close()
+		}
+	})
+
 	// run accesstoken Server Routine
 	go func() {
-		kl, _ := os.OpenFile("/home/sslkey.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-		router := accesstoken.NewRouter()
-
-		server := http.Server{
-			Addr: factory.NRF_DEFAULT_IPV4 + ":" + strconv.Itoa(factory.NRF_DEFAULT_PORT),
-			TLSConfig: &tls.Config{
-				KeyLogWriter: kl,
-			},
-
-			Handler: router,
+		if serveErr := server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key"); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			logger.AccessTokenLog.Warnln("access token test server error:", serveErr)
 		}
-		_ = server.ListenAndServeTLS("/var/run/certs/tls.crt", "/var/run/certs/tls.key")
 	}()
 	time.Sleep(time.Duration(2) * time.Second)
 
