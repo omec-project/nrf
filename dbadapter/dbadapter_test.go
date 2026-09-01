@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Intel Corporation
+// Copyright (c) 2026 Forsway Scandinavia AB
 //
 // SPDX-License-Identifier: Apache-2.0
 
