@@ -525,12 +525,12 @@ func handleBSFIpConversion(
 					if err != nil {
 						logger.DiscoveryLog.Warnln("ipv4IntStart Atoi Error:", err)
 					}
-					(((*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).Start = context.Ipv4IntToIpv4String(int64(ipv4IntStart))
+					(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges[j].Start = context.Ipv4IntToIpv4String(int64(ipv4IntStart))
 					ipv4IntEnd, err := strconv.Atoi(ipv4AddressRange.GetEnd())
 					if err != nil {
 						logger.DiscoveryLog.Warnln("ipv4IntEnd Atoi Error:", err)
 					}
-					(((*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges)[j]).End = context.Ipv4IntToIpv4String(int64(ipv4IntEnd))
+					(*nfProfilesStruct[i].BsfInfo).Ipv4AddressRanges[j].End = context.Ipv4IntToIpv4String(int64(ipv4IntEnd))
 				}
 			}
 			ipv6PrefixRanges, ok := nfProfile.BsfInfo.GetIpv6PrefixRangesOk()
@@ -538,11 +538,11 @@ func handleBSFIpConversion(
 				for j, ipv6PrefixRange := range ipv6PrefixRanges {
 					ipv6IntStart := new(big.Int)
 					ipv6IntStart.SetString(ipv6PrefixRange.GetStart(), 10)
-					(((*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).Start = context.Ipv6IntToIpv6String(ipv6IntStart)
+					(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges[j].Start = context.Ipv6IntToIpv6String(ipv6IntStart)
 
 					ipv6IntEnd := new(big.Int)
 					ipv6IntEnd.SetString(ipv6PrefixRange.GetEnd(), 10)
-					(((*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges)[j]).End = context.Ipv6IntToIpv6String(ipv6IntEnd)
+					(*nfProfilesStruct[i].BsfInfo).Ipv6PrefixRanges[j].End = context.Ipv6IntToIpv6String(ipv6IntEnd)
 				}
 			}
 		}

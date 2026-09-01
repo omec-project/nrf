@@ -1,13 +1,13 @@
 module github.com/omec-project/nrf
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/omec-project/openapi/v2 v2.2.1
+	github.com/omec-project/openapi/v2 v2.2.2
 	github.com/omec-project/util v1.8.5
 	github.com/prometheus/client_golang v1.24.1
 	github.com/urfave/cli/v3 v3.11.0
@@ -40,11 +40,11 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.61.0 // indirect
+	github.com/quic-go/quic-go v0.62.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.2 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
