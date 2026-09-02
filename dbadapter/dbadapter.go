@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/omec-project/nrf/logger"
@@ -248,16 +249,28 @@ func isIndexDirection(value any) bool {
 	return ok && (direction == 1 || direction == -1)
 }
 
-// toInt32 normalizes the numeric BSON types listIndexes may return.
+// toInt32 normalizes the numeric BSON types listIndexes may return. Values that
+// are not an exact int32 report false, so a corrupt index specification is
+// classified as conflicting and repaired instead of being silently truncated.
 func toInt32(value any) (int32, bool) {
 	switch v := value.(type) {
 	case int32:
 		return v, true
 	case int64:
+		if v < math.MinInt32 || v > math.MaxInt32 {
+			return 0, false
+		}
 		return int32(v), true
 	case int:
-		return int32(v), true
+		return toInt32(int64(v))
 	case float64:
+		// The range is checked before converting because an out-of-range
+		// float-to-int conversion yields an implementation-dependent value. NaN
+		// and the infinities are rejected here as well: NaN differs from its own
+		// truncation, and the infinities fail the bounds.
+		if v < math.MinInt32 || v > math.MaxInt32 || v != math.Trunc(v) {
+			return 0, false
+		}
 		return int32(v), true
 	}
 	return 0, false
