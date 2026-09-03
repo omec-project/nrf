@@ -20,6 +20,11 @@ const (
 	nfProfileCollection = "NfProfile"
 	ttlIndexField       = "expireAt"
 
+	// Field names of the index specifications returned by listIndexes.
+	specName               = "name"
+	specKey                = "key"
+	specExpireAfterSeconds = "expireAfterSeconds"
+
 	// MongoDB may have no writable primary yet when the NRF starts (election in
 	// progress, or the NRF started before MongoDB was ready), so index creation
 	// is retried with backoff instead of being attempted once.
@@ -216,11 +221,11 @@ func inspectTTLIndex(ctx context.Context, db *mongoapi.MongoClient, collName, ti
 // the matching index.
 func classifyTTLIndex(specs []bson.M, timeField string) (ttlIndexState, string, int32) {
 	for _, spec := range specs {
-		if !indexKeyIsSingleField(spec["key"], timeField) {
+		if !indexKeyIsSingleField(spec[specKey], timeField) {
 			continue
 		}
-		name, _ := spec["name"].(string)
-		if seconds, ok := toInt32(spec["expireAfterSeconds"]); ok {
+		name, _ := spec[specName].(string)
+		if seconds, ok := toInt32(spec[specExpireAfterSeconds]); ok {
 			return ttlIndexPresent, name, seconds
 		}
 		return ttlIndexConflicting, name, 0

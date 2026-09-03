@@ -11,6 +11,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// otherTimeField is a time field other than the one the NRF expires on.
+const otherTimeField = "createdAt"
+
 func TestClassifyTTLIndex(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -22,23 +25,23 @@ func TestClassifyTTLIndex(t *testing.T) {
 		{
 			name: "no index on the time field",
 			specs: []bson.M{
-				{"name": "_id_", "key": bson.M{"_id": int32(1)}},
+				{specName: "_id_", specKey: bson.M{"_id": int32(1)}},
 			},
 			expectedState: ttlIndexMissing,
 		},
 		{
 			name: "ttl index with per document expiry",
 			specs: []bson.M{
-				{"name": "_id_", "key": bson.M{"_id": int32(1)}},
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(1)}, "expireAfterSeconds": int32(0)},
+				{specName: "_id_", specKey: bson.M{"_id": int32(1)}},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(1)}, specExpireAfterSeconds: int32(0)},
 			},
 			expectedState: ttlIndexPresent,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "ttl index with a common timeout",
 			specs: []bson.M{
-				{"name": "ttl", "key": bson.M{"expireAt": int32(1)}, "expireAfterSeconds": int32(3600)},
+				{specName: "ttl", specKey: bson.M{ttlIndexField: int32(1)}, specExpireAfterSeconds: int32(3600)},
 			},
 			expectedState: ttlIndexPresent,
 			expectedName:  "ttl",
@@ -47,34 +50,34 @@ func TestClassifyTTLIndex(t *testing.T) {
 		{
 			name: "index on the time field without expireAfterSeconds",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(1)}},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(1)}},
 			},
 			expectedState: ttlIndexConflicting,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "key decoded as bson.D",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.D{{Key: "expireAt", Value: int32(1)}}, "expireAfterSeconds": int32(0)},
+				{specName: ttlIndexField, specKey: bson.D{{Key: ttlIndexField, Value: int32(1)}}, specExpireAfterSeconds: int32(0)},
 			},
 			expectedState: ttlIndexPresent,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "descending key is a valid ttl index",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(-1)}, "expireAfterSeconds": int64(0)},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(-1)}, specExpireAfterSeconds: int64(0)},
 			},
 			expectedState: ttlIndexPresent,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "expireAfterSeconds stored as a double",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(1)}, "expireAfterSeconds": float64(3600)},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(1)}, specExpireAfterSeconds: float64(3600)},
 			},
 			expectedState: ttlIndexPresent,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 			expectedSecs:  3600,
 		},
 		{
@@ -82,30 +85,30 @@ func TestClassifyTTLIndex(t *testing.T) {
 			// expires nothing. Treat it as conflicting so that it gets recreated.
 			name: "expireAfterSeconds is NaN",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(1)}, "expireAfterSeconds": math.NaN()},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(1)}, specExpireAfterSeconds: math.NaN()},
 			},
 			expectedState: ttlIndexConflicting,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "expireAfterSeconds outside the int32 range",
 			specs: []bson.M{
-				{"name": "expireAt", "key": bson.M{"expireAt": int32(1)}, "expireAfterSeconds": int64(math.MaxInt32) + 1},
+				{specName: ttlIndexField, specKey: bson.M{ttlIndexField: int32(1)}, specExpireAfterSeconds: int64(math.MaxInt32) + 1},
 			},
 			expectedState: ttlIndexConflicting,
-			expectedName:  "expireAt",
+			expectedName:  ttlIndexField,
 		},
 		{
 			name: "compound index over the time field does not expire documents",
 			specs: []bson.M{
-				{"name": "expireAt_1_nftype_1", "key": bson.M{"expireAt": int32(1), "nftype": int32(1)}},
+				{specName: "expireAt_1_nftype_1", specKey: bson.M{ttlIndexField: int32(1), "nftype": int32(1)}},
 			},
 			expectedState: ttlIndexMissing,
 		},
 		{
 			name: "index on another field",
 			specs: []bson.M{
-				{"name": "createdAt", "key": bson.M{"createdAt": int32(1)}, "expireAfterSeconds": int32(0)},
+				{specName: otherTimeField, specKey: bson.M{otherTimeField: int32(1)}, specExpireAfterSeconds: int32(0)},
 			},
 			expectedState: ttlIndexMissing,
 		},
@@ -118,7 +121,7 @@ func TestClassifyTTLIndex(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			state, name, seconds := classifyTTLIndex(tc.specs, "expireAt")
+			state, name, seconds := classifyTTLIndex(tc.specs, ttlIndexField)
 			if state != tc.expectedState {
 				t.Errorf("state = %d, want %d", state, tc.expectedState)
 			}
@@ -138,22 +141,22 @@ func TestIndexKeyIsSingleField(t *testing.T) {
 		key      any
 		expected bool
 	}{
-		{name: "bson.M ascending", key: bson.M{"expireAt": int32(1)}, expected: true},
-		{name: "plain map ascending", key: map[string]any{"expireAt": int32(1)}, expected: true},
-		{name: "bson.D ascending", key: bson.D{{Key: "expireAt", Value: int32(1)}}, expected: true},
-		{name: "float direction", key: bson.M{"expireAt": float64(1)}, expected: true},
-		{name: "fractional direction", key: bson.M{"expireAt": 1.5}, expected: false},
-		{name: "NaN direction", key: bson.M{"expireAt": math.NaN()}, expected: false},
-		{name: "direction that truncates to one", key: bson.M{"expireAt": int64(1)<<32 | 1}, expected: false},
-		{name: "other field", key: bson.M{"createdAt": int32(1)}, expected: false},
-		{name: "text index", key: bson.M{"expireAt": "text"}, expected: false},
-		{name: "compound key", key: bson.D{{Key: "expireAt", Value: int32(1)}, {Key: "nftype", Value: int32(1)}}, expected: false},
+		{name: "bson.M ascending", key: bson.M{ttlIndexField: int32(1)}, expected: true},
+		{name: "plain map ascending", key: map[string]any{ttlIndexField: int32(1)}, expected: true},
+		{name: "bson.D ascending", key: bson.D{{Key: ttlIndexField, Value: int32(1)}}, expected: true},
+		{name: "float direction", key: bson.M{ttlIndexField: float64(1)}, expected: true},
+		{name: "fractional direction", key: bson.M{ttlIndexField: 1.5}, expected: false},
+		{name: "NaN direction", key: bson.M{ttlIndexField: math.NaN()}, expected: false},
+		{name: "direction that truncates to one", key: bson.M{ttlIndexField: int64(1)<<32 | 1}, expected: false},
+		{name: "other field", key: bson.M{otherTimeField: int32(1)}, expected: false},
+		{name: "text index", key: bson.M{ttlIndexField: "text"}, expected: false},
+		{name: "compound key", key: bson.D{{Key: ttlIndexField, Value: int32(1)}, {Key: "nftype", Value: int32(1)}}, expected: false},
 		{name: "missing key document", key: nil, expected: false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := indexKeyIsSingleField(tc.key, "expireAt"); got != tc.expected {
+			if got := indexKeyIsSingleField(tc.key, ttlIndexField); got != tc.expected {
 				t.Errorf("indexKeyIsSingleField() = %v, want %v", got, tc.expected)
 			}
 		})
