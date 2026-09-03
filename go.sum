@@ -67,8 +67,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/omec-project/openapi/v2 v2.2.2 h1:2ZSxwlnPC4gOHPDqFrQOYzITj+01W4eNAzojMe2JmKg=
 github.com/omec-project/openapi/v2 v2.2.2/go.mod h1:zDaF24tqb+UIaJwb2CERZzYb1wNEPdW332IL0bP6JXI=
-github.com/omec-project/util v1.8.5 h1:Gq2IX14xiVPJ/6OriCOrlbYI9Vke7druFI8oCtZb/oQ=
-github.com/omec-project/util v1.8.5/go.mod h1:iToUU2FNhLHDIugkH4lTXL1LGLExDnKjozSpJbWyn4M=
+github.com/omec-project/util v1.8.6 h1:apVLR2QHb95QjPz+okLbgwV0VkVX038GtoubldXpM3g=
+github.com/omec-project/util v1.8.6/go.mod h1:4H9r025YFPTZpTfXb8Gxesr7MpOb/e92ZQOHnhXXRwQ=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=
 github.com/pelletier/go-toml/v2 v2.4.3/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

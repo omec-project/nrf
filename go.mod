@@ -8,7 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/omec-project/openapi/v2 v2.2.2
-	github.com/omec-project/util v1.8.5
+	github.com/omec-project/util v1.8.6
 	github.com/prometheus/client_golang v1.24.1
 	github.com/urfave/cli/v3 v3.11.0
 	go.mongodb.org/mongo-driver/v2 v2.8.2
