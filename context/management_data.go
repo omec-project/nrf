@@ -480,11 +480,20 @@ func copyNfServicePersistence(nf *models.NFProfile, nfprofile models.NFProfile) 
 }
 
 func copyNfServices(nf *models.NFProfile, nfprofile models.NFProfile) {
-	// nfServices
+	// nfServices (deprecated in TS 29.510 Rel-16 in favor of nfServiceList, kept for backward compatibility)
 	if nfServices, ok := nfprofile.GetNfServicesOk(); ok {
 		a := make([]models.NFService, len(nfServices))
 		copy(a, nfServices)
 		nf.SetNfServices(a)
+	}
+
+	// nfServiceList: TS 29.510 Rel-16 replacement for nfServices
+	if nfServiceList, ok := nfprofile.GetNfServiceListOk(); ok {
+		a := make(map[string]models.NFService, len(*nfServiceList))
+		for k, v := range *nfServiceList {
+			a[k] = v
+		}
+		nf.SetNfServiceList(a)
 	}
 }
 
@@ -648,19 +657,33 @@ func addNfInstanceIDCond(nfProfile models.NFProfile, uriList *[]string) {
 
 func addServiceNameCond(nfProfile models.NFProfile, uriList *[]string) {
 	// ServiceNameCond
-	if nfServices, ok := nfProfile.GetNfServicesOk(); ok && len(nfServices) > 0 {
-		var ServiceNameCond bson.M
-		var serviceNames bson.A
-		for _, nfService := range nfServices {
-			serviceNames = append(serviceNames, string(nfService.ServiceName))
-		}
-		ServiceNameCond = bson.M{
+	serviceNames := collectServiceNames(nfProfile)
+	if len(serviceNames) > 0 {
+		ServiceNameCond := bson.M{
 			"subscrCond.serviceName": bson.M{
 				"$in": serviceNames,
 			},
 		}
 		setUriListByFilter(ServiceNameCond, uriList)
 	}
+}
+
+// collectServiceNames gathers service names from both the deprecated
+// nfServices array and its TS 29.510 Rel-16 replacement, nfServiceList, so
+// notification matching works regardless of which field the NF used.
+func collectServiceNames(nfProfile models.NFProfile) bson.A {
+	var serviceNames bson.A
+	if nfServices, ok := nfProfile.GetNfServicesOk(); ok {
+		for _, nfService := range nfServices {
+			serviceNames = append(serviceNames, string(nfService.ServiceName))
+		}
+	}
+	if nfServiceList, ok := nfProfile.GetNfServiceListOk(); ok {
+		for _, nfService := range *nfServiceList {
+			serviceNames = append(serviceNames, string(nfService.ServiceName))
+		}
+	}
+	return serviceNames
 }
 
 func addAmfCond(nfProfile models.NFProfile, uriList *[]string) {

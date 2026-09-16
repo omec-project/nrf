@@ -70,13 +70,16 @@ const (
 	queryParamTargetNfInstanceID      = "target-nf-instance-id"
 	queryParamDnn                     = "dnn"
 
-	mongoOpOr  = "$or"
-	mongoOpAnd = "$and"
-	mongoOpIn  = "$in"
-	mongoOpLte = "$lte"
-	mongoOpGte = "$gte"
-	mongoOpNot = "$not"
-	mongoOpNe  = "$ne"
+	mongoOpOr     = "$or"
+	mongoOpAnd    = "$and"
+	mongoOpNor    = "$nor"
+	mongoOpIn     = "$in"
+	mongoOpLte    = "$lte"
+	mongoOpGte    = "$gte"
+	mongoOpNot    = "$not"
+	mongoOpNe     = "$ne"
+	mongoOpEq     = "$eq"
+	mongoOpIfNull = "$ifNull"
 
 	nfTypeAMF     = "AMF"
 	nfTypeSMF     = "SMF"
@@ -98,19 +101,22 @@ const (
 	collSubscriptions = "Subscriptions"
 	collUriList       = "urilist"
 
-	fieldNfType          = "nfType"
-	fieldNfTypeLower     = "nftype"
-	fieldNfInstanceId    = "nfinstanceid"
-	fieldSubscriptionId  = "subscriptionId"
-	fieldNfServices      = "nfservices"
-	fieldServiceName     = "servicename"
-	fieldNfServiceStatus = "nfservicestatus"
-	fieldPlmnList        = "plmnlist"
-	fieldFqdn            = "fqdn"
-	fieldStart           = "start"
-	fieldEnd             = "end"
-	fieldSnssais         = "snssais"
-	fieldExpireAt        = "expireAt"
+	fieldNfType            = "nfType"
+	fieldNfTypeLower       = "nftype"
+	fieldNfInstanceId      = "nfinstanceid"
+	fieldSubscriptionId    = "subscriptionId"
+	fieldNfServices        = "nfservices"
+	fieldNfServiceList     = "nfservicelist"
+	fieldServiceName       = "servicename"
+	fieldNfServiceStatus   = "nfservicestatus"
+	fieldPlmnList          = "plmnlist"
+	fieldSupportedFeatures = "supportedfeatures"
+	mongoOpExpr            = "$expr"
+	fieldFqdn              = "fqdn"
+	fieldStart             = "start"
+	fieldEnd               = "end"
+	fieldSnssais           = "snssais"
+	fieldExpireAt          = "expireAt"
 
 	fieldUpfInfoSnssaiUpfInfoList  = "upfinfo.snssaiupfinfolist"
 	fieldBsfInfoDnnList            = "bsfinfo.dnnlist"
@@ -627,7 +633,7 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 		if len(rawBatch) > 0 {
 			decoded, decodeErr := util.Decode(rawBatch, time.RFC3339)
 			if decodeErr != nil {
-				// Fall back to per-document decode so one malformed entry doesn't
+				// Fall back to per-document decode so one malformed entry does not
 				// discard the entire batch (mirrors the original per-profile loop).
 				logger.DiscoveryLog.Warnf("fallback profile batch decode error, retrying per-profile: %v", decodeErr)
 				for _, raw := range rawBatch {
@@ -736,10 +742,7 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 	if values := queryParameters[queryParamServiceNames]; len(values) > 0 && values[0] != "" {
 		requestedServices := strings.Split(values[0], ",")
 		matched := false
-		for _, service := range profile.NfServices {
-			if service.NfServiceStatus != models.NFSERVICESTATUS_REGISTERED {
-				continue
-			}
+		for _, service := range registeredNFServices(profile) {
 			for _, requestedService := range requestedServices {
 				if string(service.ServiceName) == requestedService {
 					matched = true
@@ -755,7 +758,79 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 		}
 	}
 
+	// [Query-4] requester-nfinstance-fqdn: mirrors handleRequesterNfInstanceFqdn.
+	if values := queryParameters["requester-nf-instance-fqdn"]; len(values) > 0 && values[0] != "" {
+		if !anyNFServiceAllowsFqdn(profile, values[0]) {
+			return false
+		}
+	}
+
+	// [Query-34] supported-features: mirrors handleSupportedFeatures.
+	if values := queryParameters[queryParamSupportedFeatures]; len(values) > 0 && values[0] != "" {
+		if !anyNFServiceHasSupportedFeatures(profile, values[0]) {
+			return false
+		}
+	}
+
 	return true
+}
+
+// anyNFServiceAllowsFqdn reports whether profile has at least one NF service
+// (from either the legacy nfServices array or its nfServiceList replacement)
+// that allows requesterFqdn: its allowedNfDomains contains requesterFqdn, or
+// allowedNfDomains is not set (no restriction).
+func anyNFServiceAllowsFqdn(profile models.NFProfileDiscovery, requesterFqdn string) bool {
+	for _, service := range allNFServices(profile) {
+		allowedDomains, ok := service.GetAllowedNfDomainsOk()
+		if !ok {
+			return true
+		}
+		for _, domain := range allowedDomains {
+			if domain == requesterFqdn {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// anyNFServiceHasSupportedFeatures reports whether profile has at least one NF
+// service (from either the legacy nfServices array or its nfServiceList
+// replacement) advertising supportedFeatures.
+func anyNFServiceHasSupportedFeatures(profile models.NFProfileDiscovery, supportedFeatures string) bool {
+	for _, service := range allNFServices(profile) {
+		if service.GetSupportedFeatures() == supportedFeatures {
+			return true
+		}
+	}
+	return false
+}
+
+// registeredNFServices returns the registered NF services from a profile,
+// merging the deprecated nfServices array with its TS 29.510 Rel-16
+// replacement, nfServiceList, so callers do not need to check both fields.
+func registeredNFServices(profile models.NFProfileDiscovery) []models.NFService {
+	services := make([]models.NFService, 0, len(profile.NfServices))
+	for _, service := range allNFServices(profile) {
+		if service.NfServiceStatus == models.NFSERVICESTATUS_REGISTERED {
+			services = append(services, service)
+		}
+	}
+	return services
+}
+
+// allNFServices returns all NF services from a profile, merging the
+// deprecated nfServices array with its TS 29.510 Rel-16 replacement,
+// nfServiceList, regardless of registration status.
+func allNFServices(profile models.NFProfileDiscovery) []models.NFService {
+	services := make([]models.NFService, 0, len(profile.NfServices))
+	services = append(services, profile.NfServices...)
+	if nfServiceList, ok := profile.GetNfServiceListOk(); ok {
+		for _, service := range *nfServiceList {
+			services = append(services, service)
+		}
+	}
+	return services
 }
 
 func buildFilter(queryParameters url.Values) bson.M {
@@ -845,18 +920,53 @@ func handleServiceNames(queryParameters url.Values, filter bson.M) {
 			serviceNamesBsonArray = append(serviceNamesBsonArray, v)
 		}
 		serviceNamesFilter := bson.M{
-			fieldNfServices: bson.M{
-				mongoOpElemMatch: bson.M{
-					fieldServiceName: bson.M{
-						// get all service in array
-						mongoOpIn: serviceNamesBsonArray,
+			mongoOpOr: []bson.M{
+				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+					fieldNfServices: bson.M{
+						mongoOpElemMatch: bson.M{
+							fieldServiceName: bson.M{
+								// get all service in array
+								mongoOpIn: serviceNamesBsonArray,
+							},
+							// the service need to be registered
+							fieldNfServiceStatus: nfServiceStatusRegistered,
+						},
 					},
-					// the service need to be registered
-					fieldNfServiceStatus: nfServiceStatusRegistered,
 				},
+				nfServiceListAnyMatch(bson.M{
+					mongoOpAnd: []bson.M{
+						{mongoOpIn: []any{"$$svc.v." + fieldServiceName, serviceNamesBsonArray}},
+						{mongoOpEq: []any{"$$svc.v." + fieldNfServiceStatus, nfServiceStatusRegistered}},
+					},
+				}),
 			},
 		}
 		filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), serviceNamesFilter)
+	}
+}
+
+// nfServiceListAnyMatch builds a MongoDB $expr filter matching documents that
+// have at least one entry in nfServiceList (a map keyed by serviceInstanceId,
+// the TS 29.510 Rel-16 replacement for the deprecated nfServices array) whose
+// value satisfies cond. Referencing entry values within cond must use the
+// "$$svc.v." prefix (e.g. "$$svc.v."+fieldServiceName).
+func nfServiceListAnyMatch(cond bson.M) bson.M {
+	return bson.M{
+		mongoOpExpr: bson.M{
+			"$gt": []any{
+				bson.M{
+					"$size": bson.M{
+						"$filter": bson.M{
+							"input": bson.M{"$objectToArray": bson.M{mongoOpIfNull: []any{"$" + fieldNfServiceList, bson.M{}}}},
+							"as":    "svc",
+							"cond":  cond,
+						},
+					},
+				},
+				0,
+			},
+		},
 	}
 }
 
@@ -868,6 +978,7 @@ func handleRequesterNfInstanceFqdn(queryParameters url.Values, filter bson.M) {
 		requesterNfinstanceFqdnFilter := bson.M{
 			mongoOpOr: []bson.M{
 				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
 					fieldNfServices: bson.M{
 						mongoOpElemMatch: bson.M{
 							fieldAllowedNfDomains: requesterNfinstanceFqdn,
@@ -883,6 +994,14 @@ func handleRequesterNfInstanceFqdn(queryParameters url.Values, filter bson.M) {
 						},
 					},
 				},
+				nfServiceListAnyMatch(bson.M{
+					"$or": []bson.M{
+						{mongoOpIn: []any{requesterNfinstanceFqdn, bson.M{mongoOpIfNull: []any{"$$svc.v." + fieldAllowedNfDomains, bson.A{}}}}},
+						{ // if not provided, allow any.
+							mongoOpEq: []any{bson.M{"$type": "$$svc.v." + fieldAllowedNfDomains}, "missing"},
+						},
+					},
+				}),
 			},
 		}
 		filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), requesterNfinstanceFqdnFilter)
@@ -1866,10 +1985,18 @@ func handleSupportedFeatures(queryParameters url.Values, filter bson.M) {
 	if queryParameters[queryParamSupportedFeatures] != nil {
 		supportedFeatures := queryParameters[queryParamSupportedFeatures][0]
 		supportedFeaturesFilter := bson.M{
-			fieldNfServices: bson.M{
-				mongoOpElemMatch: bson.M{
-					"supportedfeatures": supportedFeatures,
+			mongoOpOr: []bson.M{
+				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+					fieldNfServices: bson.M{
+						mongoOpElemMatch: bson.M{
+							fieldSupportedFeatures: supportedFeatures,
+						},
+					},
 				},
+				nfServiceListAnyMatch(bson.M{
+					mongoOpEq: []any{"$$svc.v." + fieldSupportedFeatures, supportedFeatures},
+				}),
 			},
 		}
 		filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), supportedFeaturesFilter)
@@ -2018,7 +2145,6 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 	// [Query-3] service-names
 	// TODO: return exist service name
 	if queryParameters[queryParamServiceNames] != nil {
-		var serviceNamesFilter bson.M
 		serviceNames := queryParameters[queryParamServiceNames].value
 		serviceNamesSplit := strings.Split(serviceNames, ",")
 		var serviceNamesBsonArray bson.A
@@ -2028,32 +2154,45 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 		}
 
 		negative := queryParameters[queryParamServiceNames].negative
+		var legacyServiceNameCond bson.M
+		var nfServiceListCond bson.M
 		if negative {
-			serviceNamesFilter = bson.M{
-				fieldNfServices: bson.M{
-					mongoOpElemMatch: bson.M{
-						fieldServiceName: bson.M{
-							// get all service in array
-							"$nin": serviceNamesBsonArray,
+			legacyServiceNameCond = bson.M{
+				// get all service in array
+				"$nin": serviceNamesBsonArray,
+			}
+			nfServiceListCond = bson.M{
+				mongoOpNot: []any{bson.M{mongoOpIn: []any{"$$svc.v." + fieldServiceName, serviceNamesBsonArray}}},
+			}
+		} else {
+			legacyServiceNameCond = bson.M{
+				// get all service in array
+				mongoOpIn: serviceNamesBsonArray,
+			}
+			nfServiceListCond = bson.M{
+				mongoOpIn: []any{"$$svc.v." + fieldServiceName, serviceNamesBsonArray},
+			}
+		}
+
+		serviceNamesFilter := bson.M{
+			mongoOpOr: []bson.M{
+				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+					fieldNfServices: bson.M{
+						mongoOpElemMatch: bson.M{
+							fieldServiceName: legacyServiceNameCond,
+							// the service need to be registered
+							fieldNfServiceStatus: nfServiceStatusRegistered,
 						},
-						// the service need to be registered
-						fieldNfServiceStatus: nfServiceStatusRegistered,
 					},
 				},
-			}
-		} else if !negative {
-			serviceNamesFilter = bson.M{
-				fieldNfServices: bson.M{
-					mongoOpElemMatch: bson.M{
-						fieldServiceName: bson.M{
-							// get all service in array
-							mongoOpIn: serviceNamesBsonArray,
-						},
-						// the service need to be registered
-						fieldNfServiceStatus: nfServiceStatusRegistered,
+				nfServiceListAnyMatch(bson.M{
+					mongoOpAnd: []bson.M{
+						nfServiceListCond,
+						{mongoOpEq: []any{"$$svc.v." + fieldNfServiceStatus, nfServiceStatusRegistered}},
 					},
-				},
-			}
+				}),
+			},
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), serviceNamesFilter)
 	}
@@ -2062,28 +2201,39 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) {
 	// [Query-4] requester-nfinstance-fqdn
 	if queryParameters[queryParamRequesterNfInstanceFqdn] != nil {
-		var requesterNfinstanceFqdnFilter bson.M
 		requesterNfinstanceFqdn := queryParameters[queryParamRequesterNfInstanceFqdn].value
 
+		// nfServiceList equivalent of "allowedNfDomains contains requesterNfinstanceFqdn".
+		// A missing/omitted allowedNfDomains is treated as not containing it, mirroring
+		// the legacy nfServices elemMatch/$ne semantics below so both representations
+		// yield the same result for a given profile.
+		containsFqdn := bson.M{
+			mongoOpIn: []any{requesterNfinstanceFqdn, bson.M{mongoOpIfNull: []any{"$$svc.v." + fieldAllowedNfDomains, bson.A{}}}},
+		}
+
 		negative := queryParameters[queryParamRequesterNfInstanceFqdn].negative
+		var legacyAllowedNfDomainsCond any
+		var nfServiceListCond bson.M
 		if negative {
-			requesterNfinstanceFqdnFilter = bson.M{
-				fieldNfServices: bson.M{
-					mongoOpElemMatch: bson.M{
-						fieldAllowedNfDomains: requesterNfinstanceFqdn,
-					},
-				},
-			}
-		} else if !negative {
-			requesterNfinstanceFqdnFilter = bson.M{
-				fieldNfServices: bson.M{
-					mongoOpElemMatch: bson.M{
-						fieldAllowedNfDomains: bson.M{
-							mongoOpNe: requesterNfinstanceFqdn,
+			legacyAllowedNfDomainsCond = requesterNfinstanceFqdn
+			nfServiceListCond = containsFqdn
+		} else {
+			legacyAllowedNfDomainsCond = bson.M{mongoOpNe: requesterNfinstanceFqdn}
+			nfServiceListCond = bson.M{mongoOpNot: []any{containsFqdn}}
+		}
+
+		requesterNfinstanceFqdnFilter := bson.M{
+			mongoOpOr: []bson.M{
+				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+					fieldNfServices: bson.M{
+						mongoOpElemMatch: bson.M{
+							fieldAllowedNfDomains: legacyAllowedNfDomainsCond,
 						},
 					},
 				},
-			}
+				nfServiceListAnyMatch(nfServiceListCond),
+			},
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), requesterNfinstanceFqdnFilter)
 	}
@@ -2210,7 +2360,7 @@ func addSnssaisFilter(queryParameters map[string]*AtomElem, filter bson.M, logic
 			}
 			if queryParameters[fieldSnssais].negative {
 				snssaisFilter = bson.M{
-					"$nor": snssaisFilters,
+					mongoOpNor: snssaisFilters,
 				}
 			}
 			filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), snssaisFilter)
@@ -3004,15 +3154,25 @@ func addSupportedFeaturesFilter(queryParameters map[string]*AtomElem, filter bso
 	if queryParameters[queryParamSupportedFeatures] != nil {
 		supportedFeatures := queryParameters[queryParamSupportedFeatures].value
 		supportedFeaturesFilter := bson.M{
-			fieldNfServices: bson.M{
-				mongoOpElemMatch: bson.M{
-					"supportedfeatures": supportedFeatures,
+			mongoOpOr: []bson.M{
+				{
+					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+					fieldNfServices: bson.M{
+						mongoOpElemMatch: bson.M{
+							fieldSupportedFeatures: supportedFeatures,
+						},
+					},
 				},
+				nfServiceListAnyMatch(bson.M{
+					mongoOpEq: []any{"$$svc.v." + fieldSupportedFeatures, supportedFeatures},
+				}),
 			},
 		}
 		if queryParameters[queryParamSupportedFeatures].negative {
+			// $not is a field-level operator and cannot negate a top-level $or
+			// document; use $nor to match the complement of the whole filter.
 			supportedFeaturesFilter = bson.M{
-				mongoOpNot: supportedFeaturesFilter,
+				mongoOpNor: []bson.M{supportedFeaturesFilter},
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), supportedFeaturesFilter)
