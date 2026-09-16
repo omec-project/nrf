@@ -480,11 +480,20 @@ func copyNfServicePersistence(nf *models.NFProfile, nfprofile models.NFProfile) 
 }
 
 func copyNfServices(nf *models.NFProfile, nfprofile models.NFProfile) {
-	// nfServices
+	// nfServices (deprecated in TS 29.510 Rel-16 in favor of nfServiceList, kept for backward compatibility)
 	if nfServices, ok := nfprofile.GetNfServicesOk(); ok {
 		a := make([]models.NFService, len(nfServices))
 		copy(a, nfServices)
 		nf.SetNfServices(a)
+	}
+
+	// nfServiceList: TS 29.510 Rel-16 replacement for nfServices
+	if nfServiceList, ok := nfprofile.GetNfServiceListOk(); ok {
+		a := make(map[string]models.NFService, len(*nfServiceList))
+		for k, v := range *nfServiceList {
+			a[k] = v
+		}
+		nf.SetNfServiceList(a)
 	}
 }
 
