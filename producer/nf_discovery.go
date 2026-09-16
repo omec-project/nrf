@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,6 +81,8 @@ const (
 	mongoOpNe     = "$ne"
 	mongoOpEq     = "$eq"
 	mongoOpIfNull = "$ifNull"
+
+	keyInput = "input"
 
 	nfTypeAMF     = "AMF"
 	nfTypeSMF     = "SMF"
@@ -777,21 +780,34 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 
 // anyNFServiceAllowsFqdn reports whether profile has at least one NF service
 // (from either the legacy nfServices array or its nfServiceList replacement)
-// that allows requesterFqdn: its allowedNfDomains contains requesterFqdn, or
-// allowedNfDomains is not set (no restriction).
+// that allows requesterFqdn: its allowedNfDomains contains a pattern (an
+// ECMA-262 regular expression per TS 29.510 clause 6.1.6.2.2) matching
+// requesterFqdn, or allowedNfDomains is not set (no restriction).
 func anyNFServiceAllowsFqdn(profile models.NFProfileDiscovery, requesterFqdn string) bool {
 	for _, service := range allNFServices(profile) {
 		allowedDomains, ok := service.GetAllowedNfDomainsOk()
 		if !ok {
 			return true
 		}
-		for _, domain := range allowedDomains {
-			if domain == requesterFqdn {
+		for _, pattern := range allowedDomains {
+			if matchesAllowedNfDomainPattern(pattern, requesterFqdn) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// matchesAllowedNfDomainPattern reports whether requesterFqdn matches pattern,
+// an ECMA-262 regular expression per TS 29.510 clause 6.1.6.2.2. A pattern
+// that fails to compile is treated as non-matching rather than failing discovery.
+func matchesAllowedNfDomainPattern(pattern, requesterFqdn string) bool {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		logger.DiscoveryLog.Warnf("invalid allowedNfDomains pattern %q: %v", pattern, err)
+		return false
+	}
+	return re.MatchString(requesterFqdn)
 }
 
 // anyNFServiceHasSupportedFeatures reports whether profile has at least one NF
@@ -958,9 +974,9 @@ func nfServiceListAnyMatch(cond bson.M) bson.M {
 				bson.M{
 					"$size": bson.M{
 						"$filter": bson.M{
-							"input": bson.M{"$objectToArray": bson.M{mongoOpIfNull: []any{"$" + fieldNfServiceList, bson.M{}}}},
-							"as":    "svc",
-							"cond":  cond,
+							keyInput: bson.M{"$objectToArray": bson.M{mongoOpIfNull: []any{"$" + fieldNfServiceList, bson.M{}}}},
+							"as":     "svc",
+							"cond":   cond,
 						},
 					},
 				},
@@ -977,34 +993,60 @@ func handleRequesterNfInstanceFqdn(queryParameters url.Values, filter bson.M) {
 
 		requesterNfinstanceFqdnFilter := bson.M{
 			mongoOpOr: []bson.M{
-				{
-					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
-					fieldNfServices: bson.M{
-						mongoOpElemMatch: bson.M{
-							fieldAllowedNfDomains: requesterNfinstanceFqdn,
-						},
-					},
-				},
-				{ // if not provided, allow any.
-					fieldNfServices: bson.M{
-						mongoOpElemMatch: bson.M{
-							fieldAllowedNfDomains: bson.M{
-								mongoOpExists: false,
-							},
-						},
-					},
-				},
-				nfServiceListAnyMatch(bson.M{
-					"$or": []bson.M{
-						{mongoOpIn: []any{requesterNfinstanceFqdn, bson.M{mongoOpIfNull: []any{"$$svc.v." + fieldAllowedNfDomains, bson.A{}}}}},
-						{ // if not provided, allow any.
-							mongoOpEq: []any{bson.M{"$type": "$$svc.v." + fieldAllowedNfDomains}, "missing"},
-						},
-					},
-				}),
+				// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+				nfServicesAnyMatch(allowedNfDomainsMatchCond("$$svc."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
+				nfServiceListAnyMatch(allowedNfDomainsMatchCond("$$svc.v."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
 			},
 		}
 		filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), requesterNfinstanceFqdnFilter)
+	}
+}
+
+// allowedNfDomainsMatchCond builds the $filter condition, for a service bound
+// to the "svc" filter variable, that is true when allowedNfDomains is absent
+// (any domain allowed per TS 29.510 clause 6.1.6.2.2), or contains a pattern
+// (an ECMA-262 regular expression) matching requesterNfinstanceFqdn.
+// allowedNfDomainsPath must reference the service's allowedNfDomains field
+// relative to the filter variable, e.g. "$$svc."+fieldAllowedNfDomains
+// (nfServices) or "$$svc.v."+fieldAllowedNfDomains (nfServiceList).
+func allowedNfDomainsMatchCond(allowedNfDomainsPath, requesterNfinstanceFqdn string) bson.M {
+	return bson.M{
+		mongoOpOr: []bson.M{
+			{mongoOpEq: []any{bson.M{"$type": allowedNfDomainsPath}, "missing"}},
+			{
+				"$anyElementTrue": bson.M{
+					"$map": bson.M{
+						keyInput: bson.M{mongoOpIfNull: []any{allowedNfDomainsPath, bson.A{}}},
+						"as":     "domain",
+						"in":     bson.M{"$regexMatch": bson.M{keyInput: requesterNfinstanceFqdn, "regex": "$$domain"}},
+					},
+				},
+			},
+		},
+	}
+}
+
+// nfServicesAnyMatch builds a MongoDB $expr filter matching documents that
+// have at least one entry in the legacy nfServices array (deprecated by TS
+// 29.510 Rel-16 in favor of nfServiceList) whose value satisfies cond.
+// Referencing entry fields within cond must use the "$$svc" variable (e.g.
+// "$$svc."+fieldAllowedNfDomains).
+func nfServicesAnyMatch(cond bson.M) bson.M {
+	return bson.M{
+		mongoOpExpr: bson.M{
+			"$gt": []any{
+				bson.M{
+					"$size": bson.M{
+						"$filter": bson.M{
+							keyInput: bson.M{mongoOpIfNull: []any{"$" + fieldNfServices, bson.A{}}},
+							"as":     "svc",
+							"cond":   cond,
+						},
+					},
+				},
+				0,
+			},
+		},
 	}
 }
 
@@ -2203,37 +2245,25 @@ func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filt
 	if queryParameters[queryParamRequesterNfInstanceFqdn] != nil {
 		requesterNfinstanceFqdn := queryParameters[queryParamRequesterNfInstanceFqdn].value
 
-		// nfServiceList equivalent of "allowedNfDomains contains requesterNfinstanceFqdn".
-		// A missing/omitted allowedNfDomains is treated as not containing it, mirroring
-		// the legacy nfServices elemMatch/$ne semantics below so both representations
-		// yield the same result for a given profile.
-		containsFqdn := bson.M{
-			mongoOpIn: []any{requesterNfinstanceFqdn, bson.M{mongoOpIfNull: []any{"$$svc.v." + fieldAllowedNfDomains, bson.A{}}}},
-		}
-
-		negative := queryParameters[queryParamRequesterNfInstanceFqdn].negative
-		var legacyAllowedNfDomainsCond any
-		var nfServiceListCond bson.M
-		if negative {
-			legacyAllowedNfDomainsCond = requesterNfinstanceFqdn
-			nfServiceListCond = containsFqdn
-		} else {
-			legacyAllowedNfDomainsCond = bson.M{mongoOpNe: requesterNfinstanceFqdn}
-			nfServiceListCond = bson.M{mongoOpNot: []any{containsFqdn}}
-		}
-
+		// Per TS 29.510 clause 6.1.6.2.2, allowedNfDomains holds ECMA-262 regex
+		// patterns; a service allows requesterNfinstanceFqdn if a pattern
+		// matches it, or allowedNfDomains is absent (unrestricted). This mirrors
+		// handleRequesterNfInstanceFqdn so the simple- and complex-query paths agree.
 		requesterNfinstanceFqdnFilter := bson.M{
 			mongoOpOr: []bson.M{
-				{
-					// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
-					fieldNfServices: bson.M{
-						mongoOpElemMatch: bson.M{
-							fieldAllowedNfDomains: legacyAllowedNfDomainsCond,
-						},
-					},
-				},
-				nfServiceListAnyMatch(nfServiceListCond),
+				// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
+				nfServicesAnyMatch(allowedNfDomainsMatchCond("$$svc."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
+				nfServiceListAnyMatch(allowedNfDomainsMatchCond("$$svc.v."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
 			},
+		}
+
+		if queryParameters[queryParamRequesterNfInstanceFqdn].negative {
+			// $not is a field-level operator and cannot negate a top-level $or
+			// document; use $nor to match profiles where no service allows
+			// requesterNfinstanceFqdn.
+			requesterNfinstanceFqdnFilter = bson.M{
+				mongoOpNor: []bson.M{requesterNfinstanceFqdnFilter},
+			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), requesterNfinstanceFqdnFilter)
 	}

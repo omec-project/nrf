@@ -10,10 +10,13 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
+	"github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -38,6 +41,10 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	errResponse *models.AccessTokenErr,
 ) {
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
+
+	if errResponse = validateRequesterFqdn(request); errResponse != nil {
+		return nil, errResponse
+	}
 
 	var expirationSeconds int32 = 1000
 	scope := request.Scope
@@ -74,4 +81,44 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	response.SetScope(scope)
 
 	return response, nil
+}
+
+// validateRequesterFqdn implements the TS 29.510 clause 6.3.5.2.2 check: when
+// requesterFqdn is provided, the NRF may validate that the requester NF
+// service consumer is allowed to access the target NF Service Producer via
+// the producer's allowedNfDomains (clause 6.1.6.2.2). Lookup failures fail
+// open since this check is optional ("may"), not mandatory, per spec.
+func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr {
+	requesterFqdn, ok := request.GetRequesterFqdnOk()
+	if !ok || *requesterFqdn == "" {
+		return nil
+	}
+	targetNfInstanceId, ok := request.GetTargetNfInstanceIdOk()
+	if !ok || *targetNfInstanceId == "" {
+		return nil
+	}
+
+	raw, err := dbadapter.DBClient.RestfulAPIGetOne(collNfProfile, bson.M{fieldNfInstanceId: *targetNfInstanceId})
+	if err != nil {
+		logger.AccessTokenLog.Warnf("target NF profile lookup failed for requesterFqdn validation: %v", err)
+		return nil
+	}
+	if raw == nil {
+		return nil
+	}
+
+	decoded, err := util.Decode([]map[string]any{raw}, time.RFC3339)
+	if err != nil || len(decoded) == 0 {
+		logger.AccessTokenLog.Warnf("target NF profile decode failed for requesterFqdn validation: %v", err)
+		return nil
+	}
+
+	if anyNFServiceAllowsFqdn(decoded[0], *requesterFqdn) {
+		return nil
+	}
+
+	logger.AccessTokenLog.Warnf("requesterFqdn %q is not allowed to access target NF instance %q", *requesterFqdn, *targetNfInstanceId)
+	errResponse := models.NewAccessTokenErr("invalid_request")
+	errResponse.SetErrorDescription("requesterFqdn is not allowed to access the target NF Service Producer")
+	return errResponse
 }
