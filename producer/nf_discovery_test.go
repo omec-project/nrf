@@ -25,6 +25,8 @@ const (
 	testFieldHref            = "href"
 	testNfInstanceUdm1       = "udm-1"
 	testFieldNfStatus        = "nfstatus"
+	testExampleFqdn          = "example.com"
+	testServiceInstanceId    = "svc-0"
 )
 
 type mockDiscoveryDBClient struct {
@@ -128,6 +130,121 @@ func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
 	}
 }
 
+// TestBuildFilterServiceNamesCoversNfServiceList verifies the Mongo filter for
+// service-names discovery matches both the deprecated nfServices array and its
+// TS 29.510 Rel-16 replacement, nfServiceList.
+func TestBuildFilterServiceNamesCoversNfServiceList(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("service-names", "nudm-sdm")
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var serviceNamesFilter bson.M
+	for _, f := range andFilters {
+		if _, exists := f[mongoOpOr]; exists {
+			serviceNamesFilter = f
+		}
+	}
+	if serviceNamesFilter == nil {
+		t.Fatalf("expected an $or service-names filter among: %+v", andFilters)
+	}
+
+	orFilters, ok := serviceNamesFilter[mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 service-names alternatives, got %#v", serviceNamesFilter[mongoOpOr])
+	}
+
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+
+	exprFilter, exists := orFilters[1][mongoOpExpr]
+	if !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+	if _, ok := exprFilter.(bson.M); !ok {
+		t.Fatalf("expected $expr filter value to be bson.M, got %T", exprFilter)
+	}
+}
+
+// TestBuildFilterRequesterNfInstanceFqdnCoversNfServiceList verifies the Mongo
+// filter for the requester-nfinstance-fqdn (Query-4) discovery path matches
+// both the deprecated nfServices array and its TS 29.510 Rel-16 replacement,
+// nfServiceList.
+func TestBuildFilterRequesterNfInstanceFqdnCoversNfServiceList(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeSMF)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("requester-nf-instance-fqdn", testExampleFqdn)
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var fqdnFilter bson.M
+	for _, f := range andFilters {
+		if orFilters, exists := f[mongoOpOr].([]bson.M); exists && len(orFilters) == 3 {
+			fqdnFilter = f
+		}
+	}
+	if fqdnFilter == nil {
+		t.Fatalf("expected a 3-alternative $or fqdn filter among: %+v", andFilters)
+	}
+
+	orFilters := fqdnFilter[mongoOpOr].([]bson.M)
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[2][mongoOpExpr]; !exists {
+		t.Fatalf("expected third alternative to be an $expr filter over nfServiceList, got %#v", orFilters[2])
+	}
+}
+
+// TestBuildFilterSupportedFeaturesCoversNfServiceList verifies the Mongo
+// filter for the supported-features (Query-34) discovery path matches both
+// the deprecated nfServices array and its TS 29.510 Rel-16 replacement,
+// nfServiceList.
+func TestBuildFilterSupportedFeaturesCoversNfServiceList(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeSMF)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("supported-features", "1")
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var supportedFeaturesFilter bson.M
+	for _, f := range andFilters {
+		if orFilters, exists := f[mongoOpOr].([]bson.M); exists && len(orFilters) == 2 {
+			if _, hasExpr := orFilters[1][mongoOpExpr]; hasExpr {
+				supportedFeaturesFilter = f
+			}
+		}
+	}
+	if supportedFeaturesFilter == nil {
+		t.Fatalf("expected a 2-alternative $or supported-features filter among: %+v", andFilters)
+	}
+
+	orFilters := supportedFeaturesFilter[mongoOpOr].([]bson.M)
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
 func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeAUSF)
@@ -152,6 +269,119 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 		t.Fatalf("expected 1 matching profile, got %d", len(filtered))
 	}
 	if filtered[0].NfInstanceId != "ausf-1" {
+		t.Fatalf("unexpected profile returned: %+v", filtered[0])
+	}
+}
+
+// TestFilterDiscoveryResultsMatchesNfServiceList verifies that service-names
+// discovery matches profiles advertising services only via nfServiceList (the
+// TS 29.510 Rel-16 replacement for the deprecated nfServices array)
+func TestFilterDiscoveryResultsMatchesNfServiceList(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("service-names", "nudm-sdm")
+
+	nfServiceList := map[string]models.NFService{
+		testServiceInstanceId: {
+			ServiceName:     models.SERVICENAME_NUDM_SDM,
+			NfServiceStatus: models.NFSERVICESTATUS_REGISTERED,
+		},
+	}
+	profiles := []models.NFProfileDiscovery{
+		{
+			NfInstanceId:  "udm-1",
+			NfType:        models.NFTYPE_UDM,
+			NfServiceList: &nfServiceList,
+		},
+	}
+
+	filtered := filterDiscoveryResults(profiles, query)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 matching profile, got %d", len(filtered))
+	}
+	if filtered[0].NfInstanceId != "udm-1" {
+		t.Fatalf("unexpected profile returned: %+v", filtered[0])
+	}
+}
+
+// TestFilterDiscoveryResultsAppliesRequesterNfInstanceFqdn verifies that the
+// URI-list fallback matcher (matchesDiscoveryQuery) applies the Query-4
+// requester-nfinstance-fqdn predicate, matching services that allow the
+// requester FQDN (or omit allowedNfDomains) via either nfServices or
+// nfServiceList, while excluding services that restrict allowedNfDomains to
+// other domains, including an explicitly empty list.
+func TestFilterDiscoveryResultsAppliesRequesterNfInstanceFqdn(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-instance-fqdn", testExampleFqdn)
+
+	nfServiceList := map[string]models.NFService{
+		testServiceInstanceId: {AllowedNfDomains: []string{"other.example.com"}},
+	}
+	profiles := []models.NFProfileDiscovery{
+		{
+			NfInstanceId: "udm-allowed-legacy",
+			NfType:       models.NFTYPE_UDM,
+			NfServices:   []models.NFService{{AllowedNfDomains: []string{testExampleFqdn}}},
+		},
+		{
+			NfInstanceId: "udm-no-restriction",
+			NfType:       models.NFTYPE_UDM,
+			NfServices:   []models.NFService{{}},
+		},
+		{
+			NfInstanceId:  "udm-blocked",
+			NfType:        models.NFTYPE_UDM,
+			NfServiceList: &nfServiceList,
+		},
+		{
+			NfInstanceId: "udm-blocked-empty-list",
+			NfType:       models.NFTYPE_UDM,
+			NfServices:   []models.NFService{{AllowedNfDomains: []string{}}},
+		},
+	}
+
+	filtered := filterDiscoveryResults(profiles, query)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 matching profiles, got %d: %+v", len(filtered), filtered)
+	}
+	for _, p := range filtered {
+		if p.NfInstanceId == "udm-blocked" || p.NfInstanceId == "udm-blocked-empty-list" {
+			t.Fatalf("expected profile restricted to a different domain to be excluded, got %+v", filtered)
+		}
+	}
+}
+
+// TestFilterDiscoveryResultsAppliesSupportedFeatures verifies that the
+// URI-list fallback matcher (matchesDiscoveryQuery) applies the Query-34
+// supported-features predicate against either nfServices or nfServiceList.
+func TestFilterDiscoveryResultsAppliesSupportedFeatures(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("supported-features", "1")
+
+	supportedFeatures := "1"
+	nfServiceList := map[string]models.NFService{
+		testServiceInstanceId: {SupportedFeatures: &supportedFeatures},
+	}
+	profiles := []models.NFProfileDiscovery{
+		{
+			NfInstanceId:  "udm-match",
+			NfType:        models.NFTYPE_UDM,
+			NfServiceList: &nfServiceList,
+		},
+		{
+			NfInstanceId: "udm-no-match",
+			NfType:       models.NFTYPE_UDM,
+			NfServices:   []models.NFService{{}},
+		},
+	}
+
+	filtered := filterDiscoveryResults(profiles, query)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 matching profile, got %d: %+v", len(filtered), filtered)
+	}
+	if filtered[0].NfInstanceId != "udm-match" {
 		t.Fatalf("unexpected profile returned: %+v", filtered[0])
 	}
 }
@@ -323,7 +553,7 @@ func TestBuildFilterSupportsExplodedStructuredParams(t *testing.T) {
 
 func TestComplexQueryFilterSubprocessNegatesTargetNfFqdnWithNe(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		queryParamTargetNfFqdn: {value: "example.com", negative: true},
+		queryParamTargetNfFqdn: {value: testExampleFqdn, negative: true},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -338,8 +568,218 @@ func TestComplexQueryFilterSubprocessNegatesTargetNfFqdnWithNe(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected field-level fqdn filter, got %#v", andFilters[0])
 	}
-	if got := fqdnFilter[mongoOpNe]; got != "example.com" {
+	if got := fqdnFilter[mongoOpNe]; got != testExampleFqdn {
 		t.Fatalf("expected fqdn $ne match, got %#v", fqdnFilter)
+	}
+}
+
+// TestComplexQueryFilterSubprocessMatchesNfServiceList verifies that
+// complex-query service-names filtering covers nfServiceList (the TS 29.510
+// Rel-16 replacement for the deprecated nfServices array), not just the
+// legacy array, for both the positive and negated query semantics.
+func TestComplexQueryFilterSubprocessMatchesNfServiceList(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamServiceNames: {value: "nudm-sdm"},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 service-names filter, got %#v", filter[mongoOpAnd])
+	}
+
+	orFilters, ok := andFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 service-names alternatives, got %#v", andFilters[0])
+	}
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
+func TestComplexQueryFilterSubprocessNegatesServiceNamesWithNin(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamServiceNames: {value: "nudm-sdm", negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 service-names filter, got %#v", filter[mongoOpAnd])
+	}
+
+	orFilters, ok := andFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 service-names alternatives, got %#v", andFilters[0])
+	}
+
+	legacyFilter, ok := orFilters[0][fieldNfServices].(bson.M)
+	if !ok {
+		t.Fatalf("expected legacy nfservices filter, got %#v", orFilters[0])
+	}
+	elemMatch, ok := legacyFilter[mongoOpElemMatch].(bson.M)
+	if !ok {
+		t.Fatalf("expected $elemMatch document, got %#v", legacyFilter)
+	}
+	nameCond, ok := elemMatch[fieldServiceName].(bson.M)
+	if !ok {
+		t.Fatalf("expected servicename condition, got %#v", elemMatch)
+	}
+	if _, exists := nameCond["$nin"]; !exists {
+		t.Fatalf("expected $nin negation on legacy nfservices filter, got %#v", nameCond)
+	}
+
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
+// TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList
+// verifies that complex-query requester-nfinstance-fqdn (Query-4) filtering
+// covers nfServiceList in addition to the legacy nfServices array.
+func TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 fqdn filter, got %#v", filter[mongoOpAnd])
+	}
+
+	orFilters, ok := andFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 fqdn alternatives, got %#v", andFilters[0])
+	}
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
+// extractNfServiceListAnyMatchCond drills into the bson.M produced by
+// nfServiceListAnyMatch to return the "cond" passed to $filter, so tests can
+// assert on the exact predicate used to match nfServiceList entries.
+func extractNfServiceListAnyMatchCond(t *testing.T, exprFilter bson.M) bson.M {
+	t.Helper()
+	gt, ok := exprFilter[mongoOpExpr].(bson.M)["$gt"].([]any)
+	if !ok || len(gt) != 2 {
+		t.Fatalf("unexpected $expr structure: %#v", exprFilter)
+	}
+	size, ok := gt[0].(bson.M)["$size"].(bson.M)
+	if !ok {
+		t.Fatalf("unexpected $size structure: %#v", gt[0])
+	}
+	filterDoc, ok := size["$filter"].(bson.M)
+	if !ok {
+		t.Fatalf("unexpected $filter structure: %#v", size)
+	}
+	cond, ok := filterDoc["cond"].(bson.M)
+	if !ok {
+		t.Fatalf("unexpected cond structure: %#v", filterDoc)
+	}
+	return cond
+}
+
+// TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnExcludesContainingDomain
+// verifies that the positive (non-negated) requester-nfinstance-fqdn query
+// matches nfServiceList entries whose allowedNfDomains does NOT contain the
+// FQDN (including when it is omitted), consistent with the legacy nfServices
+// $ne semantics so both representations behave identically.
+func TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnExcludesContainingDomain(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters := filter[mongoOpAnd].([]bson.M)
+	orFilters := andFilters[0][mongoOpOr].([]bson.M)
+	cond := extractNfServiceListAnyMatchCond(t, orFilters[1])
+
+	notCond, exists := cond[mongoOpNot].([]any)
+	if !exists || len(notCond) != 1 {
+		t.Fatalf("expected non-negated fqdn cond to be wrapped in $not (matching legacy $ne), got %#v", cond)
+	}
+	if _, exists := notCond[0].(bson.M)[mongoOpIn]; !exists {
+		t.Fatalf("expected $not to wrap an $in containment check, got %#v", notCond[0])
+	}
+}
+
+// TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnMatchesContainingDomain
+// verifies that the negated requester-nfinstance-fqdn query matches
+// nfServiceList entries whose allowedNfDomains contains the FQDN, consistent
+// with the legacy nfServices direct-value-match semantics so both
+// representations behave identically.
+func TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnMatchesContainingDomain(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn, negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters := filter[mongoOpAnd].([]bson.M)
+	orFilters := andFilters[0][mongoOpOr].([]bson.M)
+	cond := extractNfServiceListAnyMatchCond(t, orFilters[1])
+
+	if _, exists := cond[mongoOpIn]; !exists {
+		t.Fatalf("expected negated fqdn cond to match containment directly via $in, got %#v", cond)
+	}
+	if _, exists := cond[mongoOpNot]; exists {
+		t.Fatalf("expected negated fqdn cond not to be wrapped in $not, got %#v", cond)
+	}
+}
+
+// TestComplexQueryFilterSubprocessMatchesSupportedFeaturesNfServiceList
+// verifies that complex-query supported-features (Query-34) filtering covers
+// nfServiceList in addition to the legacy nfServices array.
+func TestComplexQueryFilterSubprocessMatchesSupportedFeaturesNfServiceList(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamSupportedFeatures: {value: "1"},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 supported-features filter, got %#v", filter[mongoOpAnd])
+	}
+
+	orFilters, ok := andFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 supported-features alternatives, got %#v", andFilters[0])
+	}
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
+// TestComplexQueryFilterSubprocessNegatesSupportedFeaturesWithNor verifies that
+// the negated supported-features complex query uses $nor (not the invalid
+// top-level $not) to negate the whole legacy-or-nfServiceList alternative.
+func TestComplexQueryFilterSubprocessNegatesSupportedFeaturesWithNor(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamSupportedFeatures: {value: "1", negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 supported-features filter, got %#v", filter[mongoOpAnd])
+	}
+
+	norFilters, ok := andFilters[0][mongoOpNor].([]bson.M)
+	if !ok || len(norFilters) != 1 {
+		t.Fatalf("expected $nor-wrapped supported-features filter, got %#v", andFilters[0])
+	}
+	orFilters, ok := norFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 supported-features alternatives inside $nor, got %#v", norFilters[0])
+	}
+	if _, exists := orFilters[0][fieldNfServices]; !exists {
+		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
 	}
 }
 
