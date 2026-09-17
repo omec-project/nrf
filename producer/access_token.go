@@ -7,6 +7,7 @@ package producer
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -86,8 +87,12 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 // validateRequesterFqdn implements the TS 29.510 clause 6.3.5.2.2 check: when
 // requesterFqdn is provided, the NRF may validate that the requester NF
 // service consumer is allowed to access the target NF Service Producer via
-// the producer's allowedNfDomains (clause 6.1.6.2.2). Lookup failures fail
-// open since this check is optional ("may"), not mandatory, per spec.
+// the producer's allowedNfDomains (clause 6.1.6.2.2). Only the absence of
+// requesterFqdn/targetNfInstanceId, or confirming the target profile does
+// not exist, skips this optional check; a fault that prevents completing it
+// (no DB client, a lookup error, or an undecodable stored profile) fails
+// closed instead of silently granting access a policy that could not be
+// checked.
 func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr {
 	requesterFqdn, ok := request.GetRequesterFqdnOk()
 	if !ok || *requesterFqdn == "" {
@@ -98,10 +103,14 @@ func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr
 		return nil
 	}
 
+	if dbadapter.DBClient == nil {
+		logger.AccessTokenLog.Errorln("requesterFqdn validation unavailable: DB client not initialized")
+		return errRequesterFqdnValidationUnavailable()
+	}
 	raw, err := dbadapter.DBClient.RestfulAPIGetOne(collNfProfile, bson.M{fieldNfInstanceId: *targetNfInstanceId})
 	if err != nil {
-		logger.AccessTokenLog.Warnf("target NF profile lookup failed for requesterFqdn validation: %v", err)
-		return nil
+		logger.AccessTokenLog.Errorf("target NF profile lookup failed for requesterFqdn validation: %v", err)
+		return errRequesterFqdnValidationUnavailable()
 	}
 	if raw == nil {
 		return nil
@@ -109,11 +118,11 @@ func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr
 
 	decoded, err := util.Decode([]map[string]any{raw}, time.RFC3339)
 	if err != nil || len(decoded) == 0 {
-		logger.AccessTokenLog.Warnf("target NF profile decode failed for requesterFqdn validation: %v", err)
-		return nil
+		logger.AccessTokenLog.Errorf("target NF profile decode failed for requesterFqdn validation: %v", err)
+		return errRequesterFqdnValidationUnavailable()
 	}
 
-	if anyNFServiceAllowsFqdn(decoded[0], *requesterFqdn) {
+	if requestedServicesAllowFqdn(decoded[0], request.Scope, *requesterFqdn) {
 		return nil
 	}
 
@@ -121,4 +130,72 @@ func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr
 	errResponse := models.NewAccessTokenErr("invalid_request")
 	errResponse.SetErrorDescription("requesterFqdn is not allowed to access the target NF Service Producer")
 	return errResponse
+}
+
+// errRequesterFqdnValidationUnavailable denies the token request when
+// validateRequesterFqdn cannot determine whether allowedNfDomains permits
+// requesterFqdn (as opposed to determining that it does not): a system
+// fault must not be indistinguishable from "no restriction applies".
+func errRequesterFqdnValidationUnavailable() *models.AccessTokenErr {
+	errResponse := models.NewAccessTokenErr("invalid_request")
+	errResponse.SetErrorDescription("requesterFqdn validation could not be completed")
+	return errResponse
+}
+
+// requestedServicesAllowFqdn reports whether requesterFqdn is allowed by the
+// NF services actually named in scope (the space-separated list of NF
+// service names per TS 29.510 clause 6.3.5.2.2), per each service's
+// allowedNfDomains (clause 6.1.6.2.2). Checking only the requested services,
+// rather than any service in the profile, prevents an unrelated unrestricted
+// service from authorizing access to a service that restricts allowedNfDomains.
+// If scope is empty, requesterFqdn validation falls back to checking all of
+// the profile's services. Every name in scope must match at least one
+// service in profile and be allowed; a name with no matching service in
+// profile causes rejection, since falling back to unrelated services could
+// let requests for an unknown or misspelled service name be authorized by an
+// unrestricted, unrelated service. A name may match multiple entries when the
+// profile carries the same service in both nfServices and nfServiceList
+// (alternative representations of the same data per TS 29.510 clause
+// 6.1.6.2.2); the name is allowed if any matching entry allows it, not only
+// if every matching entry does. Only services with NfServiceStatus
+// REGISTERED are matched against a requested name, so a service withdrawn
+// from the profile cannot authorize access via a stale, unrestricted
+// allowedNfDomains policy; this mirrors buildFilter's service-name discovery
+// query, which likewise requires NfServiceStatus REGISTERED when a specific
+// service name is requested. This is unlike the empty-scope fallback
+// (anyNFServiceAllowsFqdn), which deliberately does not filter by
+// registration status, consistent with the MongoDB-backed discovery
+// predicate for requester-nfinstance-fqdn without a service-name scope.
+func requestedServicesAllowFqdn(profile models.NFProfileDiscovery, scope, requesterFqdn string) bool {
+	requestedServiceNames := strings.Fields(scope)
+	if len(requestedServiceNames) == 0 {
+		return anyNFServiceAllowsFqdn(profile, requesterFqdn)
+	}
+
+	services := registeredNFServices(profile)
+	for _, name := range requestedServiceNames {
+		matched := false
+		allowed := false
+		for _, service := range services {
+			if string(service.ServiceName) != name {
+				continue
+			}
+			matched = true
+			allowedDomains, ok := service.GetAllowedNfDomainsOk()
+			if !ok {
+				allowed = true
+				continue
+			}
+			for _, pattern := range allowedDomains {
+				if matchesAllowedNfDomainPattern(pattern, requesterFqdn) {
+					allowed = true
+					break
+				}
+			}
+		}
+		if !matched || !allowed {
+			return false
+		}
+	}
+	return true
 }

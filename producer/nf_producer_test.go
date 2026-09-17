@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"reflect"
 	"testing"
@@ -23,6 +24,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+const testUpdateNfInstanceId = "instance-1"
 
 type MockMongoDBClient struct {
 	dbadapter.DBInterface
@@ -83,6 +86,11 @@ func (db *MockMongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M
 
 func (db *MockMongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error {
 	return nil
+}
+
+func (db *MockMongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	logger.HandlerLog.Infoln("called Mock RestfulAPIReplaceIfUnchanged")
+	return true, nil
 }
 
 func (db *MockMongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error {
@@ -287,26 +295,22 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 	}
 }
 
-type PatchCaptureDBClient struct {
+// ReplaceCaptureDBClient captures every document that
+// updateNFInstanceProcedure attempts to persist via the atomic
+// RestfulAPIReplaceIfUnchanged, so a test can inspect the exact candidate
+// produced by applying a JSON Patch to validPreviousNfDoc().
+type ReplaceCaptureDBClient struct {
 	MockMongoDBClient
-	patchJSON []byte
+	replaceCalls []map[string]interface{}
 }
 
-func (db *PatchCaptureDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error {
-	db.patchJSON = append([]byte(nil), patchJSON...)
-	return nil
+func (db *ReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return validPreviousNfDoc(), nil
 }
 
-func (db *PatchCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"nfInstanceId": "instance-1",
-		"nfType":       string(models.NFTYPE_AUSF),
-		"nfStatus":     string(models.NFSTATUS_REGISTERED),
-	}, nil
-}
-
-func (db *PatchCaptureDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
-	return false, nil
+func (db *ReplaceCaptureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	db.replaceCalls = append(db.replaceCalls, putData)
+	return true, nil
 }
 
 func TestHandleUpdateNFInstanceRequestNormalizesNfStatusPatchPath(t *testing.T) {
@@ -315,9 +319,72 @@ func TestHandleUpdateNFInstanceRequestNormalizesNfStatusPatchPath(t *testing.T) 
 		dbadapter.DBClient = originalDBClient
 	}()
 
-	patchCaptureDBClient := &PatchCaptureDBClient{}
-	dbadapter.DBClient = patchCaptureDBClient
+	replaceCaptureDBClient := &ReplaceCaptureDBClient{}
+	dbadapter.DBClient = replaceCaptureDBClient
 
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
+	}
+	if len(replaceCaptureDBClient.replaceCalls) != 1 {
+		t.Fatalf("expected exactly one persist attempt, got %d", len(replaceCaptureDBClient.replaceCalls))
+	}
+	persisted := replaceCaptureDBClient.replaceCalls[0]
+	if _, hasUnnormalized := persisted["nfStatus"]; hasUnnormalized {
+		t.Fatalf("expected the unnormalized /nfStatus path not to be applied, got %+v", persisted)
+	}
+	if status, _ := persisted["nfstatus"].(string); status != string(models.NFSTATUS_REGISTERED) {
+		t.Fatalf("expected normalized patch path /nfstatus to be applied, got %+v", persisted)
+	}
+}
+
+// validPreviousNfDoc returns the pre-patch document used by the update
+// tests below: a valid profile with no allowedNfDomains restriction. The
+// field names match the lowercase keys real MongoDB documents use (e.g.
+// "nfstatus", not the Go/JSON model's "nfStatus"), since ApplyJSONPatch
+// really applies the JSON Patch produced by normalizeNFInstancePatchJSON.
+func validPreviousNfDoc() map[string]interface{} {
+	return map[string]interface{}{
+		"nfInstanceId": testUpdateNfInstanceId,
+		"nfType":       string(models.NFTYPE_AUSF),
+		"nfstatus":     string(models.NFSTATUS_REGISTERED),
+		"nfServices": []map[string]interface{}{{
+			"serviceName":     "nausf-auth",
+			"nfServiceStatus": string(models.NFSERVICESTATUS_REGISTERED),
+		}},
+	}
+}
+
+// invalidAllowedNfDomainsPatchRequest builds an HandleUpdateNFInstanceRequest
+// for testUpdateNfInstanceId whose JSON Patch adds an allowedNfDomains
+// pattern invalid for requesterFqdn matching (see ValidateAllowedNfDomains)
+// to the profile's only NF service.
+func invalidAllowedNfDomainsPatchRequest(t *testing.T) *httpwrapper.Request {
+	t.Helper()
+	patchJSON, err := json.Marshal([]models.PatchItem{
+		{
+			Op:    models.PATCHOPERATION_ADD,
+			Path:  "/nfServices/0/allowedNfDomains",
+			Value: []string{"(unclosed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal patch JSON: %v", err)
+	}
+	return &httpwrapper.Request{
+		Params: map[string]string{"nfInstanceID": testUpdateNfInstanceId},
+		Body:   patchJSON,
+	}
+}
+
+// nfStatusRegisteredPatchRequest builds an HandleUpdateNFInstanceRequest for
+// testUpdateNfInstanceId with a JSON Patch that replaces /nfStatus with
+// REGISTERED, the minimal well-formed patch shared by the update tests below.
+func nfStatusRegisteredPatchRequest(t *testing.T) *httpwrapper.Request {
+	t.Helper()
 	patchJSON, err := json.Marshal([]models.PatchItem{
 		{
 			Op:    models.PATCHOPERATION_REPLACE,
@@ -328,23 +395,214 @@ func TestHandleUpdateNFInstanceRequestNormalizesNfStatusPatchPath(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to marshal patch JSON: %v", err)
 	}
-
-	response := producer.HandleUpdateNFInstanceRequest(&httpwrapper.Request{
-		Params: map[string]string{"nfInstanceID": "instance-1"},
+	return &httpwrapper.Request{
+		Params: map[string]string{"nfInstanceID": testUpdateNfInstanceId},
 		Body:   patchJSON,
-	})
+	}
+}
+
+// rejectingReplaceDBClient fails the test if RestfulAPIReplaceIfUnchanged is
+// ever called: it is used to verify that a patch producing an invalid NF
+// profile is rejected without persisting anything, not even transiently.
+type rejectingReplaceDBClient struct {
+	MockMongoDBClient
+	t *testing.T
+}
+
+func (db *rejectingReplaceDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return validPreviousNfDoc(), nil
+}
+
+func (db *rejectingReplaceDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	db.t.Fatal("expected RestfulAPIReplaceIfUnchanged not to be called for a patch that produces an invalid NF profile")
+	return false, nil
+}
+
+// TestHandleUpdateNFInstanceRequestRejectsInvalidPatchedAllowedNfDomainsWithoutPersisting
+// verifies that a JSON Patch resulting in an invalid allowedNfDomains
+// pattern is rejected with 400 before it is ever attempted to be persisted:
+// validating the candidate before the conditional write, rather than
+// persisting it first and reverting afterwards, ensures the pattern can
+// never be observed by a concurrent discovery query or left behind by a
+// crash between the write and a later revert.
+func TestHandleUpdateNFInstanceRequestRejectsInvalidPatchedAllowedNfDomainsWithoutPersisting(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	dbadapter.DBClient = &rejectingReplaceDBClient{t: t}
+
+	response := producer.HandleUpdateNFInstanceRequest(invalidAllowedNfDomainsPatchRequest(t))
 	if response == nil {
 		t.Fatal("expected non-nil response")
 	}
+	if response.Status != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Status)
+	}
+}
 
-	var capturedPatchItems []models.PatchItem
-	if err := json.Unmarshal(patchCaptureDBClient.patchJSON, &capturedPatchItems); err != nil {
-		t.Fatalf("failed to unmarshal captured patch JSON: %v", err)
+// replaceFailureDBClient simulates a database failure (e.g. a transient
+// network error) while persisting an otherwise valid patched profile.
+type replaceFailureDBClient struct {
+	MockMongoDBClient
+}
+
+func (db *replaceFailureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return validPreviousNfDoc(), nil
+}
+
+func (db *replaceFailureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	return false, errors.New("simulated database failure")
+}
+
+// TestHandleUpdateNFInstanceRequestSurfacesPersistFailureAs500 verifies that
+// a database failure while persisting a validated patch is surfaced as a
+// server-side (500) error rather than the 400 used for a rejected patch.
+func TestHandleUpdateNFInstanceRequestSurfacesPersistFailureAs500(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	dbadapter.DBClient = &replaceFailureDBClient{}
+
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
 	}
-	if len(capturedPatchItems) != 1 {
-		t.Fatalf("expected 1 patch item, got %d", len(capturedPatchItems))
+	if response.Status != http.StatusInternalServerError {
+		t.Fatalf("expected status %d when persisting fails, got %d", http.StatusInternalServerError, response.Status)
 	}
-	if capturedPatchItems[0].Path != "/nfstatus" {
-		t.Fatalf("expected normalized patch path /nfstatus, got %q", capturedPatchItems[0].Path)
+}
+
+// TestHandleUpdateNFInstanceRequestFoldsExpiryIntoSingleWrite verifies that,
+// with NfProfileExpiryEnable set, a patch is persisted with expireAt already
+// included in a single conditional write. A prior version added expireAt to
+// a second, separate write conditioned on the unstamped in-memory candidate;
+// RestfulAPIReplaceIfUnchanged always stamps what it persists with a fresh
+// _docVersion, so that second write's condition could never match the
+// now-stamped stored document and every such update falsely failed as a
+// concurrent-update conflict.
+func TestHandleUpdateNFInstanceRequestFoldsExpiryIntoSingleWrite(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	originalExpiryEnable := factory.NrfConfig.Configuration.NfProfileExpiryEnable
+	originalKeepAliveTime := factory.NrfConfig.Configuration.NfKeepAliveTime
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+		factory.NrfConfig.Configuration.NfProfileExpiryEnable = originalExpiryEnable
+		factory.NrfConfig.Configuration.NfKeepAliveTime = originalKeepAliveTime
+	}()
+	factory.NrfConfig.Configuration.NfProfileExpiryEnable = true
+	factory.NrfConfig.Configuration.NfKeepAliveTime = 30
+
+	replaceCaptureDBClient := &ReplaceCaptureDBClient{}
+	dbadapter.DBClient = replaceCaptureDBClient
+
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
+	}
+	if len(replaceCaptureDBClient.replaceCalls) != 1 {
+		t.Fatalf("expected exactly one persist attempt, got %d", len(replaceCaptureDBClient.replaceCalls))
+	}
+	if _, hasExpireAt := replaceCaptureDBClient.replaceCalls[0]["expireAt"]; !hasExpireAt {
+		t.Fatalf("expected the single persisted document to include expireAt, got %+v", replaceCaptureDBClient.replaceCalls[0])
+	}
+}
+
+// retryThenSucceedDBClient simulates a single lost race against another
+// concurrent update: the first RestfulAPIReplaceIfUnchanged call reports no
+// match, exactly as a real MongoDB conditional replace would once another
+// writer moved the document first; the retry then succeeds.
+type retryThenSucceedDBClient struct {
+	MockMongoDBClient
+	getOneCalls     int
+	replaceAttempts int
+}
+
+func (db *retryThenSucceedDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	db.getOneCalls++
+	return validPreviousNfDoc(), nil
+}
+
+func (db *retryThenSucceedDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	db.replaceAttempts++
+	if db.replaceAttempts == 1 {
+		return false, nil
+	}
+	return true, nil
+}
+
+// TestHandleUpdateNFInstanceRequestRetriesAfterLostRace verifies that
+// updateNFInstanceProcedure re-reads the NF instance and reapplies the patch
+// after a single concurrent write wins the first race, rather than failing
+// the request outright.
+func TestHandleUpdateNFInstanceRequestRetriesAfterLostRace(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	retryDBClient := &retryThenSucceedDBClient{}
+	dbadapter.DBClient = retryDBClient
+
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
+	}
+	if retryDBClient.replaceAttempts != 2 {
+		t.Fatalf("expected exactly 2 persist attempts, got %d", retryDBClient.replaceAttempts)
+	}
+	if retryDBClient.getOneCalls != 2 {
+		t.Fatalf("expected the NF instance to be re-read once per attempt, got %d reads", retryDBClient.getOneCalls)
+	}
+}
+
+// alwaysConflictingDBClient simulates an NF instance that keeps being
+// modified concurrently on every single retry attempt.
+type alwaysConflictingDBClient struct {
+	MockMongoDBClient
+	replaceAttempts int
+}
+
+func (db *alwaysConflictingDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return validPreviousNfDoc(), nil
+}
+
+func (db *alwaysConflictingDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	db.replaceAttempts++
+	return false, nil
+}
+
+// TestHandleUpdateNFInstanceRequestGivesUpAfterMaxConcurrentRetries verifies
+// that updateNFInstanceProcedure stops retrying and reports 409 Conflict,
+// rather than retrying forever, once the NF instance has kept changing
+// concurrently on every attempt.
+func TestHandleUpdateNFInstanceRequestGivesUpAfterMaxConcurrentRetries(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	const maxUpdateNFInstanceAttempts = 3 // mirrors producer.maxUpdateNFInstanceAttempts
+	conflictingDBClient := &alwaysConflictingDBClient{}
+	dbadapter.DBClient = conflictingDBClient
+
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, response.Status)
+	}
+	if conflictingDBClient.replaceAttempts != maxUpdateNFInstanceAttempts {
+		t.Fatalf("expected exactly %d persist attempts, got %d", maxUpdateNFInstanceAttempts, conflictingDBClient.replaceAttempts)
 	}
 }
