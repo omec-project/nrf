@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -827,12 +828,37 @@ func anyNFServiceAllowsFqdn(profile models.NFProfileDiscovery, requesterFqdn str
 // classes, quantifiers, alternation). A pattern that fails to compile under
 // RE2 is treated as non-matching rather than failing discovery.
 func matchesAllowedNfDomainPattern(pattern, requesterFqdn string) bool {
-	re, err := regexp.Compile(pattern)
+	re, err := compileAllowedNfDomainPattern(pattern)
 	if err != nil {
 		logger.DiscoveryLog.Warnf("invalid allowedNfDomains pattern %q: %v", pattern, err)
 		return false
 	}
 	return re.MatchString(requesterFqdn)
+}
+
+// compiledAllowedNfDomainPattern caches the outcome (including a compile
+// failure) of compiling a single allowedNfDomains pattern.
+type compiledAllowedNfDomainPattern struct {
+	re  *regexp.Regexp
+	err error
+}
+
+// allowedNfDomainPatternCache caches compiled allowedNfDomains patterns
+// (keyed by the pattern string) so that matching the same pattern against
+// many requesterFqdn values, or across many services/profiles, does not
+// recompile it every time. ValidateAllowedNfDomains bounds stored patterns to
+// a small length and rejects ones prone to expensive evaluation, so the set
+// of distinct patterns actually seen here stays small.
+var allowedNfDomainPatternCache sync.Map // pattern string -> compiledAllowedNfDomainPattern
+
+func compileAllowedNfDomainPattern(pattern string) (*regexp.Regexp, error) {
+	if cached, ok := allowedNfDomainPatternCache.Load(pattern); ok {
+		compiled := cached.(compiledAllowedNfDomainPattern)
+		return compiled.re, compiled.err
+	}
+	re, err := regexp.Compile(pattern)
+	allowedNfDomainPatternCache.Store(pattern, compiledAllowedNfDomainPattern{re: re, err: err})
+	return re, err
 }
 
 // anyNFServiceHasSupportedFeatures reports whether profile has at least one NF
