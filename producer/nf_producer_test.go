@@ -607,86 +607,39 @@ func TestHandleUpdateNFInstanceRequestFoldsExpiryIntoSingleWrite(t *testing.T) {
 	}
 }
 
-// retryThenSucceedDBClient simulates a single lost race against another
-// concurrent update: the first RestfulAPIReplaceIfUnchanged call reports no
-// match, exactly as a real MongoDB conditional replace would once another
-// writer moved the document first; the retry then succeeds.
-type retryThenSucceedDBClient struct {
+// conflictingDBClient simulates an NF instance that was modified
+// concurrently between updateNFInstanceProcedure's snapshot read and its
+// conditional write.
+type conflictingDBClient struct {
 	MockMongoDBClient
 	getOneCalls     int
 	replaceAttempts int
 }
 
-func (db *retryThenSucceedDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *conflictingDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
 	db.getOneCalls++
 	return validPreviousNfDoc(), nil
 }
 
-func (db *retryThenSucceedDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
-	db.replaceAttempts++
-	if db.replaceAttempts == 1 {
-		return false, nil
-	}
-	return true, nil
-}
-
-// TestHandleUpdateNFInstanceRequestRetriesAfterLostRace verifies that
-// updateNFInstanceProcedure re-reads the NF instance and reapplies the patch
-// after a single concurrent write wins the first race, rather than failing
-// the request outright.
-func TestHandleUpdateNFInstanceRequestRetriesAfterLostRace(t *testing.T) {
-	originalDBClient := dbadapter.DBClient
-	defer func() {
-		dbadapter.DBClient = originalDBClient
-	}()
-
-	retryDBClient := &retryThenSucceedDBClient{}
-	dbadapter.DBClient = retryDBClient
-
-	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
-	if response == nil {
-		t.Fatal("expected non-nil response")
-	}
-	if response.Status != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
-	}
-	if retryDBClient.replaceAttempts != 2 {
-		t.Fatalf("expected exactly 2 persist attempts, got %d", retryDBClient.replaceAttempts)
-	}
-	if retryDBClient.getOneCalls != 2 {
-		t.Fatalf("expected the NF instance to be re-read once per attempt, got %d reads", retryDBClient.getOneCalls)
-	}
-}
-
-// alwaysConflictingDBClient simulates an NF instance that keeps being
-// modified concurrently on every single retry attempt.
-type alwaysConflictingDBClient struct {
-	MockMongoDBClient
-	replaceAttempts int
-}
-
-func (db *alwaysConflictingDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
-	return validPreviousNfDoc(), nil
-}
-
-func (db *alwaysConflictingDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *conflictingDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
 	db.replaceAttempts++
 	return false, nil
 }
 
-// TestHandleUpdateNFInstanceRequestGivesUpAfterMaxConcurrentRetries verifies
-// that updateNFInstanceProcedure stops retrying and reports 409 Conflict,
-// rather than retrying forever, once the NF instance has kept changing
-// concurrently on every attempt.
-func TestHandleUpdateNFInstanceRequestGivesUpAfterMaxConcurrentRetries(t *testing.T) {
+// TestHandleUpdateNFInstanceRequestReturnsConflictOnConcurrentUpdate verifies
+// that updateNFInstanceProcedure reports 409 Conflict, without retrying, the
+// first time RestfulAPIReplaceIfUnchanged reports a lost race: patchJSON may
+// contain array-index paths or remove/move operations that are not safe to
+// blindly replay against a document that changed shape since it was
+// snapshotted, so the client must re-GET and resubmit instead.
+func TestHandleUpdateNFInstanceRequestReturnsConflictOnConcurrentUpdate(t *testing.T) {
 	originalDBClient := dbadapter.DBClient
 	defer func() {
 		dbadapter.DBClient = originalDBClient
 	}()
 
-	const maxUpdateNFInstanceAttempts = 3 // mirrors producer.maxUpdateNFInstanceAttempts
-	conflictingDBClient := &alwaysConflictingDBClient{}
-	dbadapter.DBClient = conflictingDBClient
+	conflictingClient := &conflictingDBClient{}
+	dbadapter.DBClient = conflictingClient
 
 	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
 	if response == nil {
@@ -695,7 +648,10 @@ func TestHandleUpdateNFInstanceRequestGivesUpAfterMaxConcurrentRetries(t *testin
 	if response.Status != http.StatusConflict {
 		t.Fatalf("expected status %d, got %d", http.StatusConflict, response.Status)
 	}
-	if conflictingDBClient.replaceAttempts != maxUpdateNFInstanceAttempts {
-		t.Fatalf("expected exactly %d persist attempts, got %d", maxUpdateNFInstanceAttempts, conflictingDBClient.replaceAttempts)
+	if conflictingClient.replaceAttempts != 1 {
+		t.Fatalf("expected exactly 1 persist attempt (no retry), got %d", conflictingClient.replaceAttempts)
+	}
+	if conflictingClient.getOneCalls != 1 {
+		t.Fatalf("expected exactly 1 read (no retry), got %d", conflictingClient.getOneCalls)
 	}
 }

@@ -404,14 +404,15 @@ func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
 // NnrfNFManagementDataModel's registration-time validation.
 var errInvalidPatchedNfProfile = errors.New("invalid NF profile after patch")
 
-// maxUpdateNFInstanceAttempts bounds how many times updateNFInstanceProcedure
-// re-reads the NF instance and reapplies patchJSON after a concurrent update
-// raced the previous attempt, before giving up.
-const maxUpdateNFInstanceAttempts = 3
-
-// errConcurrentNfInstanceUpdate marks an update abandoned because the NF
-// instance kept being modified concurrently across every retry attempt.
-var errConcurrentNfInstanceUpdate = errors.New("NF instance was modified concurrently on every retry attempt")
+// errConcurrentNfInstanceUpdate marks an update rejected because the NF
+// instance was modified concurrently between the snapshot updateNFInstanceProcedure
+// patched and validated and the write that would have persisted it. This is
+// reported to the client as a conflict rather than retried: patchJSON may
+// contain array-index paths or remove/move operations that are not safe to
+// blindly replay against a document that has since changed shape, so the
+// client (which knows what the patch was meant to do) must re-GET and
+// resubmit instead.
+var errConcurrentNfInstanceUpdate = errors.New("NF instance was modified concurrently; retry the request")
 
 // decodeNFProfile decodes a raw MongoDB NF profile document into
 // models.NFProfile. The document's keys are the driver's default-lowercased
@@ -490,82 +491,68 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 	// models.NFProfile in memory, and validate that candidate before ever
 	// attempting to persist it. Only once it is known to be valid is it
 	// written, conditioned on the stored document still equalling the
-	// snapshot (RestfulAPIReplaceIfUnchanged), so a concurrent update
-	// landing in between is never silently overwritten; a bounded number of
-	// attempts handles that conflict by reapplying the patch to a fresh
-	// snapshot instead of failing the request outright.
-	var candidate map[string]interface{}
-	var updatedProfile models.NFProfile
-	for attempt := 1; ; attempt++ {
-		previousDoc, getPreviousErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
-		if getPreviousErr != nil || previousDoc == nil {
-			logger.ManagementLog.Errorln("failed to get NF instance:", getPreviousErr)
-			return nil, fmt.Errorf("failed to get NF instance: %v", getPreviousErr)
-		}
+	// snapshot (RestfulAPIReplaceIfUnchanged), so a concurrent update landing
+	// in between is never silently overwritten. A conflict is reported to the
+	// client (errConcurrentNfInstanceUpdate) rather than retried here:
+	// patchJSON's operations (array-index paths, remove, move, ...) are not
+	// generally safe to blindly replay against a document that changed shape
+	// since it was snapshotted.
+	previousDoc, getPreviousErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+	if getPreviousErr != nil || previousDoc == nil {
+		logger.ManagementLog.Errorln("failed to get NF instance:", getPreviousErr)
+		return nil, fmt.Errorf("failed to get NF instance: %v", getPreviousErr)
+	}
 
-		previousProfile, decodeErr := decodeNFProfile(previousDoc)
-		if decodeErr != nil {
-			logger.ManagementLog.Errorln("failed to decode NF instance:", decodeErr)
-			return nil, decodeErr
-		}
+	previousProfile, decodeErr := decodeNFProfile(previousDoc)
+	if decodeErr != nil {
+		logger.ManagementLog.Errorln("failed to decode NF instance:", decodeErr)
+		return nil, decodeErr
+	}
 
-		var patchErr error
-		updatedProfile, patchErr = applyJSONPatchToNFProfile(previousProfile, patchJSON)
-		if patchErr != nil {
-			logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure:", patchErr)
-			return nil, fmt.Errorf("patch error: %v", patchErr)
-		}
+	updatedProfile, patchErr := applyJSONPatchToNFProfile(previousProfile, patchJSON)
+	if patchErr != nil {
+		logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure:", patchErr)
+		return nil, fmt.Errorf("patch error: %v", patchErr)
+	}
 
-		if validateErr := nrfContext.ValidateAllowedNfDomains(updatedProfile); validateErr != nil {
-			logger.ManagementLog.Errorln("patched NF profile is invalid, rejecting without persisting:", validateErr)
-			return nil, fmt.Errorf("%w: %v", errInvalidPatchedNfProfile, validateErr)
-		}
+	if validateErr := nrfContext.ValidateAllowedNfDomains(updatedProfile); validateErr != nil {
+		logger.ManagementLog.Errorln("patched NF profile is invalid, rejecting without persisting:", validateErr)
+		return nil, fmt.Errorf("%w: %v", errInvalidPatchedNfProfile, validateErr)
+	}
 
-		var marshalErr error
-		candidate, marshalErr = nfProfileToBSONMap(updatedProfile)
-		if marshalErr != nil {
-			logger.ManagementLog.Errorln("failed to marshal patched NF profile:", marshalErr)
-			return nil, fmt.Errorf("failed to marshal patched NF profile: %v", marshalErr)
-		}
+	candidate, marshalErr := nfProfileToBSONMap(updatedProfile)
+	if marshalErr != nil {
+		logger.ManagementLog.Errorln("failed to marshal patched NF profile:", marshalErr)
+		return nil, fmt.Errorf("failed to marshal patched NF profile: %v", marshalErr)
+	}
 
-		// candidate is built solely from models.NFProfile, so NRF-internal
-		// metadata stored on the document but absent from that model (e.g.
-		// createdAt, or expireAt while NfProfileExpiryEnable is off) has no
-		// counterpart in it. Carry any such field over from previousDoc
-		// before the full replace below, so it is not silently dropped; the
-		// expiry policy below still refreshes/overrides expireAt when enabled.
-		for key, value := range previousDoc {
-			if _, exists := candidate[key]; !exists {
-				candidate[key] = value
-			}
+	// candidate is built solely from models.NFProfile, so NRF-internal
+	// metadata stored on the document but absent from that model (e.g.
+	// createdAt, or expireAt while NfProfileExpiryEnable is off) has no
+	// counterpart in it. Carry any such field over from previousDoc before
+	// the full replace below, so it is not silently dropped; the expiry
+	// policy below still refreshes/overrides expireAt when enabled.
+	for key, value := range previousDoc {
+		if _, exists := candidate[key]; !exists {
+			candidate[key] = value
 		}
+	}
 
-		// Fold the expiry refresh into the same candidate instead of a
-		// second, separately-conditioned write: RestfulAPIReplaceIfUnchanged
-		// stamps whatever it persists with a fresh _docVersion, so a later
-		// write conditioned on this unstamped candidate could never match
-		// the now-stamped stored document and would always be rejected as a
-		// (false) concurrent update.
-		// Currently we are using 3 times the heartbeat timer as the expiry
-		// time interval. We should update it to be configurable : TBD
-		if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
-			timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
-			candidate[fieldExpireAt] = timein
-		}
+	// Currently we are using 3 times the heartbeat timer as the expiry
+	// time interval. We should update it to be configurable : TBD
+	if factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		timein := time.Now().Local().Add(time.Second * time.Duration(factory.NrfConfig.Configuration.NfKeepAliveTime*3))
+		candidate[fieldExpireAt] = timein
+	}
 
-		replaced, replaceErr := dbadapter.DBClient.RestfulAPIReplaceIfUnchanged(collName, filter, previousDoc, candidate)
-		if replaceErr != nil {
-			logger.ManagementLog.Errorf("failed to persist patched NF instance [%s]: %v", nfInstanceID, replaceErr)
-			return nil, fmt.Errorf("failed to persist patched NF instance: %v", replaceErr)
-		}
-		if replaced {
-			break
-		}
-		if attempt >= maxUpdateNFInstanceAttempts {
-			logger.ManagementLog.Errorf("NF instance [%s] kept changing concurrently; giving up after %d attempts", nfInstanceID, attempt)
-			return nil, errConcurrentNfInstanceUpdate
-		}
-		logger.ManagementLog.Warnf("NF instance [%s] changed concurrently; retrying patch against a fresh snapshot (attempt %d/%d)", nfInstanceID, attempt+1, maxUpdateNFInstanceAttempts)
+	replaced, replaceErr := dbadapter.DBClient.RestfulAPIReplaceIfUnchanged(collName, filter, previousDoc, candidate)
+	if replaceErr != nil {
+		logger.ManagementLog.Errorf("failed to persist patched NF instance [%s]: %v", nfInstanceID, replaceErr)
+		return nil, fmt.Errorf("failed to persist patched NF instance: %v", replaceErr)
+	}
+	if !replaced {
+		logger.ManagementLog.Warnf("NF instance [%s] was modified concurrently; rejecting instead of replaying the patch", nfInstanceID)
+		return nil, errConcurrentNfInstanceUpdate
 	}
 
 	profileCache.evict(nfInstanceID)
