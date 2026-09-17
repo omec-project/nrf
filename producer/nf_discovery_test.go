@@ -30,6 +30,7 @@ const (
 	testExampleFqdn          = "example.com"
 	testServiceInstanceId    = "svc-0"
 	testServiceNameNudmSdm   = "nudm-sdm"
+	testNfInstanceAusf1      = "ausf-1"
 )
 
 type mockDiscoveryDBClient struct {
@@ -287,7 +288,7 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 
 	profiles := []models.NFProfileDiscovery{
 		{
-			NfInstanceId: "ausf-1",
+			NfInstanceId: testNfInstanceAusf1,
 			NfType:       models.NFTYPE_AUSF,
 			NfServices: []models.NFService{
 				{
@@ -302,8 +303,34 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 	if len(filtered) != 1 {
 		t.Fatalf("expected 1 matching profile, got %d", len(filtered))
 	}
-	if filtered[0].NfInstanceId != "ausf-1" {
+	if filtered[0].NfInstanceId != testNfInstanceAusf1 {
 		t.Fatalf("unexpected profile returned: %+v", filtered[0])
+	}
+}
+
+// TestFilterDiscoveryResultsRejectsPresentEmptyAllowedNfTypes verifies that a
+// profile with an explicitly present but empty allowedNfTypes list is
+// excluded by the requester-nf-type fallback filter, mirroring the Mongo
+// predicate (handleRequesterNfType): {"allowednftypes": nil} only matches a
+// missing/null field, not a present empty array, so treating "present but
+// empty" as unrestricted here would let the fallback return profiles the
+// primary Mongo query would have excluded.
+func TestFilterDiscoveryResultsRejectsPresentEmptyAllowedNfTypes(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeAUSF)
+	query.Set("requester-nf-type", nfTypeAMF)
+
+	profiles := []models.NFProfileDiscovery{
+		{
+			NfInstanceId:   testNfInstanceAusf1,
+			NfType:         models.NFTYPE_AUSF,
+			AllowedNfTypes: []models.NFType{},
+		},
+	}
+
+	filtered := filterDiscoveryResults(profiles, query)
+	if len(filtered) != 0 {
+		t.Fatalf("expected profile with present-but-empty allowedNfTypes to be excluded, got %+v", filtered)
 	}
 }
 

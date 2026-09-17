@@ -781,8 +781,11 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 	}
 
 	if values := queryParameters[queryParamRequesterNFType]; len(values) > 0 && values[0] != "" {
-		allowedTypes, ok := profile.GetAllowedNfTypesOk()
-		if ok && len(allowedTypes) > 0 {
+		// Match the Mongo predicate (handleRequesterNfType) exactly: a
+		// present-but-empty allowedNfTypes list restricts (matches neither
+		// the requested type nor "field absent/null"), it does not mean
+		// unrestricted; only an absent field is unrestricted.
+		if allowedTypes, ok := profile.GetAllowedNfTypesOk(); ok {
 			matched := false
 			for _, allowedType := range allowedTypes {
 				if string(allowedType) == values[0] {
