@@ -603,6 +603,33 @@ func TestNFDiscoveryProcedureFallsBackOnMongoQueryError(t *testing.T) {
 	}
 }
 
+// TestNFDiscoveryProcedureFailsClosedOnMongoQueryErrorWithUnsupportedFallbackParam
+// verifies that a primary NfProfile query error is reported as a failure,
+// rather than falling back, when the request uses a query parameter (here,
+// target-plmn-list) the URI-list fallback does not evaluate: falling back
+// regardless would silently return profiles the full MongoDB query would
+// have excluded.
+func TestNFDiscoveryProcedureFailsClosedOnMongoQueryErrorWithUnsupportedFallbackParam(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+	dbadapter.DBClient = &mockErroringDiscoveryDBClient{}
+
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("target-plmn-list", `{"mcc":"001","mnc":"01"}`)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if response != nil {
+		t.Fatalf("expected no SearchResult when failing closed, got %+v", response)
+	}
+	if problemDetails == nil {
+		t.Fatal("expected problem details when the query cannot be safely served by the fallback")
+	}
+}
+
 func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *testing.T) {
 	query := url.Values{}
 	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")

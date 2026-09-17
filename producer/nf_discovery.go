@@ -443,9 +443,16 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 		// MongoDB reject the whole $regexMatch-based requester-nfinstance-fqdn
 		// predicate, but an ordinary transient MongoDB/network error is far
 		// more common and must not make discovery unavailable when the
-		// URI-list/cache fallback below could still serve results: log at
-		// error level for operator visibility and fall through to it, as
-		// with any other primary-query miss, instead of failing the request.
+		// URI-list/cache fallback below could still serve results. That
+		// fallback (filterDiscoveryResults/matchesDiscoveryQuery) only
+		// evaluates a small subset of discovery query parameters, though, so
+		// falling back for a query using any other parameter (complexQuery in
+		// particular) would silently return profiles the full MongoDB query
+		// would have excluded; fail closed instead of degrading in that case.
+		if !queryUsesOnlyFallbackSupportedParameters(queryParameters) {
+			logger.DiscoveryLog.Errorln("NF profile query error, and query uses parameters the URI-list fallback cannot fully evaluate:", err)
+			return nil, utils.ProblemDetailsSystemFailure(err.Error())
+		}
 		logger.DiscoveryLog.Errorln("NF profile query error:", err)
 		nfProfilesRaw = nil
 	}
@@ -717,6 +724,37 @@ func getNFInstanceIDFromURI(uri string) string {
 		return ""
 	}
 	return uri[idx+1:]
+}
+
+// fallbackSupportedQueryParams are the only discovery query parameters
+// matchesDiscoveryQuery evaluates. Kept in sync with it by hand, since the
+// two must agree for queryUsesOnlyFallbackSupportedParameters to be correct.
+var fallbackSupportedQueryParams = map[string]bool{
+	queryParamTargetNFType:            true,
+	queryParamTargetNfInstanceID:      true,
+	queryParamRequesterNFType:         true,
+	queryParamServiceNames:            true,
+	queryParamRequesterNfInstanceFqdn: true,
+	queryParamSupportedFeatures:       true,
+}
+
+// queryUsesOnlyFallbackSupportedParameters reports whether every parameter
+// present in queryParameters (with a non-empty value) is one the URI-list
+// fallback (filterDiscoveryResults/matchesDiscoveryQuery) fully evaluates.
+// Discovery supports many more query parameters (complexQuery, snssais,
+// target-plmn-list, ...) that only the MongoDB-backed primary query
+// implements; falling back for a request using one of those would silently
+// return profiles the full query would have excluded.
+func queryUsesOnlyFallbackSupportedParameters(queryParameters url.Values) bool {
+	for name, values := range queryParameters {
+		if len(values) == 0 || values[0] == "" {
+			continue
+		}
+		if !fallbackSupportedQueryParams[name] {
+			return false
+		}
+	}
+	return true
 }
 
 func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
