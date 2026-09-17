@@ -767,6 +767,23 @@ func TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList
 	}
 }
 
+// TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn verifies
+// that an atom with an empty requester-nfinstance-fqdn value adds no Mongo
+// filter, mirroring TestBuildFilterRequesterNfInstanceFqdnIgnoresEmptyValue
+// for the simple-query path. Without this guard, the empty value would still
+// reach $regexMatch as an empty regex, which matches every stored domain and
+// authorizes restricted services, unlike the simple-query and in-memory
+// fallback paths, which treat an empty parameter as absent.
+func TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: ""},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	if andFilters, ok := filter[mongoOpAnd].([]bson.M); ok && len(andFilters) != 0 {
+		t.Fatalf("expected no requester-nfinstance-fqdn filter for an empty value, got %#v", andFilters)
+	}
+}
+
 // extractAnyMatchCond drills into the bson.M produced by nfServicesAnyMatch or
 // nfServiceListAnyMatch to return the "cond" passed to $filter, so tests can
 // assert on the exact predicate used to match nfServices/nfServiceList entries.

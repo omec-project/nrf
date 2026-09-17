@@ -67,7 +67,12 @@ const (
 	queryParamPreferredLocality     = "preferred-locality"
 	queryParamAccessType            = "access-type"
 	queryParamSupportedFeatures     = "supported-features"
-	// queryParamRequesterNfInstanceFqdn is the TS 29.510 Query-4 parameter this NRF has always used; unchanged by this PR.
+	// queryParamRequesterNfInstanceFqdn is the TS 29.510 Query-4 parameter
+	// name, matching the OpenAPI definition used by
+	// github.com/omec-project/openapi/v2's generated NFDiscovery client.
+	// This NRF previously matched the misspelled "requester-nfinstance-fqdn"
+	// (missing the hyphen before "instance"), so it silently ignored the
+	// parameter as sent by any spec-compliant client.
 	queryParamRequesterNfInstanceFqdn = "requester-nf-instance-fqdn"
 	queryParamTargetNfInstanceID      = "target-nf-instance-id"
 	queryParamDnn                     = "dnn"
@@ -2284,8 +2289,14 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 
 func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) {
 	// [Query-4] requester-nfinstance-fqdn
-	if queryParameters[queryParamRequesterNfInstanceFqdn] != nil {
-		requesterNfinstanceFqdn := queryParameters[queryParamRequesterNfInstanceFqdn].value
+	// An empty value is ignored, mirroring the guard handleRequesterNfInstanceFqdn
+	// applies for the same parameter: without it, an atom with
+	// requester-nf-instance-fqdn: "" would reach $regexMatch with an empty
+	// regex, which matches every stored domain and authorizes restricted
+	// services, while the simple-query and in-memory paths treat an empty
+	// parameter as absent.
+	if atom := queryParameters[queryParamRequesterNfInstanceFqdn]; atom != nil && atom.value != "" {
+		requesterNfinstanceFqdn := atom.value
 
 		// Per TS 29.510 clause 6.1.6.2.2, allowedNfDomains holds ECMA-262 regex
 		// patterns; a service allows requesterNfinstanceFqdn if a pattern
@@ -2299,7 +2310,7 @@ func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filt
 			},
 		}
 
-		if queryParameters[queryParamRequesterNfInstanceFqdn].negative {
+		if atom.negative {
 			// $not is a field-level operator and cannot negate a top-level $or
 			// document; use $nor to match profiles where no service allows
 			// requesterNfinstanceFqdn.

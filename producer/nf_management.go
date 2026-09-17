@@ -528,6 +528,18 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 			return nil, fmt.Errorf("failed to marshal patched NF profile: %v", marshalErr)
 		}
 
+		// candidate is built solely from models.NFProfile, so NRF-internal
+		// metadata stored on the document but absent from that model (e.g.
+		// createdAt, or expireAt while NfProfileExpiryEnable is off) has no
+		// counterpart in it. Carry any such field over from previousDoc
+		// before the full replace below, so it is not silently dropped; the
+		// expiry policy below still refreshes/overrides expireAt when enabled.
+		for key, value := range previousDoc {
+			if _, exists := candidate[key]; !exists {
+				candidate[key] = value
+			}
+		}
+
 		// Fold the expiry refresh into the same candidate instead of a
 		// second, separately-conditioned write: RestfulAPIReplaceIfUnchanged
 		// stamps whatever it persists with a fresh _docVersion, so a later

@@ -13,6 +13,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nrf/dbadapter"
@@ -338,6 +339,51 @@ func TestHandleUpdateNFInstanceRequestAppliesNfStatusPatch(t *testing.T) {
 	persisted := replaceCaptureDBClient.replaceCalls[0]
 	if status, _ := persisted["nfstatus"].(string); status != string(models.NFSTATUS_REGISTERED) {
 		t.Fatalf("expected the persisted document's lowercase BSON key nfstatus to be set, got %+v", persisted)
+	}
+}
+
+// metadataPreservingReplaceCaptureDBClient is a ReplaceCaptureDBClient whose
+// RestfulAPIGetOne returns validPreviousNfDoc() augmented with "createdAt",
+// mirroring the field NFRegisterProcedure stamps on registration (see
+// nf_management.go) that has no counterpart in models.NFProfile.
+type metadataPreservingReplaceCaptureDBClient struct {
+	ReplaceCaptureDBClient
+}
+
+func (db *metadataPreservingReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	doc := validPreviousNfDoc()
+	doc["createdAt"] = time.Now()
+	return doc, nil
+}
+
+// TestHandleUpdateNFInstanceRequestPreservesNonModelMetadata verifies that a
+// PATCH does not drop document fields that have no counterpart in
+// models.NFProfile, such as "createdAt": the candidate persisted via
+// RestfulAPIReplaceIfUnchanged is built solely from the patched
+// models.NFProfile, so without carrying such fields over from the pre-patch
+// snapshot, every PATCH would silently erase them.
+func TestHandleUpdateNFInstanceRequestPreservesNonModelMetadata(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	dbClient := &metadataPreservingReplaceCaptureDBClient{}
+	dbadapter.DBClient = dbClient
+
+	response := producer.HandleUpdateNFInstanceRequest(nfStatusRegisteredPatchRequest(t))
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
+	}
+	if len(dbClient.replaceCalls) != 1 {
+		t.Fatalf("expected exactly one persist attempt, got %d", len(dbClient.replaceCalls))
+	}
+	persisted := dbClient.replaceCalls[0]
+	if _, ok := persisted["createdAt"]; !ok {
+		t.Fatalf("expected createdAt to be preserved across the patch, got %+v", persisted)
 	}
 }
 

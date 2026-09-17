@@ -27,7 +27,7 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 
 	accessTokenReq := request.Body.(models.AccessTokenReq)
 
-	response, errResponse, err := AccessTokenProcedure(accessTokenReq)
+	response, errResponse, err := accessTokenProcedure(accessTokenReq)
 	if err != nil {
 		logger.AccessTokenLog.Errorln("AccessTokenProcedure failed:", err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
@@ -44,7 +44,23 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
-func AccessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp,
+// AccessTokenProcedure is kept with its original two-value return signature
+// for source compatibility with any external caller of this exported
+// function. HandleAccessTokenRequest, the only caller within this package,
+// uses accessTokenProcedure instead, which distinguishes a system fault
+// (e.g. a DB error while validating requesterFqdn) from an ordinary policy
+// rejection so it can be reported as a 500 rather than a 400; that
+// distinction has no equivalent in this two-value signature, so a system
+// fault surfaces here only as a nil response and nil errResponse.
+func AccessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp, errResponse *models.AccessTokenErr) {
+	response, errResponse, err := accessTokenProcedure(request)
+	if err != nil {
+		logger.AccessTokenLog.Errorln("AccessTokenProcedure failed:", err)
+	}
+	return response, errResponse
+}
+
+func accessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp,
 	errResponse *models.AccessTokenErr, err error,
 ) {
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
