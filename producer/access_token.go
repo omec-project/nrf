@@ -6,6 +6,7 @@
 package producer
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -26,7 +27,12 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 
 	accessTokenReq := request.Body.(models.AccessTokenReq)
 
-	response, errResponse := AccessTokenProcedure(accessTokenReq)
+	response, errResponse, err := AccessTokenProcedure(accessTokenReq)
+	if err != nil {
+		logger.AccessTokenLog.Errorln("AccessTokenProcedure failed:", err)
+		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
+	}
 
 	if response != nil {
 		// status code is based on SPEC, and option headers
@@ -39,12 +45,16 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 }
 
 func AccessTokenProcedure(request models.AccessTokenReq) (response *models.AccessTokenRsp,
-	errResponse *models.AccessTokenErr,
+	errResponse *models.AccessTokenErr, err error,
 ) {
 	logger.AccessTokenLog.Infoln("In AccessTokenProcedure")
 
-	if errResponse = validateRequesterFqdn(request); errResponse != nil {
-		return nil, errResponse
+	errResponse, err = validateRequesterFqdn(request)
+	if err != nil {
+		return nil, nil, err
+	}
+	if errResponse != nil {
+		return nil, errResponse, nil
 	}
 
 	var expirationSeconds int32 = 1000
@@ -67,22 +77,31 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 
 	mySigningKey := []byte("NRF") // AllYourBase
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenJWTClaims{AccessTokenClaims: accessTokenClaims})
-	accessToken, err := token.SignedString(mySigningKey)
-	if err != nil {
-		logger.AccessTokenLog.Warnln("Signed string error: ", err)
+	accessToken, signErr := token.SignedString(mySigningKey)
+	if signErr != nil {
+		logger.AccessTokenLog.Warnln("Signed string error: ", signErr)
 		errResponse = &models.AccessTokenErr{
 			Error: "invalid_request",
 		}
 
-		return nil, errResponse
+		return nil, errResponse, nil
 	}
 
 	response = models.NewAccessTokenRsp(accessToken, tokenType)
 	response.SetExpiresIn(expirationSeconds)
 	response.SetScope(scope)
 
-	return response, nil
+	return response, nil, nil
 }
+
+// errRequesterFqdnValidationUnavailable marks a token request denied because
+// validateRequesterFqdn could not determine whether allowedNfDomains permits
+// requesterFqdn (a system fault: no DB client, a lookup error, or an
+// undecodable stored profile), as opposed to determining that it does not (an
+// ordinary policy rejection). HandleAccessTokenRequest maps this to 500, not
+// the 400 used for a policy rejection, so a database outage is not reported
+// to the client as if the request itself were invalid.
+var errRequesterFqdnValidationUnavailable = errors.New("requesterFqdn validation could not be completed")
 
 // validateRequesterFqdn implements the TS 29.510 clause 6.3.5.2.2 check: when
 // requesterFqdn is provided, the NRF may validate that the requester NF
@@ -92,54 +111,45 @@ func AccessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 // not exist, skips this optional check; a fault that prevents completing it
 // (no DB client, a lookup error, or an undecodable stored profile) fails
 // closed instead of silently granting access a policy that could not be
-// checked.
-func validateRequesterFqdn(request models.AccessTokenReq) *models.AccessTokenErr {
+// checked, returned via errRequesterFqdnValidationUnavailable rather than an
+// ordinary *models.AccessTokenErr so the caller can tell the two apart.
+func validateRequesterFqdn(request models.AccessTokenReq) (*models.AccessTokenErr, error) {
 	requesterFqdn, ok := request.GetRequesterFqdnOk()
 	if !ok || *requesterFqdn == "" {
-		return nil
+		return nil, nil
 	}
 	targetNfInstanceId, ok := request.GetTargetNfInstanceIdOk()
 	if !ok || *targetNfInstanceId == "" {
-		return nil
+		return nil, nil
 	}
 
 	if dbadapter.DBClient == nil {
 		logger.AccessTokenLog.Errorln("requesterFqdn validation unavailable: DB client not initialized")
-		return errRequesterFqdnValidationUnavailable()
+		return nil, errRequesterFqdnValidationUnavailable
 	}
 	raw, err := dbadapter.DBClient.RestfulAPIGetOne(collNfProfile, bson.M{fieldNfInstanceId: *targetNfInstanceId})
 	if err != nil {
 		logger.AccessTokenLog.Errorf("target NF profile lookup failed for requesterFqdn validation: %v", err)
-		return errRequesterFqdnValidationUnavailable()
+		return nil, errRequesterFqdnValidationUnavailable
 	}
 	if raw == nil {
-		return nil
+		return nil, nil
 	}
 
 	decoded, err := util.Decode([]map[string]any{raw}, time.RFC3339)
 	if err != nil || len(decoded) == 0 {
 		logger.AccessTokenLog.Errorf("target NF profile decode failed for requesterFqdn validation: %v", err)
-		return errRequesterFqdnValidationUnavailable()
+		return nil, errRequesterFqdnValidationUnavailable
 	}
 
 	if requestedServicesAllowFqdn(decoded[0], request.Scope, *requesterFqdn) {
-		return nil
+		return nil, nil
 	}
 
 	logger.AccessTokenLog.Warnf("requesterFqdn %q is not allowed to access target NF instance %q", *requesterFqdn, *targetNfInstanceId)
 	errResponse := models.NewAccessTokenErr("invalid_request")
 	errResponse.SetErrorDescription("requesterFqdn is not allowed to access the target NF Service Producer")
-	return errResponse
-}
-
-// errRequesterFqdnValidationUnavailable denies the token request when
-// validateRequesterFqdn cannot determine whether allowedNfDomains permits
-// requesterFqdn (as opposed to determining that it does not): a system
-// fault must not be indistinguishable from "no restriction applies".
-func errRequesterFqdnValidationUnavailable() *models.AccessTokenErr {
-	errResponse := models.NewAccessTokenErr("invalid_request")
-	errResponse.SetErrorDescription("requesterFqdn validation could not be completed")
-	return errResponse
+	return errResponse, nil
 }
 
 // requestedServicesAllowFqdn reports whether requesterFqdn is allowed by the

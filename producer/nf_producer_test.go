@@ -25,7 +25,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-const testUpdateNfInstanceId = "instance-1"
+const (
+	testUpdateNfInstanceId   = "instance-1"
+	testNfInstanceIDParamKey = "nfInstanceID"
+)
 
 type MockMongoDBClient struct {
 	dbadapter.DBInterface
@@ -313,7 +316,7 @@ func (db *ReplaceCaptureDBClient) RestfulAPIReplaceIfUnchanged(collName string, 
 	return true, nil
 }
 
-func TestHandleUpdateNFInstanceRequestNormalizesNfStatusPatchPath(t *testing.T) {
+func TestHandleUpdateNFInstanceRequestAppliesNfStatusPatch(t *testing.T) {
 	originalDBClient := dbadapter.DBClient
 	defer func() {
 		dbadapter.DBClient = originalDBClient
@@ -333,27 +336,26 @@ func TestHandleUpdateNFInstanceRequestNormalizesNfStatusPatchPath(t *testing.T) 
 		t.Fatalf("expected exactly one persist attempt, got %d", len(replaceCaptureDBClient.replaceCalls))
 	}
 	persisted := replaceCaptureDBClient.replaceCalls[0]
-	if _, hasUnnormalized := persisted["nfStatus"]; hasUnnormalized {
-		t.Fatalf("expected the unnormalized /nfStatus path not to be applied, got %+v", persisted)
-	}
 	if status, _ := persisted["nfstatus"].(string); status != string(models.NFSTATUS_REGISTERED) {
-		t.Fatalf("expected normalized patch path /nfstatus to be applied, got %+v", persisted)
+		t.Fatalf("expected the persisted document's lowercase BSON key nfstatus to be set, got %+v", persisted)
 	}
 }
 
 // validPreviousNfDoc returns the pre-patch document used by the update
 // tests below: a valid profile with no allowedNfDomains restriction. The
 // field names match the lowercase keys real MongoDB documents use (e.g.
-// "nfstatus", not the Go/JSON model's "nfStatus"), since ApplyJSONPatch
-// really applies the JSON Patch produced by normalizeNFInstancePatchJSON.
+// "nfservices", not the model's JSON field name "nfServices"), since that
+// is what MongoDB's default BSON marshaling of models.NFProfile (no bson
+// struct tags) actually produces.
 func validPreviousNfDoc() map[string]interface{} {
 	return map[string]interface{}{
-		"nfInstanceId": testUpdateNfInstanceId,
-		"nfType":       string(models.NFTYPE_AUSF),
+		"nfinstanceid": testUpdateNfInstanceId,
+		"nftype":       string(models.NFTYPE_AUSF),
 		"nfstatus":     string(models.NFSTATUS_REGISTERED),
-		"nfServices": []map[string]interface{}{{
-			"serviceName":     "nausf-auth",
-			"nfServiceStatus": string(models.NFSERVICESTATUS_REGISTERED),
+		"nfservices": []map[string]interface{}{{
+			"servicename":     "nausf-auth",
+			"scheme":          string(models.URISCHEME_HTTPS),
+			"nfservicestatus": string(models.NFSERVICESTATUS_REGISTERED),
 		}},
 	}
 }
@@ -375,8 +377,53 @@ func invalidAllowedNfDomainsPatchRequest(t *testing.T) *httpwrapper.Request {
 		t.Fatalf("failed to marshal patch JSON: %v", err)
 	}
 	return &httpwrapper.Request{
-		Params: map[string]string{"nfInstanceID": testUpdateNfInstanceId},
+		Params: map[string]string{testNfInstanceIDParamKey: testUpdateNfInstanceId},
 		Body:   patchJSON,
+	}
+}
+
+// TestHandleUpdateNFInstanceRequestAppliesNestedFieldPatch verifies that a
+// JSON Patch path into a nested field, such as
+// "/nfServices/0/allowedNfDomains", resolves and applies correctly.
+// previousDoc is the raw MongoDB document, whose keys are the driver's
+// default-lowercased BSON field names (e.g. "nfservices"), but a real
+// client's patch path uses the model's actual JSON field names (e.g.
+// "nfServices"); applying the patch directly to the raw document would fail
+// with a missing-path error for any field but the specially-cased
+// nfStatus/nfstatus.
+func TestHandleUpdateNFInstanceRequestAppliesNestedFieldPatch(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	replaceCaptureDBClient := &ReplaceCaptureDBClient{}
+	dbadapter.DBClient = replaceCaptureDBClient
+
+	patchJSON, err := json.Marshal([]models.PatchItem{
+		{
+			Op:    models.PATCHOPERATION_ADD,
+			Path:  "/nfServices/0/allowedNfDomains",
+			Value: []string{`^.*\.example\.com$`},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal patch JSON: %v", err)
+	}
+	request := &httpwrapper.Request{
+		Params: map[string]string{testNfInstanceIDParamKey: testUpdateNfInstanceId},
+		Body:   patchJSON,
+	}
+
+	response := producer.HandleUpdateNFInstanceRequest(request)
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Status)
+	}
+	if len(replaceCaptureDBClient.replaceCalls) != 1 {
+		t.Fatalf("expected exactly one persist attempt, got %d", len(replaceCaptureDBClient.replaceCalls))
 	}
 }
 
@@ -396,7 +443,7 @@ func nfStatusRegisteredPatchRequest(t *testing.T) *httpwrapper.Request {
 		t.Fatalf("failed to marshal patch JSON: %v", err)
 	}
 	return &httpwrapper.Request{
-		Params: map[string]string{"nfInstanceID": testUpdateNfInstanceId},
+		Params: map[string]string{testNfInstanceIDParamKey: testUpdateNfInstanceId},
 		Body:   patchJSON,
 	}
 }

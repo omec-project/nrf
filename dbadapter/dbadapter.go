@@ -10,7 +10,6 @@ import (
 	"math"
 	"time"
 
-	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/google/uuid"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/util/mongoapi"
@@ -133,35 +132,6 @@ func (db *MongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bs
 		return false, fmt.Errorf("RestfulAPIReplaceIfUnchanged ReplaceOne err: %w", err)
 	}
 	return result.MatchedCount > 0, nil
-}
-
-// ApplyJSONPatch applies patchJSON to current and returns the resulting
-// document, performing no database I/O: it lets a caller compute and
-// validate a patch candidate before deciding whether to persist it at all
-// (e.g. via RestfulAPIReplaceIfUnchanged), so an invalid result (one that
-// fails NF profile validation) is never written to MongoDB, not even
-// transiently.
-func ApplyJSONPatch(current map[string]interface{}, patchJSON []byte) (map[string]interface{}, error) {
-	// Extended JSON, unlike encoding/json, round-trips BSON-native values
-	// (e.g. the expireAt date used by the TTL index) without collapsing them
-	// to plain JSON strings that would corrupt the field once written back.
-	original, err := bson.MarshalExtJSON(current, false, false)
-	if err != nil {
-		return nil, fmt.Errorf("ApplyJSONPatch MarshalExtJSON err: %w", err)
-	}
-	patch, err := jsonpatch.DecodePatch(patchJSON)
-	if err != nil {
-		return nil, fmt.Errorf("ApplyJSONPatch DecodePatch err: %w", err)
-	}
-	modified, err := patch.Apply(original)
-	if err != nil {
-		return nil, fmt.Errorf("ApplyJSONPatch Apply err: %w", err)
-	}
-	var modifiedData map[string]interface{}
-	if unmarshalErr := bson.UnmarshalExtJSON(modified, false, &modifiedData); unmarshalErr != nil {
-		return nil, fmt.Errorf("ApplyJSONPatch UnmarshalExtJSON err: %w", unmarshalErr)
-	}
-	return modifiedData, nil
 }
 
 func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream) {

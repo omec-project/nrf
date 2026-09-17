@@ -8,7 +8,6 @@ import (
 	"math"
 	"reflect"
 	"testing"
-	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -19,10 +18,6 @@ const otherTimeField = "createdAt"
 // testFieldNfInstanceId is a synthetic document field name used only by the
 // tests below; it is not the package's real field constant.
 const testFieldNfInstanceId = "nfInstanceId"
-
-// testApplyJSONPatchInstanceId is a synthetic nfInstanceId value shared by
-// the ApplyJSONPatch tests below.
-const testApplyJSONPatchInstanceId = "nf-json-patch-1"
 
 func TestClassifyTTLIndex(t *testing.T) {
 	tests := []struct {
@@ -269,76 +264,5 @@ func TestStampDocVersionAddsUniqueTokenWithoutMutatingInput(t *testing.T) {
 	}
 	if stamped1["nfInstanceId"] != original["nfInstanceId"] {
 		t.Errorf("expected other fields to be preserved, got %#v", stamped1)
-	}
-}
-
-func TestApplyJSONPatchAppliesReplaceOperation(t *testing.T) {
-	current := map[string]interface{}{testFieldNfInstanceId: testApplyJSONPatchInstanceId, "nfstatus": "REGISTERED"}
-	patchJSON := []byte(`[{"op":"replace","path":"/nfstatus","value":"SUSPENDED"}]`)
-
-	got, err := ApplyJSONPatch(current, patchJSON)
-	if err != nil {
-		t.Fatalf("ApplyJSONPatch() error = %v", err)
-	}
-	if got["nfstatus"] != "SUSPENDED" {
-		t.Errorf("expected nfstatus to be replaced, got %#v", got["nfstatus"])
-	}
-	if got[testFieldNfInstanceId] != testApplyJSONPatchInstanceId {
-		t.Errorf("expected untouched fields to be preserved, got %#v", got)
-	}
-	if current["nfstatus"] != "REGISTERED" {
-		t.Errorf("expected ApplyJSONPatch not to mutate its input, got %#v", current)
-	}
-}
-
-func TestApplyJSONPatchAppliesRemoveOperation(t *testing.T) {
-	current := map[string]interface{}{testFieldNfInstanceId: testApplyJSONPatchInstanceId, "allowedNfDomains": []string{"example.com"}}
-	patchJSON := []byte(`[{"op":"remove","path":"/allowedNfDomains"}]`)
-
-	got, err := ApplyJSONPatch(current, patchJSON)
-	if err != nil {
-		t.Fatalf("ApplyJSONPatch() error = %v", err)
-	}
-	if _, ok := got["allowedNfDomains"]; ok {
-		t.Errorf("expected allowedNfDomains to be removed, got %#v", got)
-	}
-}
-
-// TestApplyJSONPatchPreservesBSONDateType verifies the documented reason for
-// using bson.MarshalExtJSON/UnmarshalExtJSON instead of encoding/json: a
-// date field untouched by the patch must round-trip as a date, not collapse
-// into a plain string that would corrupt the TTL-indexed expireAt field once
-// written back.
-func TestApplyJSONPatchPreservesBSONDateType(t *testing.T) {
-	expireAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	current := map[string]interface{}{testFieldNfInstanceId: testApplyJSONPatchInstanceId, ttlIndexField: expireAt}
-	patchJSON := []byte(`[{"op":"add","path":"/nfstatus","value":"SUSPENDED"}]`)
-
-	got, err := ApplyJSONPatch(current, patchJSON)
-	if err != nil {
-		t.Fatalf("ApplyJSONPatch() error = %v", err)
-	}
-	dt, ok := got[ttlIndexField].(bson.DateTime)
-	if !ok {
-		t.Fatalf("expected %s to round-trip as bson.DateTime, got %T (%#v)", ttlIndexField, got[ttlIndexField], got[ttlIndexField])
-	}
-	if !dt.Time().Equal(expireAt) {
-		t.Errorf("expected %s to be preserved, got %v want %v", ttlIndexField, dt.Time(), expireAt)
-	}
-}
-
-func TestApplyJSONPatchRejectsMalformedPatchJSON(t *testing.T) {
-	current := map[string]interface{}{testFieldNfInstanceId: testApplyJSONPatchInstanceId}
-	if _, err := ApplyJSONPatch(current, []byte("not valid json")); err == nil {
-		t.Fatal("expected an error for malformed patch JSON")
-	}
-}
-
-func TestApplyJSONPatchRejectsOperationThatCannotApply(t *testing.T) {
-	current := map[string]interface{}{testFieldNfInstanceId: testApplyJSONPatchInstanceId}
-	// "replace" requires the target member to already exist (RFC 6902 §4.3).
-	patchJSON := []byte(`[{"op":"replace","path":"/nfstatus","value":"SUSPENDED"}]`)
-	if _, err := ApplyJSONPatch(current, patchJSON); err == nil {
-		t.Fatal("expected an error when replacing a member that does not exist")
 	}
 }

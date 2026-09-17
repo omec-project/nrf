@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-viper/mapstructure/v2"
 	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
@@ -32,32 +33,6 @@ import (
 const nfStatusNotifyTimeout = 10 * time.Second
 
 var nfStatusNotifyHTTPClient = &http.Client{Timeout: nfStatusNotifyTimeout}
-
-func normalizeNFInstancePatchJSON(patchJSON []byte) []byte {
-	var patchItems []models.PatchItem
-	if err := json.Unmarshal(patchJSON, &patchItems); err != nil {
-		return patchJSON
-	}
-
-	changed := false
-	for index := range patchItems {
-		if patchItems[index].Path == "/nfStatus" {
-			patchItems[index].Path = "/nfstatus"
-			changed = true
-		}
-	}
-
-	if !changed {
-		return patchJSON
-	}
-
-	normalizedPatchJSON, err := json.Marshal(patchItems)
-	if err != nil {
-		return patchJSON
-	}
-
-	return normalizedPatchJSON
-}
 
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("Handle NFDeregisterRequest")
@@ -126,7 +101,6 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 		problemDetails := utils.ProblemDetailsMalformedRequestSyntax("Invalid body format")
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, problemDetails)
 	}
-	patchJSON = normalizeNFInstancePatchJSON(patchJSON)
 
 	response, err := updateNFInstanceProcedure(nfInstanceID, patchJSON)
 	if err != nil {
@@ -439,29 +413,68 @@ const maxUpdateNFInstanceAttempts = 3
 // instance kept being modified concurrently across every retry attempt.
 var errConcurrentNfInstanceUpdate = errors.New("NF instance was modified concurrently on every retry attempt")
 
-// decodeAndValidatePatchCandidate decodes candidate (the in-memory result of
-// applying a JSON Patch, not yet persisted) and validates it with the same
-// allowedNfDomains check NnrfNFManagementDataModel applies at registration,
-// which the JSON Patch path otherwise bypasses. Doing this before candidate
-// is ever written lets a rejected patch be reported without touching
-// MongoDB, instead of persisting the invalid result first and reverting it
-// afterwards: that earlier window made an invalid allowedNfDomains pattern
-// observable to concurrent discovery requests, and left it persisted if the
-// process crashed before the revert.
-func decodeAndValidatePatchCandidate(candidate map[string]interface{}) (models.NFProfile, error) {
-	nfProfiles, decodeErr := util.Decode([]map[string]interface{}{candidate}, time.RFC3339)
+// decodeNFProfile decodes a raw MongoDB NF profile document into
+// models.NFProfile. The document's keys are the driver's default-lowercased
+// BSON field names (e.g. "nfservices", "allowednfdomains"; see the fieldXxx
+// constants in nf_discovery.go), not the model's JSON field names.
+func decodeNFProfile(raw map[string]interface{}) (models.NFProfile, error) {
+	nfProfiles, decodeErr := util.Decode([]map[string]interface{}{raw}, time.RFC3339)
 	if decodeErr != nil {
 		return models.NFProfile{}, fmt.Errorf("decoding error: %v", decodeErr)
 	}
 	if len(nfProfiles) == 0 {
 		return models.NFProfile{}, fmt.Errorf("decoded NF profiles are empty")
 	}
+	return util.ConvertNFProfileDiscoveryToNFProfile(nfProfiles[0]), nil
+}
 
-	updatedProfile := util.ConvertNFProfileDiscoveryToNFProfile(nfProfiles[0])
-	if err := nrfContext.ValidateAllowedNfDomains(updatedProfile); err != nil {
-		return models.NFProfile{}, fmt.Errorf("%w: %v", errInvalidPatchedNfProfile, err)
+// applyJSONPatchToNFProfile applies patchJSON to profile using the model's
+// own JSON field names (e.g. "/nfServices/0/allowedNfDomains"), matching
+// what a TS 29.510 client actually sends. This is deliberately not applied
+// to the raw MongoDB document (see decodeNFProfile): a real patch path
+// would not resolve against its lowercased BSON keys.
+func applyJSONPatchToNFProfile(profile models.NFProfile, patchJSON []byte) (models.NFProfile, error) {
+	// models.NFProfile has no json struct tags, so json.Marshal would serialize
+	// fields under their literal Go names (e.g. "NfStatus") instead of the
+	// camelCase TS 29.510 names (e.g. "nfStatus") a patch path targets; ToMap
+	// produces the correctly-cased keys.
+	profileMap, err := profile.ToMap()
+	if err != nil {
+		return models.NFProfile{}, fmt.Errorf("failed to convert NF profile to map: %w", err)
 	}
-	return updatedProfile, nil
+	profileJSON, err := json.Marshal(profileMap)
+	if err != nil {
+		return models.NFProfile{}, fmt.Errorf("failed to marshal NF profile: %w", err)
+	}
+	patch, err := jsonpatch.DecodePatch(patchJSON)
+	if err != nil {
+		return models.NFProfile{}, fmt.Errorf("failed to decode JSON patch: %w", err)
+	}
+	patchedJSON, err := patch.Apply(profileJSON)
+	if err != nil {
+		return models.NFProfile{}, fmt.Errorf("failed to apply JSON patch: %w", err)
+	}
+	var patched models.NFProfile
+	if err := json.Unmarshal(patchedJSON, &patched); err != nil {
+		return models.NFProfile{}, fmt.Errorf("failed to unmarshal patched NF profile: %w", err)
+	}
+	return patched, nil
+}
+
+// nfProfileToBSONMap converts nf to the map[string]interface{} shape
+// MongoDB documents use (the driver's default-lowercased BSON keys),
+// mirroring the bson.Marshal/Unmarshal round trip NFRegisterProcedure uses
+// to build putData.
+func nfProfileToBSONMap(nf models.NFProfile) (map[string]interface{}, error) {
+	bsonBytes, err := bson.Marshal(nf)
+	if err != nil {
+		return nil, fmt.Errorf("bson marshal error: %w", err)
+	}
+	data := map[string]interface{}{}
+	if err := bson.Unmarshal(bsonBytes, &data); err != nil {
+		return nil, fmt.Errorf("bson unmarshal error: %w", err)
+	}
+	return data, nil
 }
 
 func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.NFProfile, error) {
@@ -473,15 +486,14 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 	collName := collNfProfile
 	filter := bson.M{fieldNfInstanceId: nfInstanceID}
 
-	// Snapshot the pre-patch document, apply patchJSON to a candidate in
-	// memory (dbadapter.ApplyJSONPatch performs no database I/O), and
-	// validate that candidate before ever attempting to persist it. Only
-	// once it is known to be valid is it written, conditioned on the stored
-	// document still equalling the snapshot (RestfulAPIReplaceIfUnchanged),
-	// so a concurrent update landing in between is never silently
-	// overwritten; a bounded number of attempts handles that conflict by
-	// reapplying the patch to a fresh snapshot instead of failing the
-	// request outright.
+	// Snapshot the pre-patch document, apply patchJSON to a candidate
+	// models.NFProfile in memory, and validate that candidate before ever
+	// attempting to persist it. Only once it is known to be valid is it
+	// written, conditioned on the stored document still equalling the
+	// snapshot (RestfulAPIReplaceIfUnchanged), so a concurrent update
+	// landing in between is never silently overwritten; a bounded number of
+	// attempts handles that conflict by reapplying the patch to a fresh
+	// snapshot instead of failing the request outright.
 	var candidate map[string]interface{}
 	var updatedProfile models.NFProfile
 	for attempt := 1; ; attempt++ {
@@ -491,18 +503,29 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 			return nil, fmt.Errorf("failed to get NF instance: %v", getPreviousErr)
 		}
 
+		previousProfile, decodeErr := decodeNFProfile(previousDoc)
+		if decodeErr != nil {
+			logger.ManagementLog.Errorln("failed to decode NF instance:", decodeErr)
+			return nil, decodeErr
+		}
+
 		var patchErr error
-		candidate, patchErr = dbadapter.ApplyJSONPatch(previousDoc, patchJSON)
+		updatedProfile, patchErr = applyJSONPatchToNFProfile(previousProfile, patchJSON)
 		if patchErr != nil {
 			logger.ManagementLog.Errorln("patch error in UpdateNFInstanceProcedure:", patchErr)
 			return nil, fmt.Errorf("patch error: %v", patchErr)
 		}
 
-		var validateErr error
-		updatedProfile, validateErr = decodeAndValidatePatchCandidate(candidate)
-		if validateErr != nil {
+		if validateErr := nrfContext.ValidateAllowedNfDomains(updatedProfile); validateErr != nil {
 			logger.ManagementLog.Errorln("patched NF profile is invalid, rejecting without persisting:", validateErr)
-			return nil, validateErr
+			return nil, fmt.Errorf("%w: %v", errInvalidPatchedNfProfile, validateErr)
+		}
+
+		var marshalErr error
+		candidate, marshalErr = nfProfileToBSONMap(updatedProfile)
+		if marshalErr != nil {
+			logger.ManagementLog.Errorln("failed to marshal patched NF profile:", marshalErr)
+			return nil, fmt.Errorf("failed to marshal patched NF profile: %v", marshalErr)
 		}
 
 		// Fold the expiry refresh into the same candidate instead of a
