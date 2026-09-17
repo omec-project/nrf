@@ -140,26 +140,41 @@ const maxAllowedNfDomainsRepeatCount = 1000
 // limited to at most one alternation group in total.
 const maxAllowedNfDomainsAlternationCount = 1
 
+// maxAllowedNfDomainsNullableQuantifierCount bounds how many nullable
+// quantifiers (?, *, or {0,m}: constructs that can match the empty string) an
+// allowedNfDomains pattern may contain in total, regardless of nesting. This
+// closes the same kind of gap for optional quantifiers that
+// maxAllowedNfDomainsAlternationCount closes for alternation: hasUnsafeRepeat
+// only rejects a nullable quantifier nested inside an outer repeat (e.g.
+// "(a?a?)+"), but concatenating several nullable quantifiers by hand at the
+// top level (e.g. "a?a?a?a?a?a?a?a?a?a?b") gives a backtracking engine
+// exponentially many ways to assign each one empty or not on a non-matching
+// input, without ever nesting one inside a repeat.
+const maxAllowedNfDomainsNullableQuantifierCount = 1
+
 // rejectReDoSRiskPattern rejects allowedNfDomains patterns that are prone to
 // catastrophic (exponential-time) backtracking. RE2 (regexp.Compile) is
 // immune to this by construction, but once persisted the same pattern is also
 // evaluated by MongoDB's PCRE-based $regexMatch (see allowedNfDomainsMatchCond
 // in the producer package), which does backtrack. An NF that can register or
 // patch its own profile could otherwise plant a pattern such as "(a+)+",
-// "(a|aa){1000}", or "(a|aa)(a|aa)(a|aa)" - valid RE2, but exponential (or
-// merely very slow) under PCRE for a crafted, non-matching input - and use a
-// discovery query to burn CPU on the shared MongoDB instance. To stay on the
-// safe side of that risk, this enforces a restricted subset rather than
-// trying to precisely detect every ambiguous pattern: a quantifier that can
-// match more than once (*, +, {n,}, or {n,m}/{n} with a max greater than one)
-// may not itself repeat a subexpression that contains another such
-// quantifier or an alternation; no quantifier's bound may exceed
-// maxAllowedNfDomainsRepeatCount, regardless of nesting; and the pattern may
-// contain at most maxAllowedNfDomainsAlternationCount alternation groups in
-// total, so several ambiguous alternations cannot be chained by
-// concatenation instead of repetition. allowedNfDomains patterns should stay
-// simple (anchors, character classes, a single level of quantifiers, and at
-// most one alternation group).
+// "(a|aa){1000}", "(a|aa)(a|aa)(a|aa)", or "a?a?a?a?a?a?a?a?a?a?b" - valid
+// RE2, but exponential (or merely very slow) under PCRE for a crafted,
+// non-matching input - and use a discovery query to burn CPU on the shared
+// MongoDB instance. To stay on the safe side of that risk, this enforces a
+// restricted subset rather than trying to precisely detect every ambiguous
+// pattern: a quantifier that can match more than once (*, +, {n,}, or
+// {n,m}/{n} with a max greater than one) may not itself repeat a
+// subexpression that contains another such quantifier or an alternation; no
+// quantifier's bound may exceed maxAllowedNfDomainsRepeatCount, regardless of
+// nesting; the pattern may contain at most maxAllowedNfDomainsAlternationCount
+// alternation groups in total, so several ambiguous alternations cannot be
+// chained by concatenation instead of repetition; and likewise at most
+// maxAllowedNfDomainsNullableQuantifierCount nullable quantifiers (?, *, or
+// {0,m}) in total, so several cannot be chained by concatenation either.
+// allowedNfDomains patterns should stay simple (anchors, character classes, a
+// single level of quantifiers, and at most one alternation group or nullable
+// quantifier).
 func rejectReDoSRiskPattern(pattern string) error {
 	if len(pattern) > maxAllowedNfDomainsPatternLength {
 		return fmt.Errorf("pattern exceeds maximum length of %d characters", maxAllowedNfDomainsPatternLength)
@@ -185,6 +200,12 @@ func rejectReDoSRiskPattern(pattern string) error {
 			"by MongoDB's PCRE-based $regexMatch, just as repeating one with a quantifier can",
 			maxAllowedNfDomainsAlternationCount)
 	}
+	if countNullableQuantifiers(parsed) > maxAllowedNfDomainsNullableQuantifierCount {
+		return fmt.Errorf("pattern has more than %d nullable quantifier(s) (?, *, or {0,m}); chaining several "+
+			"by concatenation (e.g. \"a?a?a?a?a?a?a?a?a?a?b\") can cause catastrophic backtracking when evaluated "+
+			"by MongoDB's PCRE-based $regexMatch",
+			maxAllowedNfDomainsNullableQuantifierCount)
+	}
 	return nil
 }
 
@@ -200,6 +221,28 @@ func countAlternations(re *syntax.Regexp) int {
 	}
 	for _, sub := range re.Sub {
 		count += countAlternations(sub)
+	}
+	return count
+}
+
+// countNullableQuantifiers reports the total number of nullable quantifier
+// (OpQuest, OpStar, or OpRepeat with Min == 0) nodes in re, at any depth.
+// Used to bound the number of nullable quantifiers an allowedNfDomains
+// pattern may contain in total (see
+// maxAllowedNfDomainsNullableQuantifierCount), since concatenating several is
+// exponential for the same reason nesting one inside a repeat is.
+func countNullableQuantifiers(re *syntax.Regexp) int {
+	count := 0
+	switch re.Op {
+	case syntax.OpQuest, syntax.OpStar:
+		count++
+	case syntax.OpRepeat:
+		if re.Min == 0 {
+			count++
+		}
+	}
+	for _, sub := range re.Sub {
+		count += countNullableQuantifiers(sub)
 	}
 	return count
 }

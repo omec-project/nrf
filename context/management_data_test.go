@@ -122,15 +122,21 @@ func TestNnrfNFManagementDataModelRejectsInvalidAllowedNfDomainsPattern(t *testi
 // repeat over a nested optional quantifier (e.g. "(a?a?)+"): although a bare
 // "?" cannot itself compound ambiguity by repeating, one nested inside an
 // outer repeat still gives a backtracking engine exponentially many ways to
-// partition a non-matching input, or several alternation groups chained by
+// partition a non-matching input, several alternation groups chained by
 // concatenation instead of a quantifier (e.g. "(a|aa)(a|aa)(a|aa)"), which is
-// exponential for the same reason repeating one alternation is.
+// exponential for the same reason repeating one alternation is, or several
+// nullable quantifiers chained by concatenation (e.g.
+// "a?a?a?a?a?a?a?a?a?a?b"), exponential for the same reason nesting one
+// inside a repeat is.
 func TestNnrfNFManagementDataModelRejectsReDoSRiskPattern(t *testing.T) {
 	originalNrfConfig := factory.NrfConfig
 	t.Cleanup(func() { factory.NrfConfig = originalNrfConfig })
 	factory.NrfConfig = factory.Config{Configuration: &factory.Configuration{}}
 
-	riskyPatterns := []string{"(a+)+", "(a|aa)+", "(a|aa){1000}", "a{1001}", "(a?a?)+", "(a|aa)(a|aa)(a|aa)"}
+	riskyPatterns := []string{
+		"(a+)+", "(a|aa)+", "(a|aa){1000}", "a{1001}", "(a?a?)+", "(a|aa)(a|aa)(a|aa)",
+		"a?a?a?a?a?a?a?a?a?a?b",
+	}
 	for _, pattern := range riskyPatterns {
 		t.Run(pattern, func(t *testing.T) {
 			nfprofile := models.NFProfile{
