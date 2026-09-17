@@ -1037,17 +1037,25 @@ func handleRequesterNfInstanceFqdn(queryParameters url.Values, filter bson.M) {
 
 // allowedNfDomainsMatchCond builds the $filter condition, for a service bound
 // to the "svc" filter variable, that is true when allowedNfDomains is absent
-// (any domain allowed per TS 29.510 clause 6.1.6.2.2), or contains a pattern
-// (an ECMA-262 regular expression, evaluated here by MongoDB's PCRE-based
-// $regexMatch; see matchesAllowedNfDomainPattern for the RE2 caveats that
-// apply to the equivalent in-memory check) matching requesterNfinstanceFqdn.
-// allowedNfDomainsPath must reference the service's allowedNfDomains field
-// relative to the filter variable, e.g. "$$svc."+fieldAllowedNfDomains
-// (nfServices) or "$$svc.v."+fieldAllowedNfDomains (nfServiceList).
+// or BSON null (any domain allowed per TS 29.510 clause 6.1.6.2.2), or
+// contains a pattern (an ECMA-262 regular expression, evaluated here by
+// MongoDB's PCRE-based $regexMatch; see matchesAllowedNfDomainPattern for the
+// RE2 caveats that apply to the equivalent in-memory check) matching
+// requesterNfinstanceFqdn. Both "missing" and "null" must be checked here,
+// not just "missing": a nil AllowedNfDomains slice round-trips through
+// bson.Marshal as an explicit BSON null rather than an omitted field, and
+// Go's encoding/json (and this model's GetAllowedNfDomainsOk) cannot tell "no
+// field" and "field: null" apart either, treating both as unrestricted; a
+// "missing"-only check would instead treat a null-valued field as an empty
+// list of patterns (via the $ifNull below), incorrectly denying access
+// discovery would otherwise allow. allowedNfDomainsPath must reference the
+// service's allowedNfDomains field relative to the filter variable, e.g.
+// "$$svc."+fieldAllowedNfDomains (nfServices) or
+// "$$svc.v."+fieldAllowedNfDomains (nfServiceList).
 func allowedNfDomainsMatchCond(allowedNfDomainsPath, requesterNfinstanceFqdn string) bson.M {
 	return bson.M{
 		mongoOpOr: []bson.M{
-			{mongoOpEq: []any{bson.M{"$type": allowedNfDomainsPath}, "missing"}},
+			{mongoOpIn: []any{bson.M{"$type": allowedNfDomainsPath}, bson.A{"missing", "null"}}},
 			{
 				// $anyElementTrue takes its operand as a one-element array.
 				"$anyElementTrue": bson.A{

@@ -827,8 +827,8 @@ func TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnAllowsMissingOrMatch
 		if !exists || len(svcOr) != 2 {
 			t.Fatalf("expected cond to allow missing-or-matching-pattern domain, got %#v", cond)
 		}
-		if _, hasEq := svcOr[0][mongoOpEq]; !hasEq {
-			t.Fatalf("expected first alternative to check for a missing allowedNfDomains, got %#v", svcOr[0])
+		if _, hasIn := svcOr[0][mongoOpIn]; !hasIn {
+			t.Fatalf("expected first alternative to check for a missing or null allowedNfDomains, got %#v", svcOr[0])
 		}
 		anyElementTrue, exists := svcOr[1]["$anyElementTrue"].(bson.A)
 		if !exists || len(anyElementTrue) != 1 {

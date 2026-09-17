@@ -118,17 +118,19 @@ func TestNnrfNFManagementDataModelRejectsInvalidAllowedNfDomainsPattern(t *testi
 // PCRE-based $regexMatch during discovery: a nested unbounded quantifier
 // (e.g. "(a+)+"), a quantifier (bounded or not) over an ambiguous
 // alternation (e.g. "(a|aa)+" or "(a|aa){1000}"), a quantifier bound that
-// is simply too large regardless of nesting (e.g. "a{1001}"), or an outer
+// is simply too large regardless of nesting (e.g. "a{1001}"), an outer
 // repeat over a nested optional quantifier (e.g. "(a?a?)+"): although a bare
 // "?" cannot itself compound ambiguity by repeating, one nested inside an
 // outer repeat still gives a backtracking engine exponentially many ways to
-// partition a non-matching input.
+// partition a non-matching input, or several alternation groups chained by
+// concatenation instead of a quantifier (e.g. "(a|aa)(a|aa)(a|aa)"), which is
+// exponential for the same reason repeating one alternation is.
 func TestNnrfNFManagementDataModelRejectsReDoSRiskPattern(t *testing.T) {
 	originalNrfConfig := factory.NrfConfig
 	t.Cleanup(func() { factory.NrfConfig = originalNrfConfig })
 	factory.NrfConfig = factory.Config{Configuration: &factory.Configuration{}}
 
-	riskyPatterns := []string{"(a+)+", "(a|aa)+", "(a|aa){1000}", "a{1001}", "(a?a?)+"}
+	riskyPatterns := []string{"(a+)+", "(a|aa)+", "(a|aa){1000}", "a{1001}", "(a?a?)+", "(a|aa)(a|aa)(a|aa)"}
 	for _, pattern := range riskyPatterns {
 		t.Run(pattern, func(t *testing.T) {
 			nfprofile := models.NFProfile{
@@ -153,7 +155,7 @@ func TestNnrfNFManagementDataModelRejectsReDoSRiskPattern(t *testing.T) {
 
 // TestNnrfNFManagementDataModelAllowsSafeAllowedNfDomainsPatterns verifies
 // that the ReDoS guard does not reject ordinary, safe allowedNfDomains
-// patterns: single-level quantifiers, and alternation outside any quantifier.
+// patterns: single-level quantifiers, and a single alternation group.
 func TestNnrfNFManagementDataModelAllowsSafeAllowedNfDomainsPatterns(t *testing.T) {
 	originalNrfConfig := factory.NrfConfig
 	t.Cleanup(func() { factory.NrfConfig = originalNrfConfig })

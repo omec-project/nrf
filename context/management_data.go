@@ -127,24 +127,39 @@ const maxAllowedNfDomainsPatternLength = 256
 // maxAllowedNfDomainsPatternLength would suggest.
 const maxAllowedNfDomainsRepeatCount = 1000
 
+// maxAllowedNfDomainsAlternationCount bounds how many alternation groups
+// (e.g. "(a|aa)") an allowedNfDomains pattern may contain in total, regardless
+// of nesting. This is what closes the gap hasUnsafeRepeat otherwise leaves
+// open: hasUnsafeRepeat only rejects an alternation repeated by an explicit
+// quantifier (e.g. "(a|aa)+"), but concatenating the same ambiguous
+// alternation several times by hand (e.g. "(a|aa)(a|aa)(a|aa)") gives a
+// backtracking engine exponentially many ways to partition a non-matching
+// input just as surely, without ever using a quantifier a per-quantifier
+// bound could catch. Rather than attempt to distinguish an ambiguous
+// alternation (branches sharing a prefix) from a safe one, every pattern is
+// limited to at most one alternation group in total.
+const maxAllowedNfDomainsAlternationCount = 1
+
 // rejectReDoSRiskPattern rejects allowedNfDomains patterns that are prone to
 // catastrophic (exponential-time) backtracking. RE2 (regexp.Compile) is
 // immune to this by construction, but once persisted the same pattern is also
 // evaluated by MongoDB's PCRE-based $regexMatch (see allowedNfDomainsMatchCond
 // in the producer package), which does backtrack. An NF that can register or
-// patch its own profile could otherwise plant a pattern such as "(a+)+" or
-// "(a|aa){1000}" - valid RE2, but exponential (or merely very slow) under
-// PCRE for a crafted, non-matching input - and use a discovery query to burn
-// CPU on the shared MongoDB instance. To stay on the safe side of that risk,
-// this enforces a restricted subset rather than trying to precisely detect
-// every ambiguous pattern: a quantifier that can match more than once (*, +,
-// {n,}, or {n,m}/{n} with a max greater than one) may not itself repeat a
-// subexpression that contains another such quantifier or an alternation,
-// since both are classic sources of ambiguity that backtracking engines can
-// blow up on; and no quantifier's bound may exceed
-// maxAllowedNfDomainsRepeatCount, regardless of nesting. allowedNfDomains
-// patterns should stay simple (anchors, character classes, a single level of
-// quantifiers, and alternation only outside any quantified group).
+// patch its own profile could otherwise plant a pattern such as "(a+)+",
+// "(a|aa){1000}", or "(a|aa)(a|aa)(a|aa)" - valid RE2, but exponential (or
+// merely very slow) under PCRE for a crafted, non-matching input - and use a
+// discovery query to burn CPU on the shared MongoDB instance. To stay on the
+// safe side of that risk, this enforces a restricted subset rather than
+// trying to precisely detect every ambiguous pattern: a quantifier that can
+// match more than once (*, +, {n,}, or {n,m}/{n} with a max greater than one)
+// may not itself repeat a subexpression that contains another such
+// quantifier or an alternation; no quantifier's bound may exceed
+// maxAllowedNfDomainsRepeatCount, regardless of nesting; and the pattern may
+// contain at most maxAllowedNfDomainsAlternationCount alternation groups in
+// total, so several ambiguous alternations cannot be chained by
+// concatenation instead of repetition. allowedNfDomains patterns should stay
+// simple (anchors, character classes, a single level of quantifiers, and at
+// most one alternation group).
 func rejectReDoSRiskPattern(pattern string) error {
 	if len(pattern) > maxAllowedNfDomainsPatternLength {
 		return fmt.Errorf("pattern exceeds maximum length of %d characters", maxAllowedNfDomainsPatternLength)
@@ -164,7 +179,29 @@ func rejectReDoSRiskPattern(pattern string) error {
 			"(e.g. \"(a+)+\" or \"(a|aa){1000}\"), which can cause catastrophic backtracking when evaluated " +
 			"by MongoDB's PCRE-based $regexMatch")
 	}
+	if countAlternations(parsed) > maxAllowedNfDomainsAlternationCount {
+		return fmt.Errorf("pattern has more than %d alternation group(s); chaining several ambiguous alternations "+
+			"by concatenation (e.g. \"(a|aa)(a|aa)(a|aa)\") can cause catastrophic backtracking when evaluated "+
+			"by MongoDB's PCRE-based $regexMatch, just as repeating one with a quantifier can",
+			maxAllowedNfDomainsAlternationCount)
+	}
 	return nil
+}
+
+// countAlternations reports the total number of alternation (OpAlternate)
+// nodes in re, at any depth. Used to bound the number of alternation groups
+// an allowedNfDomains pattern may contain in total (see
+// maxAllowedNfDomainsAlternationCount), since concatenating several ambiguous
+// alternations is exponential for the same reason repeating one is.
+func countAlternations(re *syntax.Regexp) int {
+	count := 0
+	if re.Op == syntax.OpAlternate {
+		count++
+	}
+	for _, sub := range re.Sub {
+		count += countAlternations(sub)
+	}
+	return count
 }
 
 // hasExcessiveRepeatCount reports whether re, or anything under it, is a
