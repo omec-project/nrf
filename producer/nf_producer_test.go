@@ -535,6 +535,44 @@ func TestHandleUpdateNFInstanceRequestRejectsInvalidPatchedAllowedNfDomainsWitho
 	}
 }
 
+// TestHandleUpdateNFInstanceRequestRejectsNfInstanceIdChangeWithoutPersisting
+// verifies that a JSON Patch changing /nfInstanceId is rejected with 400
+// before it is ever attempted to be persisted: the document is replaced
+// using the URL's original nfInstanceID as the filter, so persisting it with
+// a different nfInstanceId field value would make it unreachable by its
+// original ID and claim an identity that filter was never conditioned on.
+func TestHandleUpdateNFInstanceRequestRejectsNfInstanceIdChangeWithoutPersisting(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+
+	dbadapter.DBClient = &rejectingReplaceDBClient{t: t}
+
+	patchJSON, err := json.Marshal([]models.PatchItem{
+		{
+			Op:    models.PATCHOPERATION_REPLACE,
+			Path:  "/nfInstanceId",
+			Value: "some-other-instance-id",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal patch JSON: %v", err)
+	}
+	request := &httpwrapper.Request{
+		Params: map[string]string{testNfInstanceIDParamKey: testUpdateNfInstanceId},
+		Body:   patchJSON,
+	}
+
+	response := producer.HandleUpdateNFInstanceRequest(request)
+	if response == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if response.Status != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Status)
+	}
+}
+
 // replaceFailureDBClient simulates a database failure (e.g. a transient
 // network error) while persisting an otherwise valid patched profile.
 type replaceFailureDBClient struct {

@@ -515,6 +515,15 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 		return nil, fmt.Errorf("patch error: %v", patchErr)
 	}
 
+	// nfInstanceId is the document's identity (filter, above) and its own key
+	// in the fallback URI-list cache; a patch that changes or removes it would
+	// persist the update under the old key while the profile itself claims a
+	// different (or no) identity, making it unreachable by nfInstanceID and
+	// potentially colliding with whatever identity it was changed to.
+	if updatedProfile.GetNfInstanceId() != nfInstanceID {
+		return nil, fmt.Errorf("%w: nfInstanceId cannot be changed by a patch", errInvalidPatchedNfProfile)
+	}
+
 	if validateErr := nrfContext.ValidateAllowedNfDomains(updatedProfile); validateErr != nil {
 		logger.ManagementLog.Errorln("patched NF profile is invalid, rejecting without persisting:", validateErr)
 		return nil, fmt.Errorf("%w: %v", errInvalidPatchedNfProfile, validateErr)
