@@ -5,6 +5,7 @@ package dbadapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -56,9 +57,12 @@ const (
 type DBInterface interface {
 	RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error)
 	RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error)
-	// RestfulAPIPutOne stamps putData with a fresh fieldDocVersion (see
-	// MongoDBClient.RestfulAPIPutOne) so a full replace/upsert is itself
-	// visible to concurrent RestfulAPIReplaceIfUnchanged callers as a change.
+	// RestfulAPIPutOne, RestfulAPIPutOneNotUpdate, RestfulAPIPutMany,
+	// RestfulAPIMergePatch, RestfulAPIJSONPatch, and RestfulAPIJSONPatchExtend
+	// each stamp a fresh fieldDocVersion (see the identically named methods on
+	// MongoDBClient) so that no write through this interface can modify a
+	// document without also making that change visible to a concurrent
+	// RestfulAPIReplaceIfUnchanged caller.
 	RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
 	RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
 	RestfulAPIDeleteOne(collName string, filter bson.M) error
@@ -114,15 +118,68 @@ func stampDocVersion(doc map[string]interface{}) map[string]interface{} {
 	return stamped
 }
 
-// RestfulAPIPutOne overrides the embedded MongoClient's method so every full
-// replace/upsert also carries a fresh fieldDocVersion. Without this, a
-// document written by a plain PUT (e.g. NFRegisterProcedure re-registering an
-// NF instance) would have no version stamp, and a concurrent
-// RestfulAPIReplaceIfUnchanged compare-and-swap started before that PUT
-// would see its "no version yet" condition still satisfied afterwards,
-// silently overwriting the freshly re-registered profile.
+// appendDocVersionPatchOp returns patchJSON, an RFC 6902 JSON Patch document,
+// with an added operation stamping fieldDocVersion, so patch-based writes
+// also participate in the optimistic-concurrency check RestfulAPIReplaceIfUnchanged
+// relies on. "add" both creates the field (documents predating this
+// mechanism) and replaces it (per RFC 6902) when it already exists.
+func appendDocVersionPatchOp(patchJSON []byte) ([]byte, error) {
+	var ops []map[string]interface{}
+	if err := json.Unmarshal(patchJSON, &ops); err != nil {
+		return nil, fmt.Errorf("failed to decode JSON patch: %w", err)
+	}
+	ops = append(ops, map[string]interface{}{
+		"op":    "add",
+		"path":  "/" + fieldDocVersion,
+		"value": uuid.New().String(),
+	})
+	return json.Marshal(ops)
+}
+
+// RestfulAPIPutOne, RestfulAPIPutOneNotUpdate, RestfulAPIPutMany,
+// RestfulAPIMergePatch, RestfulAPIJSONPatch, and RestfulAPIJSONPatchExtend
+// below all override the embedded MongoClient's methods so that every write
+// that could modify a document already covered by RestfulAPIReplaceIfUnchanged
+// also carries a fresh fieldDocVersion. Without this, a document written
+// through any of these instead of RestfulAPIPutOne or RestfulAPIReplaceIfUnchanged
+// would leave fieldDocVersion unchanged (or absent), and a concurrent
+// RestfulAPIReplaceIfUnchanged compare-and-swap started before that write
+// would see its expected version (or "no version yet") condition still
+// satisfied afterwards, silently overwriting the change.
 func (db *MongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
 	return db.MongoClient.RestfulAPIPutOne(collName, filter, stampDocVersion(putData))
+}
+
+func (db *MongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
+	return db.MongoClient.RestfulAPIPutOneNotUpdate(collName, filter, stampDocVersion(putData))
+}
+
+func (db *MongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) error {
+	stamped := make([]map[string]interface{}, len(putDataArray))
+	for i, putData := range putDataArray {
+		stamped[i] = stampDocVersion(putData)
+	}
+	return db.MongoClient.RestfulAPIPutMany(collName, filterArray, stamped)
+}
+
+func (db *MongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) error {
+	return db.MongoClient.RestfulAPIMergePatch(collName, filter, stampDocVersion(patchData))
+}
+
+func (db *MongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error {
+	stamped, err := appendDocVersionPatchOp(patchJSON)
+	if err != nil {
+		return err
+	}
+	return db.MongoClient.RestfulAPIJSONPatch(collName, filter, stamped)
+}
+
+func (db *MongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error {
+	stamped, err := appendDocVersionPatchOp(patchJSON)
+	if err != nil {
+		return err
+	}
+	return db.MongoClient.RestfulAPIJSONPatchExtend(collName, filter, stamped, dataName)
 }
 
 func (db *MongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {

@@ -5,6 +5,7 @@
 package dbadapter
 
 import (
+	"encoding/json"
 	"math"
 	"reflect"
 	"testing"
@@ -264,5 +265,37 @@ func TestStampDocVersionAddsUniqueTokenWithoutMutatingInput(t *testing.T) {
 	}
 	if stamped1["nfInstanceId"] != original["nfInstanceId"] {
 		t.Errorf("expected other fields to be preserved, got %#v", stamped1)
+	}
+}
+
+// TestAppendDocVersionPatchOpAddsVersionWithoutDisturbingExistingOps verifies
+// that appendDocVersionPatchOp preserves the caller's own JSON Patch
+// operations and adds exactly one more, stamping a fresh fieldDocVersion, so
+// patch-based writes (RestfulAPIJSONPatch, RestfulAPIJSONPatchExtend) also
+// participate in the optimistic-concurrency check RestfulAPIReplaceIfUnchanged
+// relies on.
+func TestAppendDocVersionPatchOpAddsVersionWithoutDisturbingExistingOps(t *testing.T) {
+	original := []byte(`[{"op":"replace","path":"/nfStatus","value":"SUSPENDED"}]`)
+
+	stampedJSON, err := appendDocVersionPatchOp(original)
+	if err != nil {
+		t.Fatalf("appendDocVersionPatchOp() error = %v", err)
+	}
+
+	var ops []map[string]interface{}
+	if err := json.Unmarshal(stampedJSON, &ops); err != nil {
+		t.Fatalf("failed to decode stamped patch: %v", err)
+	}
+	if len(ops) != 2 {
+		t.Fatalf("expected the original op plus one stamping op, got %d: %#v", len(ops), ops)
+	}
+	if ops[0]["path"] != "/nfStatus" {
+		t.Errorf("expected the original op to be preserved first, got %#v", ops[0])
+	}
+	if ops[1]["op"] != "add" || ops[1]["path"] != "/"+fieldDocVersion {
+		t.Errorf("expected a trailing add op for %q, got %#v", fieldDocVersion, ops[1])
+	}
+	if version, ok := ops[1]["value"].(string); !ok || version == "" {
+		t.Errorf("expected a non-empty string version, got %#v", ops[1]["value"])
 	}
 }
