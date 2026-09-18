@@ -7,7 +7,10 @@
 package producer
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
@@ -27,6 +30,8 @@ const (
 	testFieldNfStatus        = "nfstatus"
 	testExampleFqdn          = "example.com"
 	testServiceInstanceId    = "svc-0"
+	testServiceNameNudmSdm   = "nudm-sdm"
+	testNfInstanceAusf1      = "ausf-1"
 )
 
 type mockDiscoveryDBClient struct {
@@ -137,7 +142,7 @@ func TestBuildFilterServiceNamesCoversNfServiceList(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeUDM)
 	query.Set("requester-nf-type", nfTypeAMF)
-	query.Set("service-names", "nudm-sdm")
+	query.Set("service-names", testServiceNameNudmSdm)
 
 	filter := buildFilter(query)
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -176,12 +181,13 @@ func TestBuildFilterServiceNamesCoversNfServiceList(t *testing.T) {
 // TestBuildFilterRequesterNfInstanceFqdnCoversNfServiceList verifies the Mongo
 // filter for the requester-nfinstance-fqdn (Query-4) discovery path matches
 // both the deprecated nfServices array and its TS 29.510 Rel-16 replacement,
-// nfServiceList.
+// nfServiceList, using $expr-based regex matching for both (allowedNfDomains
+// holds ECMA-262 patterns per TS 29.510 clause 6.1.6.2.2).
 func TestBuildFilterRequesterNfInstanceFqdnCoversNfServiceList(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeSMF)
 	query.Set("requester-nf-type", nfTypeAMF)
-	query.Set("requester-nf-instance-fqdn", testExampleFqdn)
+	query.Set(queryParamRequesterNfInstanceFqdn, testExampleFqdn)
 
 	filter := buildFilter(query)
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -191,20 +197,50 @@ func TestBuildFilterRequesterNfInstanceFqdnCoversNfServiceList(t *testing.T) {
 
 	var fqdnFilter bson.M
 	for _, f := range andFilters {
-		if orFilters, exists := f[mongoOpOr].([]bson.M); exists && len(orFilters) == 3 {
-			fqdnFilter = f
+		if orFilters, exists := f[mongoOpOr].([]bson.M); exists && len(orFilters) == 2 {
+			if _, hasExpr := orFilters[0][mongoOpExpr]; hasExpr {
+				fqdnFilter = f
+			}
 		}
 	}
 	if fqdnFilter == nil {
-		t.Fatalf("expected a 3-alternative $or fqdn filter among: %+v", andFilters)
+		t.Fatalf("expected a 2-alternative $or fqdn filter among: %+v", andFilters)
 	}
 
 	orFilters := fqdnFilter[mongoOpOr].([]bson.M)
-	if _, exists := orFilters[0][fieldNfServices]; !exists {
-		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	if _, exists := orFilters[0][mongoOpExpr]; !exists {
+		t.Fatalf("expected first alternative to be an $expr filter over legacy nfservices, got %#v", orFilters[0])
 	}
-	if _, exists := orFilters[2][mongoOpExpr]; !exists {
-		t.Fatalf("expected third alternative to be an $expr filter over nfServiceList, got %#v", orFilters[2])
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	}
+}
+
+// TestBuildFilterRequesterNfInstanceFqdnIgnoresEmptyValue verifies that
+// "?requester-nfinstance-fqdn=" (present but empty) adds no Mongo filter,
+// mirroring the non-empty guard the URI-list/in-memory fallback path
+// (matchesDiscoveryQuery) applies for the same parameter. Without this
+// guard, the Mongo path would add a filter matching only services with no
+// allowedNfDomains restriction, silently excluding restricted services that
+// the fallback path returns unfiltered for the same empty value.
+func TestBuildFilterRequesterNfInstanceFqdnIgnoresEmptyValue(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeSMF)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set(queryParamRequesterNfInstanceFqdn, "")
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	for _, f := range andFilters {
+		if orFilters, exists := f[mongoOpOr].([]bson.M); exists && len(orFilters) == 2 {
+			if _, hasExpr := orFilters[0][mongoOpExpr]; hasExpr {
+				t.Fatalf("expected no requester-nfinstance-fqdn filter for an empty value, got %#v", f)
+			}
+		}
 	}
 }
 
@@ -253,7 +289,7 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 
 	profiles := []models.NFProfileDiscovery{
 		{
-			NfInstanceId: "ausf-1",
+			NfInstanceId: testNfInstanceAusf1,
 			NfType:       models.NFTYPE_AUSF,
 			NfServices: []models.NFService{
 				{
@@ -268,8 +304,34 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 	if len(filtered) != 1 {
 		t.Fatalf("expected 1 matching profile, got %d", len(filtered))
 	}
-	if filtered[0].NfInstanceId != "ausf-1" {
+	if filtered[0].NfInstanceId != testNfInstanceAusf1 {
 		t.Fatalf("unexpected profile returned: %+v", filtered[0])
+	}
+}
+
+// TestFilterDiscoveryResultsRejectsPresentEmptyAllowedNfTypes verifies that a
+// profile with an explicitly present but empty allowedNfTypes list is
+// excluded by the requester-nf-type fallback filter, mirroring the Mongo
+// predicate (handleRequesterNfType): {"allowednftypes": nil} only matches a
+// missing/null field, not a present empty array, so treating "present but
+// empty" as unrestricted here would let the fallback return profiles the
+// primary Mongo query would have excluded.
+func TestFilterDiscoveryResultsRejectsPresentEmptyAllowedNfTypes(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeAUSF)
+	query.Set("requester-nf-type", nfTypeAMF)
+
+	profiles := []models.NFProfileDiscovery{
+		{
+			NfInstanceId:   testNfInstanceAusf1,
+			NfType:         models.NFTYPE_AUSF,
+			AllowedNfTypes: []models.NFType{},
+		},
+	}
+
+	filtered := filterDiscoveryResults(profiles, query)
+	if len(filtered) != 0 {
+		t.Fatalf("expected profile with present-but-empty allowedNfTypes to be excluded, got %+v", filtered)
 	}
 }
 
@@ -279,7 +341,7 @@ func TestFilterDiscoveryResultsAllowsUnsetAllowedNfTypes(t *testing.T) {
 func TestFilterDiscoveryResultsMatchesNfServiceList(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeUDM)
-	query.Set("service-names", "nudm-sdm")
+	query.Set("service-names", testServiceNameNudmSdm)
 
 	nfServiceList := map[string]models.NFService{
 		testServiceInstanceId: {
@@ -313,10 +375,10 @@ func TestFilterDiscoveryResultsMatchesNfServiceList(t *testing.T) {
 func TestFilterDiscoveryResultsAppliesRequesterNfInstanceFqdn(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeUDM)
-	query.Set("requester-nf-instance-fqdn", testExampleFqdn)
+	query.Set(queryParamRequesterNfInstanceFqdn, testExampleFqdn)
 
 	nfServiceList := map[string]models.NFService{
-		testServiceInstanceId: {AllowedNfDomains: []string{"other.example.com"}},
+		testServiceInstanceId: {AllowedNfDomains: []string{testOtherFqdn}},
 	}
 	profiles := []models.NFProfileDiscovery{
 		{
@@ -349,6 +411,57 @@ func TestFilterDiscoveryResultsAppliesRequesterNfInstanceFqdn(t *testing.T) {
 		if p.NfInstanceId == "udm-blocked" || p.NfInstanceId == "udm-blocked-empty-list" {
 			t.Fatalf("expected profile restricted to a different domain to be excluded, got %+v", filtered)
 		}
+	}
+}
+
+// TestMatchesAllowedNfDomainPatternRegex verifies that allowedNfDomains
+// entries are evaluated as ECMA-262 regular expressions per TS 29.510 clause
+// 6.1.6.2.2, not exact strings.
+func TestMatchesAllowedNfDomainPatternRegex(t *testing.T) {
+	if !matchesAllowedNfDomainPattern(`^.*\.example\.com$`, "amf1.example.com") {
+		t.Fatal("expected wildcard subdomain pattern to match")
+	}
+	if matchesAllowedNfDomainPattern(`^.*\.example\.com$`, "example.com") {
+		t.Fatal("expected wildcard subdomain pattern to require a subdomain")
+	}
+}
+
+// TestMatchesAllowedNfDomainPatternInvalidRegexDoesNotMatch verifies that a
+// malformed pattern is treated as non-matching instead of panicking or
+// aborting discovery.
+func TestMatchesAllowedNfDomainPatternInvalidRegexDoesNotMatch(t *testing.T) {
+	if matchesAllowedNfDomainPattern("(unclosed", testExampleFqdn) {
+		t.Fatal("expected invalid regex pattern to not match")
+	}
+}
+
+// TestCompileAllowedNfDomainPatternCacheIsBounded verifies that
+// allowedNfDomainPatternCache does not grow without bound: since
+// ValidateAllowedNfDomains only bounds a single pattern's length/complexity,
+// not how many distinct patterns are ever seen, an unbounded cache would grow
+// forever as NFs register or patch with different patterns over time.
+func TestCompileAllowedNfDomainPatternCacheIsBounded(t *testing.T) {
+	allowedNfDomainPatternCacheMu.Lock()
+	originalCache := allowedNfDomainPatternCache
+	allowedNfDomainPatternCache = make(map[string]compiledAllowedNfDomainPattern)
+	allowedNfDomainPatternCacheMu.Unlock()
+	t.Cleanup(func() {
+		allowedNfDomainPatternCacheMu.Lock()
+		allowedNfDomainPatternCache = originalCache
+		allowedNfDomainPatternCacheMu.Unlock()
+	})
+
+	for i := range maxAllowedNfDomainPatternCacheEntries + 1 {
+		if _, err := compileAllowedNfDomainPattern(fmt.Sprintf("^host%d\\.example\\.com$", i)); err != nil {
+			t.Fatalf("unexpected compile error: %v", err)
+		}
+	}
+
+	allowedNfDomainPatternCacheMu.Lock()
+	size := len(allowedNfDomainPatternCache)
+	allowedNfDomainPatternCacheMu.Unlock()
+	if size > maxAllowedNfDomainPatternCacheEntries {
+		t.Fatalf("expected cache size to stay at or below %d, got %d", maxAllowedNfDomainPatternCacheEntries, size)
 	}
 }
 
@@ -496,6 +609,85 @@ func TestNFDiscoveryProcedureHandlesBSFProfileWithoutBsfInfo(t *testing.T) {
 	}
 }
 
+// mockErroringDiscoveryDBClient simulates a MongoDB query failure on the
+// primary NfProfile filter, e.g. one raised by an invalid $regexMatch pattern
+// from a legacy or externally written profile, or an ordinary transient
+// MongoDB/network error. RestfulAPIGetOne returns nil, nil (as it would for
+// a missing document) so the URI-list fallback this error falls through to
+// finds nothing, rather than panicking on the embedded nil DBInterface.
+type mockErroringDiscoveryDBClient struct {
+	dbadapter.DBInterface
+}
+
+func (db *mockErroringDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	if collName == collNfProfile {
+		return nil, errors.New("simulated $regexMatch failure")
+	}
+	return nil, nil
+}
+
+func (db *mockErroringDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	return nil, nil
+}
+
+// TestNFDiscoveryProcedureFallsBackOnMongoQueryError verifies that a primary
+// NfProfile query error (e.g. a legacy allowedNfDomains pattern breaking
+// $regexMatch, or an ordinary transient MongoDB/network error) falls through
+// to the URI-list/cache fallback instead of failing the whole request:
+// treating every query error as a hard failure would make discovery
+// unavailable even when the fallback could still serve results. With no
+// URI-list data available either, the result is an empty but successful
+// SearchResult, not a problem details failure.
+func TestNFDiscoveryProcedureFallsBackOnMongoQueryError(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+	dbadapter.DBClient = &mockErroringDiscoveryDBClient{}
+
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("expected no problem details on a query error that falls back, got %+v", problemDetails)
+	}
+	if response == nil {
+		t.Fatal("expected a SearchResult, not nil")
+	}
+	if len(response.NfInstances) != 0 {
+		t.Fatalf("expected no NF instances, got %d", len(response.NfInstances))
+	}
+}
+
+// TestNFDiscoveryProcedureFailsClosedOnMongoQueryErrorWithUnsupportedFallbackParam
+// verifies that a primary NfProfile query error is reported as a failure,
+// rather than falling back, when the request uses a query parameter (here,
+// target-plmn-list) the URI-list fallback does not evaluate: falling back
+// regardless would silently return profiles the full MongoDB query would
+// have excluded.
+func TestNFDiscoveryProcedureFailsClosedOnMongoQueryErrorWithUnsupportedFallbackParam(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+	dbadapter.DBClient = &mockErroringDiscoveryDBClient{}
+
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("target-plmn-list", `{"mcc":"001","mnc":"01"}`)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if response != nil {
+		t.Fatalf("expected no SearchResult when failing closed, got %+v", response)
+	}
+	if problemDetails == nil {
+		t.Fatal("expected problem details when the query cannot be safely served by the fallback")
+	}
+}
+
 func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *testing.T) {
 	query := url.Values{}
 	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
@@ -579,7 +771,7 @@ func TestComplexQueryFilterSubprocessNegatesTargetNfFqdnWithNe(t *testing.T) {
 // legacy array, for both the positive and negated query semantics.
 func TestComplexQueryFilterSubprocessMatchesNfServiceList(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		queryParamServiceNames: {value: "nudm-sdm"},
+		queryParamServiceNames: {value: testServiceNameNudmSdm},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -601,7 +793,7 @@ func TestComplexQueryFilterSubprocessMatchesNfServiceList(t *testing.T) {
 
 func TestComplexQueryFilterSubprocessNegatesServiceNamesWithNin(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		queryParamServiceNames: {value: "nudm-sdm", negative: true},
+		queryParamServiceNames: {value: testServiceNameNudmSdm, negative: true},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -652,18 +844,35 @@ func TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList
 	if !ok || len(orFilters) != 2 {
 		t.Fatalf("expected 2 fqdn alternatives, got %#v", andFilters[0])
 	}
-	if _, exists := orFilters[0][fieldNfServices]; !exists {
-		t.Fatalf("expected first alternative to match legacy nfservices field, got %#v", orFilters[0])
+	if _, exists := orFilters[0][mongoOpExpr]; !exists {
+		t.Fatalf("expected first alternative to be an $expr filter over legacy nfservices, got %#v", orFilters[0])
 	}
 	if _, exists := orFilters[1][mongoOpExpr]; !exists {
 		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
 	}
 }
 
-// extractNfServiceListAnyMatchCond drills into the bson.M produced by
+// TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn verifies
+// that an atom with an empty requester-nfinstance-fqdn value adds no Mongo
+// filter, mirroring TestBuildFilterRequesterNfInstanceFqdnIgnoresEmptyValue
+// for the simple-query path. Without this guard, the empty value would still
+// reach $regexMatch as an empty regex, which matches every stored domain and
+// authorizes restricted services, unlike the simple-query and in-memory
+// fallback paths, which treat an empty parameter as absent.
+func TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: ""},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	if andFilters, ok := filter[mongoOpAnd].([]bson.M); ok && len(andFilters) != 0 {
+		t.Fatalf("expected no requester-nfinstance-fqdn filter for an empty value, got %#v", andFilters)
+	}
+}
+
+// extractAnyMatchCond drills into the bson.M produced by nfServicesAnyMatch or
 // nfServiceListAnyMatch to return the "cond" passed to $filter, so tests can
-// assert on the exact predicate used to match nfServiceList entries.
-func extractNfServiceListAnyMatchCond(t *testing.T, exprFilter bson.M) bson.M {
+// assert on the exact predicate used to match nfServices/nfServiceList entries.
+func extractAnyMatchCond(t *testing.T, exprFilter bson.M) bson.M {
 	t.Helper()
 	gt, ok := exprFilter[mongoOpExpr].(bson.M)["$gt"].([]any)
 	if !ok || len(gt) != 2 {
@@ -684,48 +893,80 @@ func extractNfServiceListAnyMatchCond(t *testing.T, exprFilter bson.M) bson.M {
 	return cond
 }
 
-// TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnExcludesContainingDomain
+// TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern
 // verifies that the positive (non-negated) requester-nfinstance-fqdn query
-// matches nfServiceList entries whose allowedNfDomains does NOT contain the
-// FQDN (including when it is omitted), consistent with the legacy nfServices
-// $ne semantics so both representations behave identically.
-func TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnExcludesContainingDomain(t *testing.T) {
+// matches nfServices/nfServiceList entries whose allowedNfDomains contains a
+// pattern matching the FQDN (an ECMA-262 regex per TS 29.510 clause
+// 6.1.6.2.2), or omits allowedNfDomains entirely (unrestricted), identically
+// for both representations.
+func TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters := filter[mongoOpAnd].([]bson.M)
 	orFilters := andFilters[0][mongoOpOr].([]bson.M)
-	cond := extractNfServiceListAnyMatchCond(t, orFilters[1])
 
-	notCond, exists := cond[mongoOpNot].([]any)
-	if !exists || len(notCond) != 1 {
-		t.Fatalf("expected non-negated fqdn cond to be wrapped in $not (matching legacy $ne), got %#v", cond)
-	}
-	if _, exists := notCond[0].(bson.M)[mongoOpIn]; !exists {
-		t.Fatalf("expected $not to wrap an $in containment check, got %#v", notCond[0])
+	for _, cond := range []bson.M{extractAnyMatchCond(t, orFilters[0]), extractAnyMatchCond(t, orFilters[1])} {
+		svcOr, exists := cond[mongoOpOr].([]bson.M)
+		if !exists || len(svcOr) != 2 {
+			t.Fatalf("expected cond to allow missing-or-matching-pattern domain, got %#v", cond)
+		}
+		if _, hasIn := svcOr[0][mongoOpIn]; !hasIn {
+			t.Fatalf("expected first alternative to check for a missing or null allowedNfDomains, got %#v", svcOr[0])
+		}
+		anyElementTrue, exists := svcOr[1]["$anyElementTrue"].(bson.A)
+		if !exists || len(anyElementTrue) != 1 {
+			t.Fatalf("expected second alternative to be $anyElementTrue over a one-element array wrapping a $map, got %#v", svcOr[1])
+		}
+		mapContainer, exists := anyElementTrue[0].(bson.M)
+		if !exists {
+			t.Fatalf("expected $anyElementTrue operand to be a document, got %#v", anyElementTrue[0])
+		}
+		mapExpr, exists := mapContainer["$map"].(bson.M)
+		if !exists {
+			t.Fatalf("expected $anyElementTrue to wrap a $map, got %#v", mapContainer)
+		}
+		inExpr, exists := mapExpr["in"].(bson.M)
+		if !exists {
+			t.Fatalf("expected $map to have an 'in' expression, got %#v", mapExpr)
+		}
+		regexMatch, exists := inExpr["$regexMatch"].(bson.M)
+		if !exists {
+			t.Fatalf("expected 'in' expression to be $regexMatch, got %#v", inExpr)
+		}
+		if got := regexMatch["input"]; !reflect.DeepEqual(got, bson.M{"$literal": testExampleFqdn}) {
+			t.Fatalf("expected $regexMatch input to be $literal-wrapped %q, got %#v", testExampleFqdn, got)
+		}
+		if got := regexMatch["regex"]; got != "$$domain" {
+			t.Fatalf("expected $regexMatch regex to reference the stored pattern, got %#v", got)
+		}
 	}
 }
 
-// TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnMatchesContainingDomain
-// verifies that the negated requester-nfinstance-fqdn query matches
-// nfServiceList entries whose allowedNfDomains contains the FQDN, consistent
-// with the legacy nfServices direct-value-match semantics so both
-// representations behave identically.
-func TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnMatchesContainingDomain(t *testing.T) {
+// TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnWithNor verifies
+// that the negated requester-nfinstance-fqdn query uses $nor (not the invalid
+// top-level $not) to match profiles where no service allows the requester
+// FQDN.
+func TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnWithNor(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn, negative: true},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters := filter[mongoOpAnd].([]bson.M)
-	orFilters := andFilters[0][mongoOpOr].([]bson.M)
-	cond := extractNfServiceListAnyMatchCond(t, orFilters[1])
-
-	if _, exists := cond[mongoOpIn]; !exists {
-		t.Fatalf("expected negated fqdn cond to match containment directly via $in, got %#v", cond)
+	norFilters, ok := andFilters[0][mongoOpNor].([]bson.M)
+	if !ok || len(norFilters) != 1 {
+		t.Fatalf("expected $nor-wrapped fqdn filter, got %#v", andFilters[0])
 	}
-	if _, exists := cond[mongoOpNot]; exists {
-		t.Fatalf("expected negated fqdn cond not to be wrapped in $not, got %#v", cond)
+	orFilters, ok := norFilters[0][mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 2 {
+		t.Fatalf("expected 2 fqdn alternatives inside $nor, got %#v", norFilters[0])
+	}
+	if _, exists := orFilters[0][mongoOpExpr]; !exists {
+		t.Fatalf("expected first alternative to be an $expr filter over legacy nfservices, got %#v", orFilters[0])
+	}
+	if _, exists := orFilters[1][mongoOpExpr]; !exists {
+		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
 	}
 }
 

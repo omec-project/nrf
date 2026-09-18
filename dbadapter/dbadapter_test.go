@@ -5,7 +5,9 @@
 package dbadapter
 
 import (
+	"encoding/json"
 	"math"
+	"reflect"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -13,6 +15,10 @@ import (
 
 // otherTimeField is a time field other than the one the NRF expires on.
 const otherTimeField = "createdAt"
+
+// testFieldNfInstanceId is a synthetic document field name used only by the
+// tests below; it is not the package's real field constant.
+const testFieldNfInstanceId = "nfInstanceId"
 
 func TestClassifyTTLIndex(t *testing.T) {
 	tests := []struct {
@@ -200,5 +206,96 @@ func TestToInt32(t *testing.T) {
 				t.Errorf("toInt32(%v) = %d, want %d", tc.value, got, tc.expected)
 			}
 		})
+	}
+}
+
+// TestUnchangedConditionComparesVersionNotWholeDocument verifies that
+// unchangedCondition compares only fieldDocVersion, not the rest of
+// expectedCurrent: comparing whole documents (or their nested arrays/objects)
+// via MongoDB's $eq is order-sensitive, but RestfulAPIGetOne decodes
+// documents into map[string]interface{}, which never preserves field order,
+// so an order-sensitive comparison would misreport an unchanged profile as
+// changed.
+func TestUnchangedConditionComparesVersionNotWholeDocument(t *testing.T) {
+	const testNfInstanceId = "nf-1"
+	filter := bson.M{testFieldNfInstanceId: testNfInstanceId}
+
+	t.Run("versioned document compares only the version", func(t *testing.T) {
+		expectedCurrent := map[string]interface{}{
+			testFieldNfInstanceId: testNfInstanceId,
+			"nfServices":          []interface{}{map[string]interface{}{"b": 2, "a": 1}},
+			fieldDocVersion:       "v1",
+		}
+		got := unchangedCondition(filter, expectedCurrent)
+		want := bson.M{testFieldNfInstanceId: testNfInstanceId, fieldDocVersion: "v1"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("unchangedCondition() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("unversioned document requires the version to still be absent", func(t *testing.T) {
+		expectedCurrent := map[string]interface{}{testFieldNfInstanceId: testNfInstanceId}
+		got := unchangedCondition(filter, expectedCurrent)
+		want := bson.M{testFieldNfInstanceId: testNfInstanceId, fieldDocVersion: bson.M{mongoOpExists: false}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("unchangedCondition() = %#v, want %#v", got, want)
+		}
+	})
+}
+
+func TestStampDocVersionAddsUniqueTokenWithoutMutatingInput(t *testing.T) {
+	original := map[string]interface{}{testFieldNfInstanceId: "nf-1"}
+
+	stamped1 := stampDocVersion(original)
+	stamped2 := stampDocVersion(original)
+
+	if _, ok := original[fieldDocVersion]; ok {
+		t.Fatalf("stampDocVersion mutated its input: %#v", original)
+	}
+	v1, ok := stamped1[fieldDocVersion].(string)
+	if !ok || v1 == "" {
+		t.Fatalf("expected a non-empty string version, got %#v", stamped1[fieldDocVersion])
+	}
+	v2, ok := stamped2[fieldDocVersion].(string)
+	if !ok || v2 == "" {
+		t.Fatalf("expected a non-empty string version, got %#v", stamped2[fieldDocVersion])
+	}
+	if v1 == v2 {
+		t.Errorf("expected successive stamps to differ, both were %q", v1)
+	}
+	if stamped1["nfInstanceId"] != original["nfInstanceId"] {
+		t.Errorf("expected other fields to be preserved, got %#v", stamped1)
+	}
+}
+
+// TestAppendDocVersionPatchOpAddsVersionWithoutDisturbingExistingOps verifies
+// that appendDocVersionPatchOp preserves the caller's own JSON Patch
+// operations and adds exactly one more, stamping a fresh fieldDocVersion, so
+// patch-based writes (RestfulAPIJSONPatch, RestfulAPIJSONPatchExtend) also
+// participate in the optimistic-concurrency check RestfulAPIReplaceIfUnchanged
+// relies on.
+func TestAppendDocVersionPatchOpAddsVersionWithoutDisturbingExistingOps(t *testing.T) {
+	original := []byte(`[{"op":"replace","path":"/nfStatus","value":"SUSPENDED"}]`)
+
+	stampedJSON, err := appendDocVersionPatchOp(original)
+	if err != nil {
+		t.Fatalf("appendDocVersionPatchOp() error = %v", err)
+	}
+
+	var ops []map[string]interface{}
+	if err := json.Unmarshal(stampedJSON, &ops); err != nil {
+		t.Fatalf("failed to decode stamped patch: %v", err)
+	}
+	if len(ops) != 2 {
+		t.Fatalf("expected the original op plus one stamping op, got %d: %#v", len(ops), ops)
+	}
+	if ops[0]["path"] != "/nfStatus" {
+		t.Errorf("expected the original op to be preserved first, got %#v", ops[0])
+	}
+	if ops[1]["op"] != "add" || ops[1]["path"] != "/"+fieldDocVersion {
+		t.Errorf("expected a trailing add op for %q, got %#v", fieldDocVersion, ops[1])
+	}
+	if version, ok := ops[1]["value"].(string); !ok || version == "" {
+		t.Errorf("expected a non-empty string version, got %#v", ops[1]["value"])
 	}
 }

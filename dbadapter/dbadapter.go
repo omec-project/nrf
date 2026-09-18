@@ -5,11 +5,13 @@ package dbadapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/util/mongoapi"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -32,11 +34,35 @@ const (
 	ttlIndexRetryTimeout = 5 * time.Minute
 	ttlIndexRetryInitial = time.Second
 	ttlIndexRetryMax     = 30 * time.Second
+
+	// mongoOpExists is used by unchangedCondition to match a document that
+	// has not yet been stamped with fieldDocVersion.
+	mongoOpExists = "$exists"
+
+	// fieldDocVersion is an opaque, NRF-internal token (not part of any
+	// 3GPP-defined NF profile schema) stamped by RestfulAPIReplaceIfUnchanged
+	// on every write it makes. Comparing
+	// this single scalar, rather than the whole document, is what makes their
+	// compare-and-swap reliable: MongoDB's equality for embedded documents is
+	// order-sensitive, but RestfulAPIGetOne decodes documents into
+	// map[string]interface{}, which never preserves field order, so comparing
+	// whole documents (or their nested arrays/objects) can report an
+	// unchanged profile as "changed". A document that predates this
+	// mechanism (no token yet) is matched by requiring the token to still be
+	// absent, which is an equally valid "nothing changed" signal, since any
+	// write through these two methods always adds one.
+	fieldDocVersion = "_docVersion"
 )
 
 type DBInterface interface {
 	RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error)
 	RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error)
+	// RestfulAPIPutOne, RestfulAPIPutOneNotUpdate, RestfulAPIPutMany,
+	// RestfulAPIMergePatch, RestfulAPIJSONPatch, and RestfulAPIJSONPatchExtend
+	// each stamp a fresh fieldDocVersion (see the identically named methods on
+	// MongoDBClient) so that no write through this interface can modify a
+	// document without also making that change visible to a concurrent
+	// RestfulAPIReplaceIfUnchanged caller.
 	RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
 	RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error)
 	RestfulAPIDeleteOne(collName string, filter bson.M) error
@@ -46,12 +72,123 @@ type DBInterface interface {
 	RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error
 	RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) (bool, error)
 	RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) error
+	// RestfulAPIReplaceIfUnchanged atomically replaces the document matching
+	// filter with putData, but only if it currently has the same fieldDocVersion
+	// as expectedCurrent (matched by MongoDB itself as part of a single,
+	// non-upserting query); the replacement is stamped with a fresh version.
+	// Unlike RestfulAPIPutOne, which always upserts, a filter that no longer
+	// matches because the document changed is a safe no-op here rather than
+	// inserting a duplicate document.
+	RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error)
 }
 
 var DBClient DBInterface = nil
 
 type MongoDBClient struct {
 	mongoapi.MongoClient
+	dbName string
+}
+
+// unchangedCondition builds a filter matching the document selected by
+// filter only if its fieldDocVersion still equals expectedCurrent's (or, if
+// expectedCurrent has none yet, only if the stored document still has none
+// either).
+func unchangedCondition(filter bson.M, expectedCurrent map[string]interface{}) bson.M {
+	condition := bson.M{}
+	for k, v := range filter {
+		condition[k] = v
+	}
+	if version, ok := expectedCurrent[fieldDocVersion]; ok {
+		condition[fieldDocVersion] = version
+	} else {
+		condition[fieldDocVersion] = bson.M{mongoOpExists: false}
+	}
+	return condition
+}
+
+// stampDocVersion returns a copy of doc with a fresh fieldDocVersion, so the
+// next compare-and-swap against this write compares a single opaque scalar
+// instead of the whole document.
+func stampDocVersion(doc map[string]interface{}) map[string]interface{} {
+	stamped := make(map[string]interface{}, len(doc)+1)
+	for k, v := range doc {
+		stamped[k] = v
+	}
+	stamped[fieldDocVersion] = uuid.New().String()
+	return stamped
+}
+
+// appendDocVersionPatchOp returns patchJSON, an RFC 6902 JSON Patch document,
+// with an added operation stamping fieldDocVersion, so patch-based writes
+// also participate in the optimistic-concurrency check RestfulAPIReplaceIfUnchanged
+// relies on. "add" both creates the field (documents predating this
+// mechanism) and replaces it (per RFC 6902) when it already exists.
+func appendDocVersionPatchOp(patchJSON []byte) ([]byte, error) {
+	var ops []map[string]interface{}
+	if err := json.Unmarshal(patchJSON, &ops); err != nil {
+		return nil, fmt.Errorf("failed to decode JSON patch: %w", err)
+	}
+	ops = append(ops, map[string]interface{}{
+		"op":    "add",
+		"path":  "/" + fieldDocVersion,
+		"value": uuid.New().String(),
+	})
+	return json.Marshal(ops)
+}
+
+// RestfulAPIPutOne, RestfulAPIPutOneNotUpdate, RestfulAPIPutMany,
+// RestfulAPIMergePatch, RestfulAPIJSONPatch, and RestfulAPIJSONPatchExtend
+// below all override the embedded MongoClient's methods so that every write
+// that could modify a document already covered by RestfulAPIReplaceIfUnchanged
+// also carries a fresh fieldDocVersion. Without this, a document written
+// through any of these instead of RestfulAPIPutOne or RestfulAPIReplaceIfUnchanged
+// would leave fieldDocVersion unchanged (or absent), and a concurrent
+// RestfulAPIReplaceIfUnchanged compare-and-swap started before that write
+// would see its expected version (or "no version yet") condition still
+// satisfied afterwards, silently overwriting the change.
+func (db *MongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
+	return db.MongoClient.RestfulAPIPutOne(collName, filter, stampDocVersion(putData))
+}
+
+func (db *MongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
+	return db.MongoClient.RestfulAPIPutOneNotUpdate(collName, filter, stampDocVersion(putData))
+}
+
+func (db *MongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) error {
+	stamped := make([]map[string]interface{}, len(putDataArray))
+	for i, putData := range putDataArray {
+		stamped[i] = stampDocVersion(putData)
+	}
+	return db.MongoClient.RestfulAPIPutMany(collName, filterArray, stamped)
+}
+
+func (db *MongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) error {
+	return db.MongoClient.RestfulAPIMergePatch(collName, filter, stampDocVersion(patchData))
+}
+
+func (db *MongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M, patchJSON []byte) error {
+	stamped, err := appendDocVersionPatchOp(patchJSON)
+	if err != nil {
+		return err
+	}
+	return db.MongoClient.RestfulAPIJSONPatch(collName, filter, stamped)
+}
+
+func (db *MongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter bson.M, patchJSON []byte, dataName string) error {
+	stamped, err := appendDocVersionPatchOp(patchJSON)
+	if err != nil {
+		return err
+	}
+	return db.MongoClient.RestfulAPIJSONPatchExtend(collName, filter, stamped, dataName)
+}
+
+func (db *MongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+	collection := db.Client.Database(db.dbName).Collection(collName)
+	result, err := collection.ReplaceOne(context.TODO(), unchangedCondition(filter, expectedCurrent), stampDocVersion(putData))
+	if err != nil {
+		return false, fmt.Errorf("RestfulAPIReplaceIfUnchanged ReplaceOne err: %w", err)
+	}
+	return result.MatchedCount > 0, nil
 }
 
 func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream) {
@@ -67,22 +204,27 @@ func iterateChangeStream(routineCtx context.Context, stream *mongo.ChangeStream)
 }
 
 func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileExpiryEnable bool) DBInterface {
+	var rawClient *mongoapi.MongoClient
 	for {
-		MongoClient, err := mongoapi.NewMongoClient(url, dbName)
-		if err != nil || MongoClient == nil {
+		client, err := mongoapi.NewMongoClient(url, dbName)
+		if err != nil || client == nil {
 			logger.AppLog.Infoln("MongoDB Connection Failed:", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
 		logger.AppLog.Infoln("MongoDB Connection Successful")
-		DBClient = MongoClient
+		rawClient = client
 		break
 	}
 
-	db := DBClient.(*mongoapi.MongoClient)
+	// Wrapped (rather than DBClient = rawClient directly) so MongoDBClient's own
+	// methods, such as RestfulAPIReplaceIfUnchanged, are available on DBClient.
+	wrapped := &MongoDBClient{MongoClient: *rawClient, dbName: dbName}
+	DBClient = wrapped
+
 	if enableStream {
 		logger.AppLog.Infoln("MongoDB Change stream Enabled")
-		database := db.Client.Database(dbName)
+		database := wrapped.Client.Database(dbName)
 		NfProfileColl := database.Collection("NfProfile")
 		// create stream to monitor actions on the collection
 		NfProfStream, err := NfProfileColl.Watch(context.TODO(), mongo.Pipeline{})
@@ -99,7 +241,7 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		logger.AppLog.Infoln("NfProfile document expiry enabled")
 		ctx, cancel := context.WithTimeout(context.Background(), ttlIndexRetryTimeout)
 		defer cancel()
-		if err := ensureTTLIndex(ctx, db, nfProfileCollection, ttlIndexField); err != nil {
+		if err := ensureTTLIndex(ctx, &wrapped.MongoClient, nfProfileCollection, ttlIndexField); err != nil {
 			// The TTL index is the only thing that removes expired NF profiles when
 			// nfProfileExpiryEnable is set. Running without it leaks dead profiles
 			// into NF discovery forever, so exit and let the deployment restart the
