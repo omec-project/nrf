@@ -774,7 +774,7 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 		}
 	}
 
-	if values := queryParameters["target-nf-instance-id"]; len(values) > 0 && values[0] != "" {
+	if values := queryParameters[queryParamTargetNfInstanceID]; len(values) > 0 && values[0] != "" {
 		if profile.GetNfInstanceId() != values[0] {
 			return false
 		}
