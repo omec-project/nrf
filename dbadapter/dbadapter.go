@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	nfProfileCollection = "NfProfile"
-	ttlIndexField       = "expireAt"
+	nfProfileCollection     = "NfProfile"
+	subscriptionsCollection = "Subscriptions"
+	ttlIndexField           = "expireAt"
 
 	// Field names of the index specifications returned by listIndexes.
 	specName               = "name"
@@ -80,6 +81,16 @@ type DBInterface interface {
 	// matches because the document changed is a safe no-op here rather than
 	// inserting a duplicate document.
 	RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error)
+}
+
+// indexEnsurer is the one capability the startup index setup needs.
+//
+// Kept separate from DBInterface on purpose: that interface is what the whole
+// application is written against and what every test double implements, and
+// widening it for something only ConnectToDBClient calls would make each of
+// them implement a method they never use.
+type indexEnsurer interface {
+	EnsureIndex(ctx context.Context, collName string, spec mongoapi.IndexSpec) error
 }
 
 var DBClient DBInterface = nil
@@ -237,6 +248,16 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		go iterateChangeStream(routineCtx, NfProfStream)
 	}
 
+	subscriptionsCtx, cancelSubscriptions := context.WithTimeout(context.Background(), ttlIndexRetryTimeout)
+	defer cancelSubscriptions()
+	if err := ensureSubscriptionsIndexes(subscriptionsCtx, wrapped); err != nil {
+		// GetNotificationUri runs up to seven filters over this collection on
+		// every NF registration, update and deregistration. Without the indexes
+		// each one scans, and nothing at runtime reports it -- the notifications
+		// still go out, just after a scan per condition.
+		logger.AppLog.Fatalf("could not ensure the Subscriptions indexes: %v", err)
+	}
+
 	if nfProfileExpiryEnable {
 		logger.AppLog.Infoln("NfProfile document expiry enabled")
 		ctx, cancel := context.WithTimeout(context.Background(), ttlIndexRetryTimeout)
@@ -272,17 +293,32 @@ const (
 // backoff until ctx expires. It reports success only after the index has been
 // observed through listIndexes, never on the strength of a create call alone.
 func ensureTTLIndex(ctx context.Context, db *mongoapi.MongoClient, collName, timeField string) error {
+	description := fmt.Sprintf("ttl index for field '%s' in collection '%s'", timeField, collName)
+	return retryEnsure(ctx, description, func() error {
+		return ensureTTLIndexOnce(ctx, db, collName, timeField)
+	})
+}
+
+// retryEnsure runs once until it succeeds or ctx expires, backing off between
+// attempts.
+//
+// Creating an index is a write, so it fails while the replica set has no
+// writable primary yet -- which is routine when the NRF and MongoDB start
+// together, and which ordinary writes succeeding later does not undo. Every
+// index the NRF ensures goes through here, so they all wait the same way and
+// report the same way.
+func retryEnsure(ctx context.Context, description string, once func() error) error {
 	backoff := ttlIndexRetryInitial
 	for attempt := 1; ; attempt++ {
-		err := ensureTTLIndexOnce(ctx, db, collName, timeField)
+		err := once()
 		if err == nil {
 			return nil
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("gave up after %d attempts: %w (last error: %v)", attempt, ctxErr, err)
 		}
-		logger.AppLog.Warnf("attempt %d to ensure ttl index for field '%s' in collection '%s' failed, retrying in %s: %v",
-			attempt, timeField, collName, backoff, err)
+		logger.AppLog.Warnf("attempt %d to ensure %s failed, retrying in %s: %v",
+			attempt, description, backoff, err)
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("gave up after %d attempts: %w (last error: %v)", attempt, ctx.Err(), err)
@@ -290,6 +326,77 @@ func ensureTTLIndex(ctx context.Context, db *mongoapi.MongoClient, collName, tim
 		}
 		backoff = min(backoff*2, ttlIndexRetryMax)
 	}
+}
+
+// subscriptionsIndexes are the indexes the Subscriptions collection needs, one
+// per filter shape GetNotificationUri and deregistration use.
+//
+// Unlike NfProfile this collection is O(NF instances) rather than
+// O(subscribers), so no single query over it is expensive. What makes it worth
+// indexing is the fan-out: GetNotificationUri runs up to seven of these filters
+// on every NF registration, update and deregistration, and each one was a full
+// scan.
+//
+// The subdivision looks redundant and is not. MongoDB serves a match against a
+// whole embedded document from an index on the parent field, and a match on a
+// dotted path from an index on that path, and neither index serves the other
+// kind -- forced onto the wrong one, both scan the collection through the index.
+// So subscrCond and subscrCond.nfInstanceId are two indexes even though one
+// field is nested inside the other.
+//
+// None is unique: a subscription condition is not an identity, and several NFs
+// can subscribe to the same one.
+func subscriptionsIndexes() []mongoapi.IndexSpec {
+	return []mongoapi.IndexSpec{
+		{
+			// Whole-subdocument matches: addNfTypeCond, addNfInstanceIDCond,
+			// addAmfCond and addNfGroupCond.
+			//
+			// Not addGuamiListCond, and not the $or half of
+			// addNetworkSliceCond: both match subscrCond with $elemMatch,
+			// which selects documents only where the field is an array.
+			// subscrCond is a oneOf embedded document and never is one, so
+			// those two conditions match nothing whatever is indexed. That is
+			// a pre-existing defect in the notification matching rather than
+			// an indexing one, and it is not fixed here.
+			Name: "subscriptionsBySubscrCond",
+			Keys: mongoapi.AscendingKeys("subscrCond"),
+		},
+		{
+			// addServiceNameCond
+			Name: "subscriptionsByServiceName",
+			Keys: mongoapi.AscendingKeys("subscrCond.serviceName"),
+		},
+		{
+			// addNetworkSliceCond
+			Name: "subscriptionsByNsiList",
+			Keys: mongoapi.AscendingKeys("subscrCond.nsiList"),
+		},
+		{
+			// The DeleteMany that removes an NF's subscriptions when it
+			// deregisters.
+			Name: "subscriptionsByNfInstanceId",
+			Keys: mongoapi.AscendingKeys("subscrCond.nfInstanceId"),
+		},
+	}
+}
+
+// ensureSubscriptionsIndexes makes the Subscriptions collection carry every
+// index in subscriptionsIndexes.
+func ensureSubscriptionsIndexes(ctx context.Context, db indexEnsurer) error {
+	for _, spec := range subscriptionsIndexes() {
+		description := fmt.Sprintf("index '%s' in collection '%s'", spec.Name, subscriptionsCollection)
+		err := retryEnsure(ctx, description, func() error {
+			opCtx, cancel := context.WithTimeout(ctx, ttlIndexOpTimeout)
+			defer cancel()
+			return db.EnsureIndex(opCtx, subscriptionsCollection, spec)
+		})
+		if err != nil {
+			return fmt.Errorf("could not ensure %s: %w", description, err)
+		}
+		logger.AppLog.Infof("%s is present", description)
+	}
+	return nil
 }
 
 // ensureTTLIndexOnce runs a single inspect/repair/create/verify cycle.
