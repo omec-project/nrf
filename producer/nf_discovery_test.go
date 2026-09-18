@@ -8,6 +8,7 @@ package producer
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"reflect"
 	"testing"
@@ -431,6 +432,36 @@ func TestMatchesAllowedNfDomainPatternRegex(t *testing.T) {
 func TestMatchesAllowedNfDomainPatternInvalidRegexDoesNotMatch(t *testing.T) {
 	if matchesAllowedNfDomainPattern("(unclosed", testExampleFqdn) {
 		t.Fatal("expected invalid regex pattern to not match")
+	}
+}
+
+// TestCompileAllowedNfDomainPatternCacheIsBounded verifies that
+// allowedNfDomainPatternCache does not grow without bound: since
+// ValidateAllowedNfDomains only bounds a single pattern's length/complexity,
+// not how many distinct patterns are ever seen, an unbounded cache would grow
+// forever as NFs register or patch with different patterns over time.
+func TestCompileAllowedNfDomainPatternCacheIsBounded(t *testing.T) {
+	allowedNfDomainPatternCacheMu.Lock()
+	originalCache := allowedNfDomainPatternCache
+	allowedNfDomainPatternCache = make(map[string]compiledAllowedNfDomainPattern)
+	allowedNfDomainPatternCacheMu.Unlock()
+	t.Cleanup(func() {
+		allowedNfDomainPatternCacheMu.Lock()
+		allowedNfDomainPatternCache = originalCache
+		allowedNfDomainPatternCacheMu.Unlock()
+	})
+
+	for i := range maxAllowedNfDomainPatternCacheEntries + 1 {
+		if _, err := compileAllowedNfDomainPattern(fmt.Sprintf("^host%d\\.example\\.com$", i)); err != nil {
+			t.Fatalf("unexpected compile error: %v", err)
+		}
+	}
+
+	allowedNfDomainPatternCacheMu.Lock()
+	size := len(allowedNfDomainPatternCache)
+	allowedNfDomainPatternCacheMu.Unlock()
+	if size > maxAllowedNfDomainPatternCacheEntries {
+		t.Fatalf("expected cache size to stay at or below %d, got %d", maxAllowedNfDomainPatternCacheEntries, size)
 	}
 }
 

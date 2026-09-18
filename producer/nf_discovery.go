@@ -884,21 +884,39 @@ type compiledAllowedNfDomainPattern struct {
 	err error
 }
 
+// maxAllowedNfDomainPatternCacheEntries bounds allowedNfDomainPatternCache's
+// size. ValidateAllowedNfDomains bounds any single pattern's length and
+// complexity, but not how many distinct patterns are ever seen over the
+// process lifetime (NFs can register or patch with a different pattern each
+// time), so without a bound the cache would grow forever.
+const maxAllowedNfDomainPatternCacheEntries = 4096
+
 // allowedNfDomainPatternCache caches compiled allowedNfDomains patterns
 // (keyed by the pattern string) so that matching the same pattern against
 // many requesterFqdn values, or across many services/profiles, does not
-// recompile it every time. ValidateAllowedNfDomains bounds stored patterns to
-// a small length and rejects ones prone to expensive evaluation, so the set
-// of distinct patterns actually seen here stays small.
-var allowedNfDomainPatternCache sync.Map // pattern string -> compiledAllowedNfDomainPattern
+// recompile it every time. Guarded by a plain mutex rather than sync.Map so
+// the size can be checked and, once over maxAllowedNfDomainPatternCacheEntries,
+// reset atomically with the insert.
+var (
+	allowedNfDomainPatternCacheMu sync.Mutex
+	allowedNfDomainPatternCache   = make(map[string]compiledAllowedNfDomainPattern)
+)
 
 func compileAllowedNfDomainPattern(pattern string) (*regexp.Regexp, error) {
-	if cached, ok := allowedNfDomainPatternCache.Load(pattern); ok {
-		compiled := cached.(compiledAllowedNfDomainPattern)
-		return compiled.re, compiled.err
+	allowedNfDomainPatternCacheMu.Lock()
+	defer allowedNfDomainPatternCacheMu.Unlock()
+
+	if cached, ok := allowedNfDomainPatternCache[pattern]; ok {
+		return cached.re, cached.err
 	}
 	re, err := regexp.Compile(pattern)
-	allowedNfDomainPatternCache.Store(pattern, compiledAllowedNfDomainPattern{re: re, err: err})
+	// Evicting everything, rather than tracking per-entry recency, is fine here:
+	// this cache exists only to avoid redundant recompilation of frequently
+	// reused patterns, not for correctness, and recompiling is cheap.
+	if len(allowedNfDomainPatternCache) >= maxAllowedNfDomainPatternCacheEntries {
+		allowedNfDomainPatternCache = make(map[string]compiledAllowedNfDomainPattern)
+	}
+	allowedNfDomainPatternCache[pattern] = compiledAllowedNfDomainPattern{re: re, err: err}
 	return re, err
 }
 
