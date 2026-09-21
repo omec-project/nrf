@@ -609,13 +609,21 @@ func matchesComplexQueryAtom(profile models.NFProfileDiscovery, attr, value stri
 // value could not be matched (e.g. from an unsupported attr, which
 // validateComplexQuery/complexQueryUsesOnlySupportedAttrs should already have
 // excluded by the time this is reached), are treated as not matching.
+// service-names is special-cased when negated: addServiceNamesFilter negates
+// it in Mongo with $nin (matchesServiceNamesNegated), not the boolean
+// complement of the positive predicate, so this must match that instead of
+// negating generically.
 func matchesComplexQueryAtomWithNegation(profile models.NFProfileDiscovery, atom models.Atom) bool {
 	value, ok := atom.Value.(string)
 	if !ok {
 		return false
 	}
+	negative := atom.GetNegative()
+	if negative && atom.Attr == queryParamServiceNames {
+		return matchesServiceNamesNegated(profile, value)
+	}
 	matched, _ := matchesComplexQueryAtom(profile, atom.Attr, value)
-	if atom.GetNegative() {
+	if negative {
 		return !matched
 	}
 	return matched
@@ -1053,6 +1061,29 @@ func matchesServiceNames(profile models.NFProfileDiscovery, value string) bool {
 			if string(service.ServiceName) == requestedService {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// matchesServiceNamesNegated mirrors addServiceNamesFilter's negated ($nin)
+// semantics: true when profile has at least one registered service whose
+// name is NOT one of requestedServices. This is not the boolean complement of
+// matchesServiceNames - a profile with both a requested-name service and a
+// different registered service matches both the positive and the negated
+// form in Mongo, and must do so here too.
+func matchesServiceNamesNegated(profile models.NFProfileDiscovery, value string) bool {
+	requestedServices := strings.Split(value, ",")
+	for _, service := range registeredNFServices(profile) {
+		excluded := true
+		for _, requestedService := range requestedServices {
+			if string(service.ServiceName) == requestedService {
+				excluded = false
+				break
+			}
+		}
+		if excluded {
+			return true
 		}
 	}
 	return false

@@ -1278,6 +1278,35 @@ func TestMatchesComplexQueryDnfCombinesFqdnWithOtherAttr(t *testing.T) {
 	}
 }
 
+// TestMatchesComplexQueryNegatedServiceNamesMatchesMongoNinSemantics verifies
+// that a negated service-names atom mirrors addServiceNamesFilter's $nin
+// semantics (matchesServiceNamesNegated) rather than the boolean complement
+// of matchesServiceNames: a profile with both a requested-name service and a
+// different registered service matches the negated form too, since Mongo's
+// $nin only requires some registered service to have a different name.
+func TestMatchesComplexQueryNegatedServiceNamesMatchesMongoNinSemantics(t *testing.T) {
+	complexQueryStruct := &models.ComplexQuery{}
+	query := `{"cnfUnits":[{"cnfUnit":[{"attr":"service-names","value":"` + testServiceNameNudmSdm + `","negative":true},{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`
+	if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	both := models.NFProfileDiscovery{NfServices: []models.NFService{
+		{ServiceName: testServiceNameNudmSdm, NfServiceStatus: models.NFSERVICESTATUS_REGISTERED, AllowedNfDomains: []string{testOtherFqdn}},
+		{ServiceName: "nudm-uecm", NfServiceStatus: models.NFSERVICESTATUS_REGISTERED, AllowedNfDomains: []string{testOtherFqdn}},
+	}}
+	if !matchesComplexQuery(both, complexQueryStruct) {
+		t.Fatalf("expected a profile with both a requested-name and a different registered service to match the negated atom")
+	}
+
+	onlyRequested := models.NFProfileDiscovery{NfServices: []models.NFService{
+		{ServiceName: testServiceNameNudmSdm, NfServiceStatus: models.NFSERVICESTATUS_REGISTERED, AllowedNfDomains: []string{testOtherFqdn}},
+	}}
+	if matchesComplexQuery(onlyRequested, complexQueryStruct) {
+		t.Fatalf("expected a profile with only the requested-name service not to match the negated atom")
+	}
+}
+
 // TestComplexQueryUsesOnlySupportedAttrs verifies the gate
 // validateComplexQuery uses to decide whether a complexQuery containing
 // requester-nf-instance-fqdn can be safely, exactly re-evaluated in Go.
