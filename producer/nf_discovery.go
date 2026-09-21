@@ -77,6 +77,7 @@ const (
 	queryParamRequesterNfInstanceFqdn = "requester-nf-instance-fqdn"
 	queryParamTargetNfInstanceID      = "target-nf-instance-id"
 	queryParamDnn                     = "dnn"
+	queryParamComplexQuery            = "complexQuery"
 
 	mongoOpOr     = "$or"
 	mongoOpAnd    = "$and"
@@ -474,7 +475,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 }
 
 func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
-	if values := queryParameters["complexQuery"]; len(values) > 0 {
+	if values := queryParameters[queryParamComplexQuery]; len(values) > 0 {
 		// IF SUPPORT COMPLEX QUERY
 		// translate raw data to complexQuery structure
 		complexQuery := values[0]
@@ -487,7 +488,19 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
 			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "CNF and DNF are mutually exclusive", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
-				{Param: "complexQuery"},
+				{Param: queryParamComplexQuery},
+			})
+			return problemDetails
+		}
+		if complexQueryHasDuplicateAttrInUnit(complexQueryStruct) {
+			// complexQueryUnitAtoms collapses a unit's atoms into an
+			// attr-keyed map for the Mongo builder, silently keeping only the
+			// last atom for a repeated attribute (e.g. "target-nf-type=UDM OR
+			// target-nf-type=AMF" would only ever query for AMF) - reject
+			// rather than silently narrow the query.
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "a complexQuery unit cannot repeat the same attribute", utils.CauseInvalidRequest)
+			problemDetails.SetInvalidParams([]models.InvalidParam{
+				{Param: queryParamComplexQuery},
 			})
 			return problemDetails
 		}
@@ -505,7 +518,7 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 			// being silently mis-evaluated.
 			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn within complexQuery can only be combined with target-nf-type, target-nf-instance-id, requester-nf-type, service-names, or supported-features", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
-				{Param: "complexQuery"},
+				{Param: queryParamComplexQuery},
 			})
 			return problemDetails
 		}
@@ -534,6 +547,43 @@ func complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct *models.Compl
 				}
 			}
 		}
+	}
+	return false
+}
+
+// complexQueryHasDuplicateAttrInUnit reports whether any CNF/DNF unit in
+// complexQueryStruct repeats the same atom attribute more than once (see
+// complexQueryUnitHasDuplicateAttr).
+func complexQueryHasDuplicateAttrInUnit(complexQueryStruct *models.ComplexQuery) bool {
+	if cnf := complexQueryStruct.Cnf; cnf != nil {
+		for _, unit := range cnf.GetCnfUnits() {
+			if complexQueryUnitHasDuplicateAttr(unit.CnfUnit) {
+				return true
+			}
+		}
+	}
+	if dnf := complexQueryStruct.Dnf; dnf != nil {
+		for _, unit := range dnf.GetDnfUnits() {
+			if complexQueryUnitHasDuplicateAttr(unit.DnfUnit) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// complexQueryUnitHasDuplicateAttr reports whether atoms (a single CNF/DNF
+// unit) targets the same attribute more than once: complexQueryUnitAtoms
+// collapses a unit into an attr-keyed map for the Mongo builder, so a
+// repeated attribute would otherwise silently discard every occurrence but
+// the last.
+func complexQueryUnitHasDuplicateAttr(atoms []models.Atom) bool {
+	seen := make(map[string]bool, len(atoms))
+	for _, atom := range atoms {
+		if seen[atom.Attr] {
+			return true
+		}
+		seen[atom.Attr] = true
 	}
 	return false
 }
@@ -612,7 +662,9 @@ func matchesComplexQueryAtom(profile models.NFProfileDiscovery, attr, value stri
 // service-names is special-cased when negated: addServiceNamesFilter negates
 // it in Mongo with $nin (matchesServiceNamesNegated), not the boolean
 // complement of the positive predicate, so this must match that instead of
-// negating generically.
+// negating generically. Callers must not pass an empty-value
+// requester-nf-instance-fqdn atom here - see complexQueryAtomIsEmptyFqdn -
+// since this always treats value as a real predicate to evaluate.
 func matchesComplexQueryAtomWithNegation(profile models.NFProfileDiscovery, atom models.Atom) bool {
 	value, ok := atom.Value.(string)
 	if !ok {
@@ -629,6 +681,19 @@ func matchesComplexQueryAtomWithNegation(profile models.NFProfileDiscovery, atom
 	return matched
 }
 
+// complexQueryAtomIsEmptyFqdn reports whether atom is a
+// requester-nf-instance-fqdn atom with an empty value: complexQueryFilterSubprocess
+// (see fqdnAtomRequiresGoEvaluation) never adds a Mongo condition for such an
+// atom - regardless of CNF/DNF or negation - treating it as absent entirely,
+// the same way filterByRequesterNfInstanceFqdn does for the plain query
+// parameter. matchesComplexQuery must skip it identically instead of
+// evaluating it as a real (always-false, or always-true when negated)
+// predicate.
+func complexQueryAtomIsEmptyFqdn(atom models.Atom) bool {
+	value, ok := atom.Value.(string)
+	return ok && atom.Attr == queryParamRequesterNfInstanceFqdn && value == ""
+}
+
 // matchesComplexQuery exactly evaluates complexQueryStruct against profile in
 // Go, honoring CNF/DNF semantics (see the Cnf/CnfUnit/Dnf/DnfUnit model doc
 // comments) and per-atom negation. Only meaningful once
@@ -640,14 +705,7 @@ func matchesComplexQuery(profile models.NFProfileDiscovery, complexQueryStruct *
 	if cnf := complexQueryStruct.Cnf; cnf != nil {
 		// CNF: cnfUnits are AND'd; the atoms within a unit are OR'd.
 		for _, unit := range cnf.GetCnfUnits() {
-			matchedUnit := false
-			for _, atom := range unit.CnfUnit {
-				if matchesComplexQueryAtomWithNegation(profile, atom) {
-					matchedUnit = true
-					break
-				}
-			}
-			if !matchedUnit {
+			if !matchesComplexQueryCnfUnit(profile, unit.CnfUnit) {
 				return false
 			}
 		}
@@ -656,18 +714,48 @@ func matchesComplexQuery(profile models.NFProfileDiscovery, complexQueryStruct *
 	if dnf := complexQueryStruct.Dnf; dnf != nil {
 		// DNF: dnfUnits are OR'd; the atoms within a unit are AND'd.
 		for _, unit := range dnf.GetDnfUnits() {
-			matchedUnit := true
-			for _, atom := range unit.DnfUnit {
-				if !matchesComplexQueryAtomWithNegation(profile, atom) {
-					matchedUnit = false
-					break
-				}
-			}
-			if matchedUnit {
+			if matchesComplexQueryDnfUnit(profile, unit.DnfUnit) {
 				return true
 			}
 		}
 		return false
+	}
+	return true
+}
+
+// matchesComplexQueryCnfUnit evaluates a single CNF unit (its atoms OR'd),
+// skipping any empty-value requester-nf-instance-fqdn atom (see
+// complexQueryAtomIsEmptyFqdn) rather than treating it as a real predicate.
+// A unit consisting solely of such atoms matches unconditionally, mirroring
+// complexQueryFilterSubprocess's match-all fallback for a unit whose Mongo
+// filter ends up empty.
+func matchesComplexQueryCnfUnit(profile models.NFProfileDiscovery, atoms []models.Atom) bool {
+	sawRealAtom := false
+	for _, atom := range atoms {
+		if complexQueryAtomIsEmptyFqdn(atom) {
+			continue
+		}
+		sawRealAtom = true
+		if matchesComplexQueryAtomWithNegation(profile, atom) {
+			return true
+		}
+	}
+	return !sawRealAtom
+}
+
+// matchesComplexQueryDnfUnit evaluates a single DNF unit (its atoms AND'd),
+// skipping any empty-value requester-nf-instance-fqdn atom (see
+// complexQueryAtomIsEmptyFqdn) rather than treating it as a real predicate:
+// an all-skipped (or empty) unit is vacuously true, which also mirrors
+// complexQueryFilterSubprocess's match-all fallback for that case.
+func matchesComplexQueryDnfUnit(profile models.NFProfileDiscovery, atoms []models.Atom) bool {
+	for _, atom := range atoms {
+		if complexQueryAtomIsEmptyFqdn(atom) {
+			continue
+		}
+		if !matchesComplexQueryAtomWithNegation(profile, atom) {
+			return false
+		}
 	}
 	return true
 }
@@ -684,7 +772,7 @@ func matchesComplexQuery(profile models.NFProfileDiscovery, complexQueryStruct *
 // fails to parse (already logged/rejected by validateComplexQuery earlier in
 // the request).
 func filterByComplexQuery(profiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
-	values := queryParameters["complexQuery"]
+	values := queryParameters[queryParamComplexQuery]
 	if len(values) == 0 || values[0] == "" {
 		return profiles
 	}
@@ -2384,9 +2472,9 @@ func handleSupportedFeatures(queryParameters url.Values, filter bson.M) {
 
 func handleComplexQuery(queryParameters url.Values, filter bson.M) {
 	// [Query-35] complexQuery
-	if queryParameters["complexQuery"] != nil {
+	if queryParameters[queryParamComplexQuery] != nil {
 		// translate raw data to complexQuery structure
-		complexQuery := queryParameters["complexQuery"][0]
+		complexQuery := queryParameters[queryParamComplexQuery][0]
 		complexQueryStruct := &models.ComplexQuery{}
 		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
 		if err != nil {

@@ -1005,8 +1005,8 @@ func TestComplexQueryFilterSubprocessMatchesAllForFqdnOnlyUnit(t *testing.T) {
 		complexQueryType string
 		operator         string
 	}{
-		"CNF": {COMPLEX_QUERY_TYPE_CNF, mongoOpOr},
-		"DNF": {COMPLEX_QUERY_TYPE_DNF, mongoOpAnd},
+		COMPLEX_QUERY_TYPE_CNF: {COMPLEX_QUERY_TYPE_CNF, mongoOpOr},
+		COMPLEX_QUERY_TYPE_DNF: {COMPLEX_QUERY_TYPE_DNF, mongoOpAnd},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1046,8 +1046,8 @@ func TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn(t *test
 // when the only alternative was MongoDB's PCRE-based $regexMatch.
 func TestValidateComplexQueryAllowsRequesterNfInstanceFqdnAtom(t *testing.T) {
 	tests := map[string]string{
-		"CNF": `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
-		"DNF": `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
+		COMPLEX_QUERY_TYPE_CNF: `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
+		COMPLEX_QUERY_TYPE_DNF: `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
 	}
 	for name, complexQuery := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1084,6 +1084,42 @@ func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnMixedWithUnsupportedA
 func TestValidateComplexQueryAllowsOtherAtoms(t *testing.T) {
 	query := url.Values{}
 	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"target-nf-type","value":"UDM"}]}]}`)
+
+	if problemDetails := validateComplexQuery(query); problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+}
+
+// TestValidateComplexQueryRejectsDuplicateAttrInUnit verifies that a
+// complexQuery unit repeating the same attribute (e.g. "target-nf-type=UDM OR
+// target-nf-type=AMF") is rejected: complexQueryUnitAtoms collapses a unit
+// into an attr-keyed map for the Mongo builder, so a repeated attribute would
+// otherwise silently discard every occurrence but the last, narrowing the
+// query instead of failing loudly.
+func TestValidateComplexQueryRejectsDuplicateAttrInUnit(t *testing.T) {
+	tests := map[string]string{
+		COMPLEX_QUERY_TYPE_CNF: `{"cnfUnits":[{"cnfUnit":[{"attr":"target-nf-type","value":"UDM"},{"attr":"target-nf-type","value":"AMF"}]}]}`,
+		COMPLEX_QUERY_TYPE_DNF: `{"dnfUnits":[{"dnfUnit":[{"attr":"target-nf-type","value":"UDM"},{"attr":"target-nf-type","value":"AMF"}]}]}`,
+	}
+	for name, complexQuery := range tests {
+		t.Run(name, func(t *testing.T) {
+			query := url.Values{}
+			query.Set("complexQuery", complexQuery)
+
+			if problemDetails := validateComplexQuery(query); problemDetails == nil {
+				t.Fatal("expected problem details rejecting a unit with a duplicate attribute")
+			}
+		})
+	}
+}
+
+// TestValidateComplexQueryAllowsDuplicateAttrAcrossUnits verifies that
+// validateComplexQuery only rejects a repeated attribute *within* one unit,
+// not the same attribute appearing in different units (which complexQueryUnitAtoms
+// handles independently, one map per unit).
+func TestValidateComplexQueryAllowsDuplicateAttrAcrossUnits(t *testing.T) {
+	query := url.Values{}
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"target-nf-type","value":"UDM"}]},{"cnfUnit":[{"attr":"target-nf-type","value":"AMF"}]}]}`)
 
 	if problemDetails := validateComplexQuery(query); problemDetails != nil {
 		t.Fatalf("unexpected problem details: %+v", problemDetails)
@@ -1304,6 +1340,70 @@ func TestMatchesComplexQueryNegatedServiceNamesMatchesMongoNinSemantics(t *testi
 	}}
 	if matchesComplexQuery(onlyRequested, complexQueryStruct) {
 		t.Fatalf("expected a profile with only the requested-name service not to match the negated atom")
+	}
+}
+
+// TestMatchesComplexQuerySkipsEmptyFqdnAloneInUnit verifies that a unit
+// consisting solely of an empty-value requester-nf-instance-fqdn atom - in
+// either its CNF or DNF form, negated or not - matches unconditionally,
+// mirroring complexQueryFilterSubprocess's match-all fallback for a unit
+// whose Mongo filter ends up empty (fqdnAtomRequiresGoEvaluation never
+// triggers for an empty value, so that fallback is what Mongo actually does).
+func TestMatchesComplexQuerySkipsEmptyFqdnAloneInUnit(t *testing.T) {
+	tests := map[string]string{
+		COMPLEX_QUERY_TYPE_CNF:               `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":""}]}]}`,
+		COMPLEX_QUERY_TYPE_CNF + " negative": `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"","negative":true}]}]}`,
+		COMPLEX_QUERY_TYPE_DNF:               `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":""}]}]}`,
+		COMPLEX_QUERY_TYPE_DNF + " negative": `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"","negative":true}]}]}`,
+	}
+	for name, query := range tests {
+		t.Run(name, func(t *testing.T) {
+			complexQueryStruct := &models.ComplexQuery{}
+			if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+				t.Fatalf("unexpected unmarshal error: %v", err)
+			}
+
+			// A profile whose only service restricts to a different domain
+			// would fail a real (non-empty) FQDN predicate, so matching here
+			// proves the empty atom was skipped rather than evaluated.
+			restricted := models.NFProfileDiscovery{NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+			if !matchesComplexQuery(restricted, complexQueryStruct) {
+				t.Fatalf("expected a unit consisting solely of an empty FQDN atom to match unconditionally")
+			}
+		})
+	}
+}
+
+// TestMatchesComplexQuerySkipsEmptyFqdnCombinedWithOtherAttr verifies that an
+// empty-value requester-nf-instance-fqdn atom combined with another atom in
+// the same unit does not affect the result: the unit behaves exactly as if
+// only the other atom were present, in both CNF (OR) and DNF (AND) form.
+func TestMatchesComplexQuerySkipsEmptyFqdnCombinedWithOtherAttr(t *testing.T) {
+	restrictedUdm := models.NFProfileDiscovery{NfType: models.NFTYPE_UDM, NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+	restrictedAmf := models.NFProfileDiscovery{NfType: models.NFTYPE_AMF, NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+
+	cnf := &models.ComplexQuery{}
+	cnfQuery := `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":""},{"attr":"target-nf-type","value":"UDM"}]}]}`
+	if err := json.Unmarshal([]byte(cnfQuery), cnf); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	if !matchesComplexQuery(restrictedUdm, cnf) {
+		t.Fatalf("expected the CNF unit to match based solely on target-nf-type")
+	}
+	if matchesComplexQuery(restrictedAmf, cnf) {
+		t.Fatalf("expected the CNF unit not to match when target-nf-type differs and the FQDN atom is empty")
+	}
+
+	dnf := &models.ComplexQuery{}
+	dnfQuery := `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":""},{"attr":"target-nf-type","value":"UDM"}]}]}`
+	if err := json.Unmarshal([]byte(dnfQuery), dnf); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	if !matchesComplexQuery(restrictedUdm, dnf) {
+		t.Fatalf("expected the DNF unit to match based solely on target-nf-type")
+	}
+	if matchesComplexQuery(restrictedAmf, dnf) {
+		t.Fatalf("expected the DNF unit not to match when target-nf-type differs and the FQDN atom is empty")
 	}
 }
 
