@@ -21,18 +21,19 @@ import (
 )
 
 const (
-	testFieldLink            = "_link"
-	testNfInstanceAmfLater   = "amf-later"
-	testNfInstanceAmfEarlier = "amf-earlier"
-	testFieldItem            = "item"
-	testFieldHref            = "href"
-	testNfInstanceUdm1       = "udm-1"
-	testNfInstanceUdmBlocked = "udm-blocked"
-	testFieldNfStatus        = "nfstatus"
-	testExampleFqdn          = "example.com"
-	testServiceInstanceId    = "svc-0"
-	testServiceNameNudmSdm   = "nudm-sdm"
-	testNfInstanceAusf1      = "ausf-1"
+	testFieldLink                    = "_link"
+	testNfInstanceAmfLater           = "amf-later"
+	testNfInstanceAmfEarlier         = "amf-earlier"
+	testFieldItem                    = "item"
+	testFieldHref                    = "href"
+	testNfInstanceUdm1               = "udm-1"
+	testNfInstanceUdmBlocked         = "udm-blocked"
+	testNfInstanceUdmFallbackAllowed = "udm-fallback-allowed"
+	testFieldNfStatus                = "nfstatus"
+	testExampleFqdn                  = "example.com"
+	testServiceInstanceId            = "svc-0"
+	testServiceNameNudmSdm           = "nudm-sdm"
+	testNfInstanceAusf1              = "ausf-1"
 )
 
 type mockDiscoveryDBClient struct {
@@ -655,6 +656,86 @@ func TestNFDiscoveryProcedureAppliesRequesterNfInstanceFqdnToPrimaryQueryResults
 	}
 }
 
+// mockFqdnFallbackDiscoveryDBClient returns, from the primary MongoDB query,
+// a single profile that requester-nf-instance-fqdn filtering rejects, and a
+// URI-list pointing at a separate, unrestricted profile served from the
+// profile cache.
+type mockFqdnFallbackDiscoveryDBClient struct {
+	dbadapter.DBInterface
+}
+
+func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+	if collName == collUriList {
+		return map[string]interface{}{
+			fieldNfType: nfTypeUDM,
+			testFieldLink: map[string]interface{}{
+				testFieldItem: []map[string]interface{}{{
+					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/" + testNfInstanceUdmFallbackAllowed,
+				}},
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	if collName != collNfProfile {
+		return nil, nil
+	}
+	return []map[string]interface{}{
+		{
+			fieldNfInstanceId: testNfInstanceUdmBlocked,
+			fieldNfTypeLower:  nfTypeUDM,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldNfServices: []map[string]interface{}{{
+				fieldServiceName:      testServiceNameNudmSdm,
+				fieldNfServiceStatus:  nfServiceStatusRegistered,
+				fieldAllowedNfDomains: []string{testOtherFqdn},
+			}},
+		},
+	}, nil
+}
+
+// TestNFDiscoveryProcedureFallsBackWhenRequesterNfInstanceFqdnRejectsAllPrimaryResults
+// verifies that a non-empty primary MongoDB result whose only profile is
+// rejected by requester-nf-instance-fqdn filtering still triggers the
+// URI-list fallback, instead of returning an empty response: the fallback
+// decision inside sortNFProfiles must be made after applying that predicate,
+// not before.
+func TestNFDiscoveryProcedureFallsBackWhenRequesterNfInstanceFqdnRejectsAllPrimaryResults(t *testing.T) {
+	profileCache.evict(testNfInstanceUdmFallbackAllowed)
+	defer profileCache.evict(testNfInstanceUdmFallbackAllowed)
+	profileCache.set(models.NFProfileDiscovery{
+		NfInstanceId: testNfInstanceUdmFallbackAllowed,
+		NfType:       models.NFTYPE_UDM,
+		NfStatus:     models.NFSTATUS_REGISTERED,
+		NfServices:   []models.NFService{{}},
+	}, time.Now().Add(60*time.Second))
+
+	originalDBClient := dbadapter.DBClient
+	defer func() { dbadapter.DBClient = originalDBClient }()
+	dbadapter.DBClient = &mockFqdnFallbackDiscoveryDBClient{}
+
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set(queryParamRequesterNfInstanceFqdn, testExampleFqdn)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+	if response == nil {
+		t.Fatal("expected discovery response")
+	}
+	if len(response.NfInstances) != 1 {
+		t.Fatalf("expected the URI-list fallback to run and return 1 NF instance, got %d: %+v", len(response.NfInstances), response.NfInstances)
+	}
+	if response.NfInstances[0].NfInstanceId != testNfInstanceUdmFallbackAllowed {
+		t.Fatalf("expected the fallback profile %q, got %+v", testNfInstanceUdmFallbackAllowed, response.NfInstances[0])
+	}
+}
+
 // mockErroringDiscoveryDBClient simulates a MongoDB query failure on the
 // primary NfProfile filter, e.g. one raised by an invalid $regexMatch pattern
 // from a legacy or externally written profile, or an ordinary transient
@@ -912,6 +993,62 @@ func TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn(t *test
 
 	if andFilters, ok := filter[mongoOpAnd].([]bson.M); ok && len(andFilters) != 0 {
 		t.Fatalf("expected no requester-nf-instance-fqdn filter for an empty value, got %#v", andFilters)
+	}
+}
+
+// TestValidateComplexQueryRejectsRequesterNfInstanceFqdnAtom verifies that a
+// complexQuery request is rejected, in both its CNF and DNF forms, when it
+// contains a requester-nf-instance-fqdn atom: unlike the plain query
+// parameter (filterByRequesterNfInstanceFqdn, evaluated in Go with RE2), that
+// atom is only ever evaluated via addRequesterNfInstanceFqdnFilter's MongoDB
+// $regexMatch, which (unlike RE2) is not immune to catastrophic backtracking
+// on a crafted allowedNfDomains pattern; rejecting the request keeps that
+// pattern from ever reaching MongoDB.
+func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnAtom(t *testing.T) {
+	tests := map[string]string{
+		"CNF": `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
+		"DNF": `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
+	}
+	for name, complexQuery := range tests {
+		t.Run(name, func(t *testing.T) {
+			query := url.Values{}
+			query.Set("complexQuery", complexQuery)
+
+			problemDetails := validateComplexQuery(query)
+			if problemDetails == nil {
+				t.Fatal("expected problem details rejecting requester-nf-instance-fqdn within complexQuery")
+			}
+		})
+	}
+}
+
+// TestValidateComplexQueryAllowsOtherAtoms verifies that validateComplexQuery
+// does not reject complexQuery atoms unrelated to requester-nf-instance-fqdn.
+func TestValidateComplexQueryAllowsOtherAtoms(t *testing.T) {
+	query := url.Values{}
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"target-nf-type","value":"UDM"}]}]}`)
+
+	if problemDetails := validateComplexQuery(query); problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+}
+
+// TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnInComplexQuery verifies
+// end to end that NFDiscoveryProcedure rejects a complexQuery request
+// containing a requester-nf-instance-fqdn atom, rather than letting it reach
+// MongoDB's $regexMatch (see addRequesterNfInstanceFqdnFilter).
+func TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnInComplexQuery(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if response != nil {
+		t.Fatalf("expected no SearchResult when rejecting complexQuery requester-nf-instance-fqdn, got %+v", response)
+	}
+	if problemDetails == nil {
+		t.Fatal("expected problem details rejecting requester-nf-instance-fqdn within complexQuery")
 	}
 }
 

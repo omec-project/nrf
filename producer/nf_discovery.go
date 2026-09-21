@@ -438,19 +438,12 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	// Use the filter to find documents
 	nfProfilesRaw, err := dbadapter.DBClient.RestfulAPIGetMany(collNfProfile, filter)
 	if err != nil {
-		// A malformed allowedNfDomains pattern from a legacy or externally
-		// written profile (predating ValidateAllowedNfDomains) can make
-		// MongoDB reject the whole $regexMatch-based requester-nf-instance-fqdn
-		// predicate a complexQuery request builds (see
-		// addRequesterNfInstanceFqdnFilter; the plain query parameter no longer
-		// reaches MongoDB this way, see filterByRequesterNfInstanceFqdn), but an
-		// ordinary transient MongoDB/network error is far
-		// more common and must not make discovery unavailable when the
-		// URI-list/cache fallback below could still serve results. That
-		// fallback (filterDiscoveryResults/matchesDiscoveryQuery) only
-		// evaluates a small subset of discovery query parameters, though, so
-		// falling back for a query using any other parameter (complexQuery in
-		// particular) would silently return profiles the full MongoDB query
+		// An ordinary transient MongoDB/network error must not make discovery
+		// unavailable when the URI-list/cache fallback below could still serve
+		// results. That fallback (filterDiscoveryResults/matchesDiscoveryQuery)
+		// only evaluates a small subset of discovery query parameters, though,
+		// so falling back for a query using any other parameter (complexQuery
+		// in particular) would silently return profiles the full MongoDB query
 		// would have excluded; fail closed instead of degrading in that case.
 		if !queryUsesOnlyFallbackSupportedParameters(queryParameters) {
 			logger.DiscoveryLog.Errorln("NF profile query error, and query uses parameters the URI-list fallback cannot fully evaluate:", err)
@@ -462,14 +455,13 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 	logger.DiscoveryLog.Debugf("primary discovery raw count: %d", len(nfProfilesRaw))
 
 	// sort nfprofiles based on expiry timestamp before decoding so that the
-	// ordering is reflected in the returned SearchResult.
+	// ordering is reflected in the returned SearchResult. requester-nf-instance-fqdn
+	// is applied inside sortNFProfiles, before it decides whether the
+	// URI-list fallback is needed, so that a primary result whose profiles
+	// are all rejected by that predicate still triggers the fallback instead
+	// of silently returning an empty response.
 	// Sort profiles
 	nfProfilesStruct := sortNFProfiles(nfProfilesRaw, queryParameters)
-
-	// requester-nf-instance-fqdn is deliberately not part of the MongoDB filter
-	// above (see filterByRequesterNfInstanceFqdn) and so must be applied here,
-	// after the primary query and any URI-list fallback have both run.
-	nfProfilesStruct = filterByRequesterNfInstanceFqdn(nfProfilesStruct, queryParameters)
 
 	// Handle IPv4 & IPv6 conversion for BSF profiles
 	handleBSFIpConversion(queryParameters, nfProfilesStruct)
@@ -498,8 +490,50 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 			})
 			return problemDetails
 		}
+		if complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct) {
+			// A complexQuery atom for requester-nf-instance-fqdn is only ever
+			// evaluated via addRequesterNfInstanceFqdnFilter, whose MongoDB
+			// $regexMatch (PCRE-based, unlike the RE2 engine
+			// filterByRequesterNfInstanceFqdn uses for the plain query
+			// parameter) is not immune to catastrophic backtracking on a
+			// crafted allowedNfDomains pattern (e.g. from a legacy or
+			// externally written NF profile predating ValidateAllowedNfDomains).
+			// Rejecting the request here, before that atom ever reaches
+			// MongoDB, closes that risk rather than accepting it for
+			// complexQuery requests.
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn is not supported within complexQuery", utils.CauseInvalidRequest)
+			problemDetails.SetInvalidParams([]models.InvalidParam{
+				{Param: "complexQuery"},
+			})
+			return problemDetails
+		}
 	}
 	return nil
+}
+
+// complexQueryHasRequesterNfInstanceFqdnAtom reports whether any atom, in
+// either the CNF or DNF form of complexQueryStruct, targets the [Query-4]
+// requester-nf-instance-fqdn attribute.
+func complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct *models.ComplexQuery) bool {
+	if cnf := complexQueryStruct.Cnf; cnf != nil {
+		for _, unit := range cnf.GetCnfUnits() {
+			for _, atom := range unit.CnfUnit {
+				if atom.Attr == queryParamRequesterNfInstanceFqdn {
+					return true
+				}
+			}
+		}
+	}
+	if dnf := complexQueryStruct.Dnf; dnf != nil {
+		for _, unit := range dnf.GetDnfUnits() {
+			for _, atom := range unit.DnfUnit {
+				if atom.Attr == queryParamRequesterNfInstanceFqdn {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func sortNFProfiles(
@@ -536,6 +570,13 @@ func sortNFProfiles(
 		cacheProfileWithExpiry(p, rawDoc)
 	}
 
+	// requester-nf-instance-fqdn is deliberately not part of the MongoDB filter
+	// (see filterByRequesterNfInstanceFqdn) and so must be applied here, before
+	// the empty-result check below: otherwise a non-empty primary result whose
+	// profiles are all rejected by this predicate would suppress the URI-list
+	// fallback and return an empty response instead of falling back to it.
+	nfProfilesStruct = filterByRequesterNfInstanceFqdn(nfProfilesStruct, queryParameters)
+
 	if len(nfProfilesStruct) == 0 {
 		allProfiles, fallbackErr := loadDiscoveryProfilesFromURIList(queryParameters)
 		if fallbackErr != nil {
@@ -543,6 +584,7 @@ func sortNFProfiles(
 		} else {
 			logger.DiscoveryLog.Debugf("fallback discovery decoded count: %d", len(allProfiles))
 			nfProfilesStruct = filterDiscoveryResults(allProfiles, queryParameters)
+			nfProfilesStruct = filterByRequesterNfInstanceFqdn(nfProfilesStruct, queryParameters)
 			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
 		}
 	}
@@ -841,19 +883,20 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 }
 
 // filterByRequesterNfInstanceFqdn applies the [Query-4] requester-nf-instance-fqdn
-// discovery predicate in Go (RE2), the single place that does so for both the
-// primary MongoDB-backed query and the URI-list/cache fallback: MongoDB's
-// PCRE-based $regexMatch backtracks and so is not immune to a catastrophic
-// (exponential-time) allowedNfDomains pattern the way RE2 is; evaluating the
-// predicate here instead of via a $regexMatch pipeline (see
-// allowedNfDomainsMatchCond, still used by the separate complexQuery path)
-// means a stored pattern - however it got there, including a legacy or
-// externally written profile ValidateAllowedNfDomains never saw - can no
-// longer make MongoDB itself burn CPU evaluating it against a crafted,
-// non-matching requester FQDN. profiles is expected to already have every
-// other discovery filter applied (by the primary query or
-// filterDiscoveryResults), since this only narrows further; profiles is
-// returned unchanged when the parameter is absent or empty.
+// discovery predicate in Go (RE2) for both the primary MongoDB-backed query
+// and the URI-list/cache fallback: MongoDB's PCRE-based $regexMatch
+// backtracks and so is not immune to a catastrophic (exponential-time)
+// allowedNfDomains pattern the way RE2 is; evaluating the predicate here
+// instead of via a $regexMatch pipeline (see allowedNfDomainsMatchCond;
+// complexQuery requests using this attribute are rejected by
+// validateComplexQuery instead of reaching that pipeline) means a stored
+// pattern - however it got there, including a legacy or externally written
+// profile ValidateAllowedNfDomains never saw - can no longer make MongoDB
+// itself burn CPU evaluating it against a crafted, non-matching requester
+// FQDN. profiles is expected to already have every other discovery filter
+// applied (by the primary query or filterDiscoveryResults), since this only
+// narrows further; profiles is returned unchanged when the parameter is
+// absent or empty.
 func filterByRequesterNfInstanceFqdn(profiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
 	values := queryParameters[queryParamRequesterNfInstanceFqdn]
 	if len(values) == 0 || values[0] == "" {
@@ -2394,23 +2437,28 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 
 func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) {
 	// [Query-4] requester-nf-instance-fqdn
+	//
+	// validateComplexQuery rejects any complexQuery request containing a
+	// requester-nf-instance-fqdn atom before NFDiscoveryProcedure ever calls
+	// buildFilter, so this branch is unreachable in normal request handling;
+	// it is kept (and still exercised directly by unit tests) only as a
+	// documented, defense-in-depth fallback. It is guarded, rather than
+	// evaluated via MongoDB, because unlike the simple-query path
+	// (filterByRequesterNfInstanceFqdn, which evaluates the predicate in Go
+	// with RE2), decomposing an arbitrary CNF/DNF complexQuery expression
+	// into a hybrid MongoDB/in-memory evaluation - so that one atom among
+	// many combined with AND/OR/NOT could be evaluated separately - is a much
+	// larger change than the simple-query path allows for, and this MongoDB
+	// $regexMatch-based evaluation is not immune to catastrophic backtracking
+	// on a crafted allowedNfDomains pattern (e.g. from a legacy or externally
+	// written NF profile predating ValidateAllowedNfDomains).
+	//
 	// An empty value is ignored, mirroring the guard the simple-query and
 	// in-memory paths apply for the same parameter (see
 	// filterByRequesterNfInstanceFqdn): without it, an atom with
 	// requester-nf-instance-fqdn: "" would reach $regexMatch with an empty
 	// regex, which matches every stored domain and authorizes restricted
 	// services, while those other paths treat an empty parameter as absent.
-	//
-	// Unlike the simple-query path, this still evaluates the predicate via
-	// MongoDB's PCRE-based $regexMatch (allowedNfDomainsMatchCond) rather
-	// than in Go with RE2: decomposing an arbitrary CNF/DNF complexQuery
-	// expression into a hybrid MongoDB/in-memory evaluation, so that one
-	// atom among many combined with AND/OR/NOT could be evaluated
-	// separately, is a much larger change than the simple-query path allows
-	// for. complexQuery is opt-in and far less commonly used than the plain
-	// query parameter, so this path is unlikely to be the primary target for
-	// a crafted allowedNfDomains pattern, but it remains exposed to the
-	// MongoDB ReDoS risk allowedNfDomainsMatchCond's doc comment describes.
 	if atom := queryParameters[queryParamRequesterNfInstanceFqdn]; atom != nil && atom.value != "" {
 		requesterNfinstanceFqdn := atom.value
 
