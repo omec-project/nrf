@@ -456,6 +456,7 @@ func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchRe
 
 	// sort nfprofiles based on expiry timestamp before decoding so that the
 	// ordering is reflected in the returned SearchResult. requester-nf-instance-fqdn
+	// (and, when it appears in complexQuery, the full complexQuery predicate)
 	// is applied inside sortNFProfiles, before it decides whether the
 	// URI-list fallback is needed, so that a primary result whose profiles
 	// are all rejected by that predicate still triggers the fallback instead
@@ -490,18 +491,19 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 			})
 			return problemDetails
 		}
-		if complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct) {
-			// A complexQuery atom for requester-nf-instance-fqdn is only ever
-			// evaluated via addRequesterNfInstanceFqdnFilter, whose MongoDB
-			// $regexMatch (PCRE-based, unlike the RE2 engine
-			// filterByRequesterNfInstanceFqdn uses for the plain query
-			// parameter) is not immune to catastrophic backtracking on a
-			// crafted allowedNfDomains pattern (e.g. from a legacy or
-			// externally written NF profile predating ValidateAllowedNfDomains).
-			// Rejecting the request here, before that atom ever reaches
-			// MongoDB, closes that risk rather than accepting it for
-			// complexQuery requests.
-			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn is not supported within complexQuery", utils.CauseInvalidRequest)
+		if complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct) && !complexQueryUsesOnlySupportedAttrs(complexQueryStruct) {
+			// A requester-nf-instance-fqdn atom's allowedNfDomains pattern is
+			// only ever evaluated in Go with RE2 (see filterByComplexQuery
+			// and matchesComplexQuery), never via MongoDB's PCRE-based
+			// $regexMatch, which (unlike RE2) is not immune to catastrophic
+			// backtracking on a crafted pattern (e.g. from a legacy or
+			// externally written NF profile predating
+			// ValidateAllowedNfDomains). That in-memory re-evaluation only
+			// covers complexQueryPostFilterSupportedAttrs, so a request
+			// combining requester-nf-instance-fqdn with any other attribute
+			// is rejected here instead of either reaching MongoDB unsafely or
+			// being silently mis-evaluated.
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn within complexQuery can only be combined with target-nf-type, target-nf-instance-id, requester-nf-type, service-names, or supported-features", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
 				{Param: "complexQuery"},
 			})
@@ -534,6 +536,165 @@ func complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct *models.Compl
 		}
 	}
 	return false
+}
+
+// complexQueryPostFilterSupportedAttrs identifies the [Query-N] attributes for
+// which a Go-native (RE2, no MongoDB) evaluator exists - matchesComplexQueryAtom -
+// mirroring matchesDiscoveryQuery/filterByRequesterNfInstanceFqdn. A
+// complexQuery request containing a requester-nf-instance-fqdn atom is only
+// allowed (see validateComplexQuery) when every atom in it targets one of
+// these attributes, so that matchesComplexQuery can fully and exactly
+// re-evaluate the request in Go - see filterByComplexQuery - instead of
+// sending the FQDN atom's allowedNfDomains pattern to MongoDB's PCRE-based
+// $regexMatch.
+var complexQueryPostFilterSupportedAttrs = map[string]bool{
+	queryParamTargetNFType:            true,
+	queryParamTargetNfInstanceID:      true,
+	queryParamRequesterNFType:         true,
+	queryParamServiceNames:            true,
+	queryParamSupportedFeatures:       true,
+	queryParamRequesterNfInstanceFqdn: true,
+}
+
+// complexQueryUsesOnlySupportedAttrs reports whether every atom in
+// complexQueryStruct, across all CNF/DNF units, targets an attribute in
+// complexQueryPostFilterSupportedAttrs.
+func complexQueryUsesOnlySupportedAttrs(complexQueryStruct *models.ComplexQuery) bool {
+	if cnf := complexQueryStruct.Cnf; cnf != nil {
+		for _, unit := range cnf.GetCnfUnits() {
+			for _, atom := range unit.CnfUnit {
+				if !complexQueryPostFilterSupportedAttrs[atom.Attr] {
+					return false
+				}
+			}
+		}
+	}
+	if dnf := complexQueryStruct.Dnf; dnf != nil {
+		for _, unit := range dnf.GetDnfUnits() {
+			for _, atom := range unit.DnfUnit {
+				if !complexQueryPostFilterSupportedAttrs[atom.Attr] {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// matchesComplexQueryAtom reports whether profile matches a single
+// complexQuery atom's attr/value (before applying the atom's negative flag),
+// and whether attr is one this Go-native evaluator supports at all; callers
+// must not trust matched when supported is false.
+func matchesComplexQueryAtom(profile models.NFProfileDiscovery, attr, value string) (matched, supported bool) {
+	switch attr {
+	case queryParamTargetNFType:
+		return matchesTargetNfType(profile, value), true
+	case queryParamTargetNfInstanceID:
+		return matchesTargetNfInstanceID(profile, value), true
+	case queryParamRequesterNFType:
+		return matchesRequesterNfType(profile, value), true
+	case queryParamServiceNames:
+		return matchesServiceNames(profile, value), true
+	case queryParamSupportedFeatures:
+		return matchesSupportedFeatures(profile, value), true
+	case queryParamRequesterNfInstanceFqdn:
+		return anyNFServiceAllowsFqdn(profile, value), true
+	default:
+		return false, false
+	}
+}
+
+// matchesComplexQueryAtomWithNegation applies atom's negative flag to
+// matchesComplexQueryAtom's result. Atoms with a non-string value, or whose
+// value could not be matched (e.g. from an unsupported attr, which
+// validateComplexQuery/complexQueryUsesOnlySupportedAttrs should already have
+// excluded by the time this is reached), are treated as not matching.
+func matchesComplexQueryAtomWithNegation(profile models.NFProfileDiscovery, atom models.Atom) bool {
+	value, ok := atom.Value.(string)
+	if !ok {
+		return false
+	}
+	matched, _ := matchesComplexQueryAtom(profile, atom.Attr, value)
+	if atom.GetNegative() {
+		return !matched
+	}
+	return matched
+}
+
+// matchesComplexQuery exactly evaluates complexQueryStruct against profile in
+// Go, honoring CNF/DNF semantics (see the Cnf/CnfUnit/Dnf/DnfUnit model doc
+// comments) and per-atom negation. Only meaningful once
+// complexQueryUsesOnlySupportedAttrs(complexQueryStruct) holds - guaranteed by
+// validateComplexQuery whenever the query also contains a
+// requester-nf-instance-fqdn atom (see filterByComplexQuery) - since an
+// unsupported attr is otherwise treated as never matching.
+func matchesComplexQuery(profile models.NFProfileDiscovery, complexQueryStruct *models.ComplexQuery) bool {
+	if cnf := complexQueryStruct.Cnf; cnf != nil {
+		// CNF: cnfUnits are AND'd; the atoms within a unit are OR'd.
+		for _, unit := range cnf.GetCnfUnits() {
+			matchedUnit := false
+			for _, atom := range unit.CnfUnit {
+				if matchesComplexQueryAtomWithNegation(profile, atom) {
+					matchedUnit = true
+					break
+				}
+			}
+			if !matchedUnit {
+				return false
+			}
+		}
+		return true
+	}
+	if dnf := complexQueryStruct.Dnf; dnf != nil {
+		// DNF: dnfUnits are OR'd; the atoms within a unit are AND'd.
+		for _, unit := range dnf.GetDnfUnits() {
+			matchedUnit := true
+			for _, atom := range unit.DnfUnit {
+				if !matchesComplexQueryAtomWithNegation(profile, atom) {
+					matchedUnit = false
+					break
+				}
+			}
+			if matchedUnit {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// filterByComplexQuery applies the complexQuery predicate in Go
+// (matchesComplexQuery) when it contains a requester-nf-instance-fqdn atom:
+// that atom is never sent to MongoDB (see complexQueryFilterSubprocess and
+// fqdnAtomRequiresGoEvaluation), so the primary query alone only narrows by
+// the query's other atoms, if any; this restores exactness. A complexQuery
+// without a requester-nf-instance-fqdn atom is left unchanged, since MongoDB
+// already evaluates it completely. profiles is expected to already have
+// every other discovery filter applied, since this only narrows further;
+// profiles is returned unchanged when complexQuery is absent, empty, or
+// fails to parse (already logged/rejected by validateComplexQuery earlier in
+// the request).
+func filterByComplexQuery(profiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
+	values := queryParameters["complexQuery"]
+	if len(values) == 0 || values[0] == "" {
+		return profiles
+	}
+	complexQueryStruct := &models.ComplexQuery{}
+	if err := json.Unmarshal([]byte(values[0]), complexQueryStruct); err != nil {
+		return profiles
+	}
+	if !complexQueryHasRequesterNfInstanceFqdnAtom(complexQueryStruct) {
+		return profiles
+	}
+
+	filtered := make([]models.NFProfileDiscovery, 0, len(profiles))
+	for _, profile := range profiles {
+		if matchesComplexQuery(profile, complexQueryStruct) {
+			filtered = append(filtered, profile)
+		}
+	}
+	return filtered
 }
 
 func sortNFProfiles(
@@ -570,12 +731,15 @@ func sortNFProfiles(
 		cacheProfileWithExpiry(p, rawDoc)
 	}
 
-	// requester-nf-instance-fqdn is deliberately not part of the MongoDB filter
-	// (see filterByRequesterNfInstanceFqdn) and so must be applied here, before
-	// the empty-result check below: otherwise a non-empty primary result whose
-	// profiles are all rejected by this predicate would suppress the URI-list
-	// fallback and return an empty response instead of falling back to it.
+	// requester-nf-instance-fqdn (and, when it appears in complexQuery, the
+	// full complexQuery predicate; see filterByComplexQuery) is deliberately
+	// not part of the MongoDB filter and so must be applied here, before the
+	// empty-result check below: otherwise a non-empty primary result whose
+	// profiles are all rejected by these predicates would suppress the
+	// URI-list fallback and return an empty response instead of falling back
+	// to it.
 	nfProfilesStruct = filterByRequesterNfInstanceFqdn(nfProfilesStruct, queryParameters)
+	nfProfilesStruct = filterByComplexQuery(nfProfilesStruct, queryParameters)
 
 	if len(nfProfilesStruct) == 0 {
 		allProfiles, fallbackErr := loadDiscoveryProfilesFromURIList(queryParameters)
@@ -585,6 +749,7 @@ func sortNFProfiles(
 			logger.DiscoveryLog.Debugf("fallback discovery decoded count: %d", len(allProfiles))
 			nfProfilesStruct = filterDiscoveryResults(allProfiles, queryParameters)
 			nfProfilesStruct = filterByRequesterNfInstanceFqdn(nfProfilesStruct, queryParameters)
+			nfProfilesStruct = filterByComplexQuery(nfProfilesStruct, queryParameters)
 			logger.DiscoveryLog.Debugf("fallback filtered count: %d", len(nfProfilesStruct))
 		}
 	}
@@ -823,58 +988,32 @@ func filterDiscoveryResults(nfProfiles []models.NFProfileDiscovery, queryParamet
 
 func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters url.Values) bool {
 	if values := queryParameters[queryParamTargetNFType]; len(values) > 0 && values[0] != "" {
-		if string(profile.GetNfType()) != values[0] {
+		if !matchesTargetNfType(profile, values[0]) {
 			return false
 		}
 	}
 
 	if values := queryParameters[queryParamTargetNfInstanceID]; len(values) > 0 && values[0] != "" {
-		if profile.GetNfInstanceId() != values[0] {
+		if !matchesTargetNfInstanceID(profile, values[0]) {
 			return false
 		}
 	}
 
 	if values := queryParameters[queryParamRequesterNFType]; len(values) > 0 && values[0] != "" {
-		// Match the Mongo predicate (handleRequesterNfType) exactly: a
-		// present-but-empty allowedNfTypes list restricts (matches neither
-		// the requested type nor "field absent/null"), it does not mean
-		// unrestricted; only an absent field is unrestricted.
-		if allowedTypes, ok := profile.GetAllowedNfTypesOk(); ok {
-			matched := false
-			for _, allowedType := range allowedTypes {
-				if string(allowedType) == values[0] {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return false
-			}
+		if !matchesRequesterNfType(profile, values[0]) {
+			return false
 		}
 	}
 
 	if values := queryParameters[queryParamServiceNames]; len(values) > 0 && values[0] != "" {
-		requestedServices := strings.Split(values[0], ",")
-		matched := false
-		for _, service := range registeredNFServices(profile) {
-			for _, requestedService := range requestedServices {
-				if string(service.ServiceName) == requestedService {
-					matched = true
-					break
-				}
-			}
-			if matched {
-				break
-			}
-		}
-		if !matched {
+		if !matchesServiceNames(profile, values[0]) {
 			return false
 		}
 	}
 
 	// [Query-34] supported-features: mirrors handleSupportedFeatures.
 	if values := queryParameters[queryParamSupportedFeatures]; len(values) > 0 && values[0] != "" {
-		if !anyNFServiceHasSupportedFeatures(profile, values[0]) {
+		if !matchesSupportedFeatures(profile, values[0]) {
 			return false
 		}
 	}
@@ -882,21 +1021,61 @@ func matchesDiscoveryQuery(profile models.NFProfileDiscovery, queryParameters ur
 	return true
 }
 
+func matchesTargetNfType(profile models.NFProfileDiscovery, value string) bool {
+	return string(profile.GetNfType()) == value
+}
+
+func matchesTargetNfInstanceID(profile models.NFProfileDiscovery, value string) bool {
+	return profile.GetNfInstanceId() == value
+}
+
+// matchesRequesterNfType matches the Mongo predicate (handleRequesterNfType)
+// exactly: a present-but-empty allowedNfTypes list restricts (matches neither
+// the requested type nor "field absent/null"), it does not mean unrestricted;
+// only an absent field is unrestricted.
+func matchesRequesterNfType(profile models.NFProfileDiscovery, value string) bool {
+	allowedTypes, ok := profile.GetAllowedNfTypesOk()
+	if !ok {
+		return true
+	}
+	for _, allowedType := range allowedTypes {
+		if string(allowedType) == value {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesServiceNames(profile models.NFProfileDiscovery, value string) bool {
+	requestedServices := strings.Split(value, ",")
+	for _, service := range registeredNFServices(profile) {
+		for _, requestedService := range requestedServices {
+			if string(service.ServiceName) == requestedService {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchesSupportedFeatures(profile models.NFProfileDiscovery, value string) bool {
+	return anyNFServiceHasSupportedFeatures(profile, value)
+}
+
 // filterByRequesterNfInstanceFqdn applies the [Query-4] requester-nf-instance-fqdn
 // discovery predicate in Go (RE2) for both the primary MongoDB-backed query
 // and the URI-list/cache fallback: MongoDB's PCRE-based $regexMatch
 // backtracks and so is not immune to a catastrophic (exponential-time)
 // allowedNfDomains pattern the way RE2 is; evaluating the predicate here
-// instead of via a $regexMatch pipeline (see allowedNfDomainsMatchCond;
-// complexQuery requests using this attribute are rejected by
-// validateComplexQuery instead of reaching that pipeline) means a stored
-// pattern - however it got there, including a legacy or externally written
-// profile ValidateAllowedNfDomains never saw - can no longer make MongoDB
-// itself burn CPU evaluating it against a crafted, non-matching requester
-// FQDN. profiles is expected to already have every other discovery filter
-// applied (by the primary query or filterDiscoveryResults), since this only
-// narrows further; profiles is returned unchanged when the parameter is
-// absent or empty.
+// instead of via a $regexMatch pipeline (a complexQuery request using this
+// attribute is instead evaluated by filterByComplexQuery/matchesComplexQuery,
+// for the same reason) means a stored pattern - however it got there,
+// including a legacy or externally written profile ValidateAllowedNfDomains
+// never saw - can no longer make MongoDB itself burn CPU evaluating it
+// against a crafted, non-matching requester FQDN. profiles is expected to
+// already have every other discovery filter applied (by the primary query or
+// filterDiscoveryResults), since this only narrows further; profiles is
+// returned unchanged when the parameter is absent or empty.
 func filterByRequesterNfInstanceFqdn(profiles []models.NFProfileDiscovery, queryParameters url.Values) []models.NFProfileDiscovery {
 	values := queryParameters[queryParamRequesterNfInstanceFqdn]
 	if len(values) == 0 || values[0] == "" {
@@ -919,8 +1098,8 @@ func filterByRequesterNfInstanceFqdn(profiles []models.NFProfileDiscovery, query
 // ECMA-262 regular expression per TS 29.510 clause 6.1.6.2.2) matching
 // requesterFqdn, or allowedNfDomains is not set (no restriction). Service
 // registration status is deliberately not considered here, consistent with
-// the complexQuery path's MongoDB predicate (allowedNfDomainsMatchCond),
-// which also does not filter by NfServiceStatus for this check.
+// the plain-query and complexQuery predicates for this attribute, neither of
+// which filters by NfServiceStatus for this check.
 func anyNFServiceAllowsFqdn(profile models.NFProfileDiscovery, requesterFqdn string) bool {
 	for _, service := range allNFServices(profile) {
 		allowedDomains, ok := service.GetAllowedNfDomainsOk()
@@ -939,13 +1118,15 @@ func anyNFServiceAllowsFqdn(profile models.NFProfileDiscovery, requesterFqdn str
 // matchesAllowedNfDomainPattern reports whether requesterFqdn matches pattern,
 // an ECMA-262 regular expression per TS 29.510 clause 6.1.6.2.2. Patterns are
 // evaluated using Go's RE2 engine (regexp.Compile), which does not support
-// backreferences or lookaround; the MongoDB-backed discovery path (see
-// allowedNfDomainsMatchCond) evaluates the same patterns with $regexMatch,
-// whose PCRE-based engine does support those constructs, so results can
-// diverge for patterns relying on them. allowedNfDomains patterns should be
-// restricted to constructs common to both engines (anchors, character
-// classes, quantifiers, alternation). A pattern that fails to compile under
-// RE2 is treated as non-matching rather than failing discovery.
+// backreferences or lookaround, unlike PCRE; MongoDB's $regexMatch is no
+// longer used to evaluate allowedNfDomains patterns anywhere in this package
+// (see filterByRequesterNfInstanceFqdn and filterByComplexQuery), precisely
+// to avoid the catastrophic-backtracking risk that engine difference would
+// otherwise still leave open. allowedNfDomains patterns should be restricted
+// to constructs common to both engines (anchors, character classes,
+// quantifiers, alternation) for portability with any external tooling that
+// still assumes PCRE semantics. A pattern that fails to compile under RE2 is
+// treated as non-matching rather than failing discovery.
 func matchesAllowedNfDomainPattern(pattern, requesterFqdn string) bool {
 	re, err := compileAllowedNfDomainPattern(pattern)
 	if err != nil {
@@ -1164,76 +1345,6 @@ func nfServiceListAnyMatch(cond bson.M) bson.M {
 					"$size": bson.M{
 						"$filter": bson.M{
 							keyInput: bson.M{"$objectToArray": bson.M{mongoOpIfNull: []any{"$" + fieldNfServiceList, bson.M{}}}},
-							"as":     "svc",
-							"cond":   cond,
-						},
-					},
-				},
-				0,
-			},
-		},
-	}
-}
-
-// allowedNfDomainsMatchCond builds the $filter condition, for a service bound
-// to the "svc" filter variable, that is true when allowedNfDomains is absent
-// or BSON null (any domain allowed per TS 29.510 clause 6.1.6.2.2), or
-// contains a pattern (an ECMA-262 regular expression, evaluated here by
-// MongoDB's PCRE-based $regexMatch; see matchesAllowedNfDomainPattern for the
-// RE2 caveats that apply to the equivalent in-memory check) matching
-// requesterNfinstanceFqdn. Both "missing" and "null" must be checked here,
-// not just "missing": a nil AllowedNfDomains slice round-trips through
-// bson.Marshal as an explicit BSON null rather than an omitted field, and
-// Go's encoding/json (and this model's GetAllowedNfDomainsOk) cannot tell "no
-// field" and "field: null" apart either, treating both as unrestricted; a
-// "missing"-only check would instead treat a null-valued field as an empty
-// list of patterns (via the $ifNull below), incorrectly denying access
-// discovery would otherwise allow. allowedNfDomainsPath must reference the
-// service's allowedNfDomains field relative to the filter variable, e.g.
-// "$$svc."+fieldAllowedNfDomains (nfServices) or
-// "$$svc.v."+fieldAllowedNfDomains (nfServiceList).
-func allowedNfDomainsMatchCond(allowedNfDomainsPath, requesterNfinstanceFqdn string) bson.M {
-	return bson.M{
-		mongoOpOr: []bson.M{
-			{mongoOpIn: []any{bson.M{"$type": allowedNfDomainsPath}, bson.A{"missing", "null"}}},
-			{
-				// $anyElementTrue takes its operand as a one-element array.
-				"$anyElementTrue": bson.A{
-					bson.M{
-						"$map": bson.M{
-							keyInput: bson.M{mongoOpIfNull: []any{allowedNfDomainsPath, bson.A{}}},
-							"as":     "domain",
-							// $literal forces requesterNfinstanceFqdn (an
-							// attacker-controlled query parameter) to be
-							// evaluated as a literal string. Without it, a
-							// value beginning with "$" (e.g. "$$domain",
-							// which this $map itself binds) would be
-							// resolved as a field path or variable
-							// reference instead, which can turn the
-							// intended allowedNfDomains check into a
-							// tautology and bypass the restriction.
-							"in": bson.M{"$regexMatch": bson.M{keyInput: bson.M{"$literal": requesterNfinstanceFqdn}, "regex": "$$domain"}},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-// nfServicesAnyMatch builds a MongoDB $expr filter matching documents that
-// have at least one entry in the legacy nfServices array (deprecated by TS
-// 29.510 Rel-16 in favor of nfServiceList) whose value satisfies cond.
-// Referencing entry fields within cond must use the "$$svc" variable (e.g.
-// "$$svc."+fieldAllowedNfDomains).
-func nfServicesAnyMatch(cond bson.M) bson.M {
-	return bson.M{
-		mongoOpExpr: bson.M{
-			"$gt": []any{
-				bson.M{
-					"$size": bson.M{
-						"$filter": bson.M{
-							keyInput: bson.M{mongoOpIfNull: []any{"$" + fieldNfServices, bson.A{}}},
 							"as":     "svc",
 							"cond":   cond,
 						},
@@ -2266,47 +2377,45 @@ type AtomElem struct {
 }
 
 func complexQueryFilter(complexQueryParameter *models.ComplexQuery) bson.M {
-	complexQueryType := ""
+	// CNF: cnfUnits are AND'd together; DNF: dnfUnits are OR'd together (see
+	// the Cnf/CnfUnit/Dnf/DnfUnit model doc comments).
 	if complexQueryParameter.Cnf != nil {
-		complexQueryType = COMPLEX_QUERY_TYPE_CNF
-	} else {
-		complexQueryType = COMPLEX_QUERY_TYPE_DNF
+		filter := bson.M{mongoOpAnd: []bson.M{}}
+		for _, cnfUnit := range complexQueryParameter.Cnf.GetCnfUnits() {
+			unitFilter := complexQueryFilterSubprocess(complexQueryUnitAtoms(cnfUnit.CnfUnit), COMPLEX_QUERY_TYPE_CNF)
+			filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), unitFilter)
+		}
+		return filter
 	}
 
-	// build the filter
-	var filter bson.M
-
-	if complexQueryType == COMPLEX_QUERY_TYPE_CNF {
-		filter = bson.M{
-			mongoOpAnd: []bson.M{},
-		}
-		for _, cnfUnit := range complexQueryParameter.Cnf.GetCnfUnits() {
-			queryParameters := make(map[string]*AtomElem)
-			var cnfUnitFilter bson.M
-			for _, atom := range cnfUnit.CnfUnit {
-				strValue, ok := atom.Value.(string)
-				if !ok {
-					logger.AppLog.Errorln("the value is not a string")
-					continue
-				}
-				queryParameters[atom.Attr] = &AtomElem{value: strValue, negative: atom.GetNegative()}
-			}
-			cnfUnitFilter = complexQueryFilterSubprocess(queryParameters, complexQueryType)
-
-			filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), cnfUnitFilter)
-		}
-	} else {
-		filter = bson.M{
-			mongoOpOr: []bson.M{},
+	filter := bson.M{mongoOpOr: []bson.M{}}
+	if complexQueryParameter.Dnf != nil {
+		for _, dnfUnit := range complexQueryParameter.Dnf.GetDnfUnits() {
+			unitFilter := complexQueryFilterSubprocess(complexQueryUnitAtoms(dnfUnit.DnfUnit), COMPLEX_QUERY_TYPE_DNF)
+			filter[mongoOpOr] = append(filter[mongoOpOr].([]bson.M), unitFilter)
 		}
 	}
 	return filter
 }
 
-func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQueryType string) bson.M {
-	var filter bson.M
-	var logicalOperator string
+// complexQueryUnitAtoms converts a single CNF/DNF unit's atoms into the
+// attr-keyed map complexQueryFilterSubprocess expects. Non-string atom values
+// are dropped (and logged), matching the previous inline behavior.
+func complexQueryUnitAtoms(atoms []models.Atom) map[string]*AtomElem {
+	queryParameters := make(map[string]*AtomElem, len(atoms))
+	for _, atom := range atoms {
+		strValue, ok := atom.Value.(string)
+		if !ok {
+			logger.AppLog.Errorln("the value is not a string")
+			continue
+		}
+		queryParameters[atom.Attr] = &AtomElem{value: strValue, negative: atom.GetNegative()}
+	}
+	return queryParameters
+}
 
+func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQueryType string) bson.M {
+	var logicalOperator string
 	switch complexQueryType {
 	case COMPLEX_QUERY_TYPE_CNF:
 		logicalOperator = mongoOpOr
@@ -2314,12 +2423,30 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 		logicalOperator = mongoOpAnd
 	}
 
-	filter = bson.M{
+	if fqdnAtomRequiresGoEvaluation(queryParameters, complexQueryType) {
+		// This clause (a CNF unit, whose atoms are OR'd) contains a
+		// requester-nf-instance-fqdn atom and must be evaluated in Go instead
+		// - see filterByComplexQuery/matchesComplexQuery: MongoDB cannot
+		// safely evaluate that atom (its allowedNfDomains pattern is not
+		// immune to catastrophic backtracking via $regexMatch), and dropping
+		// only that atom here while keeping any sibling atom's condition
+		// would make this OR narrower than the real clause, silently
+		// excluding profiles that satisfy it only via the FQDN atom. Matching
+		// unconditionally here is a safe superset; filterByComplexQuery
+		// restores exactness afterwards.
+		return matchAllComplexQueryUnitFilter(logicalOperator)
+	}
+
+	filter := bson.M{
 		logicalOperator: []bson.M{},
 	}
 	targetNfType := addTargetNfTypeFilter(queryParameters, filter, logicalOperator)
 	addServiceNamesFilter(queryParameters, filter, logicalOperator)
-	addRequesterNfInstanceFqdnFilter(queryParameters, filter, logicalOperator)
+	// requester-nf-instance-fqdn is deliberately never added to the Mongo
+	// filter here; see filterByComplexQuery/matchesComplexQuery. For a DNF
+	// unit (whose atoms are AND'd), simply omitting it below - handled by the
+	// empty-filter check at the end of this function - is a safe superset:
+	// dropping one conjunct only broadens the match.
 	addTargetPlmnListFilter(queryParameters, filter, logicalOperator)
 	addTargetNfInstanceIDFilter(queryParameters, filter, logicalOperator)
 	addTargetNfFqdnFilter(queryParameters, filter, logicalOperator)
@@ -2349,7 +2476,37 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	addAccessTypeFilter(queryParameters, filter, logicalOperator)
 	addSupportedFeaturesFilter(queryParameters, filter, logicalOperator)
 
+	if len(filter[logicalOperator].([]bson.M)) == 0 {
+		// A unit consisting solely of a requester-nf-instance-fqdn atom (the
+		// only attribute this function never adds a Mongo condition for)
+		// would otherwise leave filter[logicalOperator] empty, which MongoDB
+		// rejects ($and/$or/$nor require a nonempty array); match
+		// unconditionally instead and let filterByComplexQuery enforce it.
+		return matchAllComplexQueryUnitFilter(logicalOperator)
+	}
+
 	return filter
+}
+
+// fqdnAtomRequiresGoEvaluation reports whether queryParameters contains a
+// non-empty requester-nf-instance-fqdn atom whose clause must be matched
+// unconditionally in Mongo and instead be fully evaluated in Go afterwards
+// (see filterByComplexQuery). Only a CNF unit (whose atoms are OR'd) needs
+// this: a DNF unit (whose atoms are AND'd) stays a safe superset by simply
+// omitting the FQDN atom's own condition, handled by the empty-filter check
+// at the end of complexQueryFilterSubprocess.
+func fqdnAtomRequiresGoEvaluation(queryParameters map[string]*AtomElem, complexQueryType string) bool {
+	atom := queryParameters[queryParamRequesterNfInstanceFqdn]
+	return complexQueryType == COMPLEX_QUERY_TYPE_CNF && atom != nil && atom.value != ""
+}
+
+// matchAllComplexQueryUnitFilter returns a Mongo condition, for the given
+// logical operator ($or for a CNF unit, $and for a DNF unit), that matches
+// every document: a single empty sub-filter ({}) is satisfied by all
+// documents, so $or/$and wrapping it is too. Used in place of leaving
+// filter[logicalOperator] empty, which MongoDB rejects.
+func matchAllComplexQueryUnitFilter(logicalOperator string) bson.M {
+	return bson.M{logicalOperator: []bson.M{{}}}
 }
 
 func addTargetNfTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) string {
@@ -2435,57 +2592,9 @@ func addServiceNamesFilter(queryParameters map[string]*AtomElem, filter bson.M, 
 	}
 }
 
-func addRequesterNfInstanceFqdnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) {
-	// [Query-4] requester-nf-instance-fqdn
-	//
-	// validateComplexQuery rejects any complexQuery request containing a
-	// requester-nf-instance-fqdn atom before NFDiscoveryProcedure ever calls
-	// buildFilter, so this branch is unreachable in normal request handling;
-	// it is kept (and still exercised directly by unit tests) only as a
-	// documented, defense-in-depth fallback. It is guarded, rather than
-	// evaluated via MongoDB, because unlike the simple-query path
-	// (filterByRequesterNfInstanceFqdn, which evaluates the predicate in Go
-	// with RE2), decomposing an arbitrary CNF/DNF complexQuery expression
-	// into a hybrid MongoDB/in-memory evaluation - so that one atom among
-	// many combined with AND/OR/NOT could be evaluated separately - is a much
-	// larger change than the simple-query path allows for, and this MongoDB
-	// $regexMatch-based evaluation is not immune to catastrophic backtracking
-	// on a crafted allowedNfDomains pattern (e.g. from a legacy or externally
-	// written NF profile predating ValidateAllowedNfDomains).
-	//
-	// An empty value is ignored, mirroring the guard the simple-query and
-	// in-memory paths apply for the same parameter (see
-	// filterByRequesterNfInstanceFqdn): without it, an atom with
-	// requester-nf-instance-fqdn: "" would reach $regexMatch with an empty
-	// regex, which matches every stored domain and authorizes restricted
-	// services, while those other paths treat an empty parameter as absent.
-	if atom := queryParameters[queryParamRequesterNfInstanceFqdn]; atom != nil && atom.value != "" {
-		requesterNfinstanceFqdn := atom.value
-
-		// Per TS 29.510 clause 6.1.6.2.2, allowedNfDomains holds ECMA-262 regex
-		// patterns; a service allows requesterNfinstanceFqdn if a pattern
-		// matches it, or allowedNfDomains is absent (unrestricted). This mirrors
-		// filterByRequesterNfInstanceFqdn so the simple- and complex-query paths agree.
-		requesterNfinstanceFqdnFilter := bson.M{
-			mongoOpOr: []bson.M{
-				// legacy nfServices array, deprecated by TS 29.510 Rel-16 in favor of nfServiceList
-				nfServicesAnyMatch(allowedNfDomainsMatchCond("$$svc."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
-				nfServiceListAnyMatch(allowedNfDomainsMatchCond("$$svc.v."+fieldAllowedNfDomains, requesterNfinstanceFqdn)),
-			},
-		}
-
-		if atom.negative {
-			// $not is a field-level operator and cannot negate a top-level $or
-			// document; use $nor to match profiles where no service allows
-			// requesterNfinstanceFqdn.
-			requesterNfinstanceFqdnFilter = bson.M{
-				mongoOpNor: []bson.M{requesterNfinstanceFqdnFilter},
-			}
-		}
-		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), requesterNfinstanceFqdnFilter)
-	}
-}
-
+// [Query-4] requester-nf-instance-fqdn is intentionally not evaluated here;
+// see filterByComplexQuery/matchesComplexQuery and
+// fqdnAtomRequiresGoEvaluation.
 func addTargetPlmnListFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string) {
 	// [Query-5] target-plmn-list [C] = Mcc + Mnc
 	// Mcc: Pattern: '^[0-9]{3}$'

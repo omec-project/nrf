@@ -7,10 +7,10 @@
 package producer
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"reflect"
 	"testing"
 	"time"
 
@@ -27,6 +27,7 @@ const (
 	testFieldItem                    = "item"
 	testFieldHref                    = "href"
 	testNfInstanceUdm1               = "udm-1"
+	testNfInstanceUdmAllowed         = "udm-allowed"
 	testNfInstanceUdmBlocked         = "udm-blocked"
 	testNfInstanceUdmFallbackAllowed = "udm-fallback-allowed"
 	testFieldNfStatus                = "nfstatus"
@@ -604,7 +605,7 @@ func (db *mockFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter b
 	}
 	return []map[string]interface{}{
 		{
-			fieldNfInstanceId: "udm-allowed",
+			fieldNfInstanceId: testNfInstanceUdmAllowed,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
 			fieldNfServices: []map[string]interface{}{{
@@ -651,7 +652,7 @@ func TestNFDiscoveryProcedureAppliesRequesterNfInstanceFqdnToPrimaryQueryResults
 	if len(response.NfInstances) != 1 {
 		t.Fatalf("expected 1 NF instance after requester-nf-instance-fqdn filtering, got %d: %+v", len(response.NfInstances), response.NfInstances)
 	}
-	if response.NfInstances[0].NfInstanceId != "udm-allowed" {
+	if response.NfInstances[0].NfInstanceId != testNfInstanceUdmAllowed {
 		t.Fatalf("expected the unrestricted profile to be returned, got %+v", response.NfInstances[0])
 	}
 }
@@ -954,57 +955,96 @@ func TestComplexQueryFilterSubprocessNegatesServiceNamesWithNin(t *testing.T) {
 	}
 }
 
-// TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList
-// verifies that complex-query requester-nf-instance-fqdn (Query-4) filtering
-// covers nfServiceList in addition to the legacy nfServices array.
-func TestComplexQueryFilterSubprocessMatchesRequesterNfInstanceFqdnNfServiceList(t *testing.T) {
+// TestComplexQueryFilterSubprocessMatchesAllForCnfRequesterNfInstanceFqdnUnit
+// verifies that a CNF unit (whose atoms are OR'd) containing a
+// requester-nf-instance-fqdn atom never sends that atom's allowedNfDomains
+// pattern to MongoDB's $regexMatch: the whole clause is matched
+// unconditionally instead - a safe superset, since dropping only the FQDN
+// disjunct while keeping a sibling atom's condition would make the OR
+// narrower than the real clause - and filterByComplexQuery restores
+// exactness in Go afterwards.
+func TestComplexQueryFilterSubprocessMatchesAllForCnfRequesterNfInstanceFqdnUnit(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
+		queryParamTargetNFType:            {value: nfTypeUDM},
+	}, COMPLEX_QUERY_TYPE_CNF)
+
+	orFilters, ok := filter[mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 1 || len(orFilters[0]) != 0 {
+		t.Fatalf("expected a single match-all alternative, got %#v", filter[mongoOpOr])
+	}
+}
+
+// TestComplexQueryFilterSubprocessDropsFqdnFromDnfUnit verifies that a DNF
+// unit (whose atoms are AND'd) containing a requester-nf-instance-fqdn atom
+// keeps any sibling atom's Mongo condition - unlike a CNF unit, dropping just
+// the FQDN atom here is a safe superset, since removing one conjunct from an
+// AND only broadens the match - and never sends the FQDN atom itself to
+// MongoDB.
+func TestComplexQueryFilterSubprocessDropsFqdnFromDnfUnit(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
+		queryParamTargetNFType:            {value: nfTypeUDM},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
 	if !ok || len(andFilters) != 1 {
-		t.Fatalf("expected 1 fqdn filter, got %#v", filter[mongoOpAnd])
+		t.Fatalf("expected 1 target-nf-type filter, got %#v", filter[mongoOpAnd])
 	}
+	if got := andFilters[0][fieldNfTypeLower]; got != nfTypeUDM {
+		t.Fatalf("expected the surviving alternative to match target-nf-type, got %#v", andFilters[0])
+	}
+}
 
-	orFilters, ok := andFilters[0][mongoOpOr].([]bson.M)
-	if !ok || len(orFilters) != 2 {
-		t.Fatalf("expected 2 fqdn alternatives, got %#v", andFilters[0])
+// TestComplexQueryFilterSubprocessMatchesAllForFqdnOnlyUnit verifies that a
+// unit consisting solely of a requester-nf-instance-fqdn atom - in either its
+// CNF or DNF form - matches unconditionally in Mongo, rather than leaving an
+// empty $or/$and array (which MongoDB rejects).
+func TestComplexQueryFilterSubprocessMatchesAllForFqdnOnlyUnit(t *testing.T) {
+	tests := map[string]struct {
+		complexQueryType string
+		operator         string
+	}{
+		"CNF": {COMPLEX_QUERY_TYPE_CNF, mongoOpOr},
+		"DNF": {COMPLEX_QUERY_TYPE_DNF, mongoOpAnd},
 	}
-	if _, exists := orFilters[0][mongoOpExpr]; !exists {
-		t.Fatalf("expected first alternative to be an $expr filter over legacy nfservices, got %#v", orFilters[0])
-	}
-	if _, exists := orFilters[1][mongoOpExpr]; !exists {
-		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+				queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
+			}, tc.complexQueryType)
+
+			operatorFilters, ok := filter[tc.operator].([]bson.M)
+			if !ok || len(operatorFilters) != 1 || len(operatorFilters[0]) != 0 {
+				t.Fatalf("expected a single match-all alternative, got %#v", filter[tc.operator])
+			}
+		})
 	}
 }
 
 // TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn verifies
 // that an atom with an empty requester-nf-instance-fqdn value adds no Mongo
-// filter, mirroring TestBuildFilterOmitsRequesterNfInstanceFqdn for the
-// simple-query path. Without this guard, the empty value would still
-// reach $regexMatch as an empty regex, which matches every stored domain and
-// authorizes restricted services, unlike the simple-query and in-memory
-// fallback paths, which treat an empty parameter as absent.
+// condition for the atom itself, mirroring TestBuildFilterOmitsRequesterNfInstanceFqdn
+// for the simple-query path, and (since it is then the only atom in the
+// unit) still matches unconditionally rather than leaving an empty array.
 func TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		queryParamRequesterNfInstanceFqdn: {value: ""},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
-	if andFilters, ok := filter[mongoOpAnd].([]bson.M); ok && len(andFilters) != 0 {
-		t.Fatalf("expected no requester-nf-instance-fqdn filter for an empty value, got %#v", andFilters)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 || len(andFilters[0]) != 0 {
+		t.Fatalf("expected a single match-all alternative for an empty value, got %#v", filter[mongoOpAnd])
 	}
 }
 
-// TestValidateComplexQueryRejectsRequesterNfInstanceFqdnAtom verifies that a
-// complexQuery request is rejected, in both its CNF and DNF forms, when it
-// contains a requester-nf-instance-fqdn atom: unlike the plain query
-// parameter (filterByRequesterNfInstanceFqdn, evaluated in Go with RE2), that
-// atom is only ever evaluated via addRequesterNfInstanceFqdnFilter's MongoDB
-// $regexMatch, which (unlike RE2) is not immune to catastrophic backtracking
-// on a crafted allowedNfDomains pattern; rejecting the request keeps that
-// pattern from ever reaching MongoDB.
-func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnAtom(t *testing.T) {
+// TestValidateComplexQueryAllowsRequesterNfInstanceFqdnAtom verifies that a
+// complexQuery request is allowed, in both its CNF and DNF forms, when it
+// contains only a requester-nf-instance-fqdn atom: that atom is fully
+// evaluated in Go (RE2) afterwards - see filterByComplexQuery and
+// matchesComplexQuery - so it no longer needs to be rejected the way it did
+// when the only alternative was MongoDB's PCRE-based $regexMatch.
+func TestValidateComplexQueryAllowsRequesterNfInstanceFqdnAtom(t *testing.T) {
 	tests := map[string]string{
 		"CNF": `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
 		"DNF": `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`,
@@ -1014,11 +1054,28 @@ func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnAtom(t *testing.T) {
 			query := url.Values{}
 			query.Set("complexQuery", complexQuery)
 
-			problemDetails := validateComplexQuery(query)
-			if problemDetails == nil {
-				t.Fatal("expected problem details rejecting requester-nf-instance-fqdn within complexQuery")
+			if problemDetails := validateComplexQuery(query); problemDetails != nil {
+				t.Fatalf("unexpected problem details: %+v", problemDetails)
 			}
 		})
+	}
+}
+
+// TestValidateComplexQueryRejectsRequesterNfInstanceFqdnMixedWithUnsupportedAttr
+// verifies that a complexQuery request combining a requester-nf-instance-fqdn
+// atom with an attribute matchesComplexQueryAtom does not support (e.g. tai)
+// is still rejected: filterByComplexQuery could not exactly re-evaluate such
+// a request in Go, so accepting it would either require sending the FQDN
+// atom's allowedNfDomains pattern to MongoDB's $regexMatch (the catastrophic
+// backtracking risk this predicate exists to avoid) or silently
+// mis-evaluating the unsupported atom.
+func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnMixedWithUnsupportedAttr(t *testing.T) {
+	query := url.Values{}
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"tai","value":"{}"}]}]}`)
+
+	problemDetails := validateComplexQuery(query)
+	if problemDetails == nil {
+		t.Fatal("expected problem details rejecting requester-nf-instance-fqdn combined with an unsupported attribute")
 	}
 }
 
@@ -1033,15 +1090,16 @@ func TestValidateComplexQueryAllowsOtherAtoms(t *testing.T) {
 	}
 }
 
-// TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnInComplexQuery verifies
-// end to end that NFDiscoveryProcedure rejects a complexQuery request
-// containing a requester-nf-instance-fqdn atom, rather than letting it reach
-// MongoDB's $regexMatch (see addRequesterNfInstanceFqdnFilter).
-func TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnInComplexQuery(t *testing.T) {
+// TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnMixedWithUnsupportedAttrInComplexQuery
+// verifies end to end that NFDiscoveryProcedure rejects a complexQuery
+// request combining requester-nf-instance-fqdn with an attribute
+// filterByComplexQuery cannot evaluate, rather than letting the FQDN atom
+// reach MongoDB's $regexMatch.
+func TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnMixedWithUnsupportedAttrInComplexQuery(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeUDM)
 	query.Set("requester-nf-type", nfTypeAMF)
-	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`)
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"tai","value":"{}"}]}]}`)
 
 	response, problemDetails := NFDiscoveryProcedure(query)
 	if response != nil {
@@ -1052,104 +1110,201 @@ func TestNFDiscoveryProcedureRejectsRequesterNfInstanceFqdnInComplexQuery(t *tes
 	}
 }
 
-// extractAnyMatchCond drills into the bson.M produced by nfServicesAnyMatch or
-// nfServiceListAnyMatch to return the "cond" passed to $filter, so tests can
-// assert on the exact predicate used to match nfServices/nfServiceList entries.
-func extractAnyMatchCond(t *testing.T, exprFilter bson.M) bson.M {
-	t.Helper()
-	gt, ok := exprFilter[mongoOpExpr].(bson.M)["$gt"].([]any)
-	if !ok || len(gt) != 2 {
-		t.Fatalf("unexpected $expr structure: %#v", exprFilter)
-	}
-	size, ok := gt[0].(bson.M)["$size"].(bson.M)
-	if !ok {
-		t.Fatalf("unexpected $size structure: %#v", gt[0])
-	}
-	filterDoc, ok := size["$filter"].(bson.M)
-	if !ok {
-		t.Fatalf("unexpected $filter structure: %#v", size)
-	}
-	cond, ok := filterDoc["cond"].(bson.M)
-	if !ok {
-		t.Fatalf("unexpected cond structure: %#v", filterDoc)
-	}
-	return cond
+// mockComplexQueryFqdnDiscoveryDBClient returns two profiles matching every
+// Mongo-side discovery filter, including the CNF unit combining
+// requester-nf-instance-fqdn with target-nf-type (matched unconditionally in
+// Mongo; see fqdnAtomRequiresGoEvaluation): only requester-nf-instance-fqdn,
+// applied in Go after the query by filterByComplexQuery, should tell them
+// apart.
+type mockComplexQueryFqdnDiscoveryDBClient struct {
+	dbadapter.DBInterface
 }
 
-// TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern
-// verifies that the positive (non-negated) requester-nf-instance-fqdn query
-// matches nfServices/nfServiceList entries whose allowedNfDomains contains a
-// pattern matching the FQDN (an ECMA-262 regex per TS 29.510 clause
-// 6.1.6.2.2), or omits allowedNfDomains entirely (unrestricted), identically
-// for both representations.
-func TestComplexQueryFilterSubprocessRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern(t *testing.T) {
-	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn},
-	}, COMPLEX_QUERY_TYPE_DNF)
+func (db *mockComplexQueryFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+	if collName != collNfProfile {
+		return nil, nil
+	}
+	return []map[string]interface{}{
+		{
+			fieldNfInstanceId: testNfInstanceUdmAllowed,
+			fieldNfTypeLower:  nfTypeUDM,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldNfServices: []map[string]interface{}{{
+				fieldServiceName:     testServiceNameNudmSdm,
+				fieldNfServiceStatus: nfServiceStatusRegistered,
+			}},
+		},
+		{
+			fieldNfInstanceId: testNfInstanceUdmBlocked,
+			fieldNfTypeLower:  nfTypeUDM,
+			testFieldNfStatus: nfServiceStatusRegistered,
+			fieldNfServices: []map[string]interface{}{{
+				fieldServiceName:      testServiceNameNudmSdm,
+				fieldNfServiceStatus:  nfServiceStatusRegistered,
+				fieldAllowedNfDomains: []string{testOtherFqdn},
+			}},
+		},
+	}, nil
+}
 
-	andFilters := filter[mongoOpAnd].([]bson.M)
-	orFilters := andFilters[0][mongoOpOr].([]bson.M)
+// TestNFDiscoveryProcedureAppliesComplexQueryRequesterNfInstanceFqdnPredicate
+// verifies end to end that a CNF complexQuery combining
+// requester-nf-instance-fqdn with target-nf-type - matched unconditionally in
+// Mongo (see fqdnAtomRequiresGoEvaluation) - is correctly narrowed by
+// filterByComplexQuery afterwards, restoring the exactness the previous
+// outright rejection gave up on this attribute combination.
+func TestNFDiscoveryProcedureAppliesComplexQueryRequesterNfInstanceFqdnPredicate(t *testing.T) {
+	originalDBClient := dbadapter.DBClient
+	defer func() {
+		dbadapter.DBClient = originalDBClient
+	}()
+	dbadapter.DBClient = &mockComplexQueryFqdnDiscoveryDBClient{}
 
-	for _, cond := range []bson.M{extractAnyMatchCond(t, orFilters[0]), extractAnyMatchCond(t, orFilters[1])} {
-		svcOr, exists := cond[mongoOpOr].([]bson.M)
-		if !exists || len(svcOr) != 2 {
-			t.Fatalf("expected cond to allow missing-or-matching-pattern domain, got %#v", cond)
-		}
-		if _, hasIn := svcOr[0][mongoOpIn]; !hasIn {
-			t.Fatalf("expected first alternative to check for a missing or null allowedNfDomains, got %#v", svcOr[0])
-		}
-		anyElementTrue, exists := svcOr[1]["$anyElementTrue"].(bson.A)
-		if !exists || len(anyElementTrue) != 1 {
-			t.Fatalf("expected second alternative to be $anyElementTrue over a one-element array wrapping a $map, got %#v", svcOr[1])
-		}
-		mapContainer, exists := anyElementTrue[0].(bson.M)
-		if !exists {
-			t.Fatalf("expected $anyElementTrue operand to be a document, got %#v", anyElementTrue[0])
-		}
-		mapExpr, exists := mapContainer["$map"].(bson.M)
-		if !exists {
-			t.Fatalf("expected $anyElementTrue to wrap a $map, got %#v", mapContainer)
-		}
-		inExpr, exists := mapExpr["in"].(bson.M)
-		if !exists {
-			t.Fatalf("expected $map to have an 'in' expression, got %#v", mapExpr)
-		}
-		regexMatch, exists := inExpr["$regexMatch"].(bson.M)
-		if !exists {
-			t.Fatalf("expected 'in' expression to be $regexMatch, got %#v", inExpr)
-		}
-		if got := regexMatch["input"]; !reflect.DeepEqual(got, bson.M{"$literal": testExampleFqdn}) {
-			t.Fatalf("expected $regexMatch input to be $literal-wrapped %q, got %#v", testExampleFqdn, got)
-		}
-		if got := regexMatch["regex"]; got != "$$domain" {
-			t.Fatalf("expected $regexMatch regex to reference the stored pattern, got %#v", got)
-		}
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"target-nf-type","value":"AMF"}]}]}`)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if problemDetails != nil {
+		t.Fatalf("unexpected problem details: %+v", problemDetails)
+	}
+	if response == nil {
+		t.Fatal("expected discovery response")
+	}
+	if len(response.NfInstances) != 1 {
+		t.Fatalf("expected 1 NF instance after complexQuery requester-nf-instance-fqdn filtering, got %d: %+v", len(response.NfInstances), response.NfInstances)
+	}
+	if response.NfInstances[0].NfInstanceId != testNfInstanceUdmAllowed {
+		t.Fatalf("expected the unrestricted profile to be returned, got %+v", response.NfInstances[0])
 	}
 }
 
-// TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnWithNor verifies
-// that the negated requester-nf-instance-fqdn query uses $nor (not the invalid
-// top-level $not) to match profiles where no service allows the requester
-// FQDN.
-func TestComplexQueryFilterSubprocessNegatesRequesterNfInstanceFqdnWithNor(t *testing.T) {
-	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
-		queryParamRequesterNfInstanceFqdn: {value: testExampleFqdn, negative: true},
-	}, COMPLEX_QUERY_TYPE_DNF)
+// TestMatchesComplexQueryCnfRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern
+// verifies that matchesComplexQuery matches a CNF unit's positive
+// (non-negated) requester-nf-instance-fqdn atom against a profile whose
+// service allows the FQDN (a matching allowedNfDomains pattern, or no
+// allowedNfDomains at all), and rejects one whose only service restricts to a
+// different pattern.
+func TestMatchesComplexQueryCnfRequesterNfInstanceFqdnAllowsMissingOrMatchingPattern(t *testing.T) {
+	complexQueryStruct := &models.ComplexQuery{}
+	query := `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]}]}`
+	if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
 
-	andFilters := filter[mongoOpAnd].([]bson.M)
-	norFilters, ok := andFilters[0][mongoOpNor].([]bson.M)
-	if !ok || len(norFilters) != 1 {
-		t.Fatalf("expected $nor-wrapped fqdn filter, got %#v", andFilters[0])
+	allowed := models.NFProfileDiscovery{NfServices: []models.NFService{{AllowedNfDomains: []string{`^.*\.example\.com$|^example\.com$`}}}}
+	if !matchesComplexQuery(allowed, complexQueryStruct) {
+		t.Fatalf("expected profile with a matching allowedNfDomains pattern to match")
 	}
-	orFilters, ok := norFilters[0][mongoOpOr].([]bson.M)
-	if !ok || len(orFilters) != 2 {
-		t.Fatalf("expected 2 fqdn alternatives inside $nor, got %#v", norFilters[0])
+
+	unrestricted := models.NFProfileDiscovery{NfServices: []models.NFService{{}}}
+	if !matchesComplexQuery(unrestricted, complexQueryStruct) {
+		t.Fatalf("expected profile with no allowedNfDomains to match")
 	}
-	if _, exists := orFilters[0][mongoOpExpr]; !exists {
-		t.Fatalf("expected first alternative to be an $expr filter over legacy nfservices, got %#v", orFilters[0])
+
+	blocked := models.NFProfileDiscovery{NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+	if matchesComplexQuery(blocked, complexQueryStruct) {
+		t.Fatalf("expected profile whose only service restricts to a different domain not to match")
 	}
-	if _, exists := orFilters[1][mongoOpExpr]; !exists {
-		t.Fatalf("expected second alternative to be an $expr filter over nfServiceList, got %#v", orFilters[1])
+}
+
+// TestMatchesComplexQueryNegatesRequesterNfInstanceFqdn verifies that a
+// negated requester-nf-instance-fqdn atom matches profiles that the
+// non-negated form rejects, and vice versa.
+func TestMatchesComplexQueryNegatesRequesterNfInstanceFqdn(t *testing.T) {
+	complexQueryStruct := &models.ComplexQuery{}
+	query := `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com","negative":true}]}]}`
+	if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	blocked := models.NFProfileDiscovery{NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+	if !matchesComplexQuery(blocked, complexQueryStruct) {
+		t.Fatalf("expected the negated atom to match a profile the positive form rejects")
+	}
+
+	allowed := models.NFProfileDiscovery{NfServices: []models.NFService{{}}}
+	if matchesComplexQuery(allowed, complexQueryStruct) {
+		t.Fatalf("expected the negated atom to reject a profile the positive form matches")
+	}
+}
+
+// TestMatchesComplexQueryCnfCombinesFqdnWithOtherAttr verifies CNF's OR
+// semantics for a unit combining requester-nf-instance-fqdn with
+// target-nf-type: a profile matching either atom satisfies the unit.
+func TestMatchesComplexQueryCnfCombinesFqdnWithOtherAttr(t *testing.T) {
+	complexQueryStruct := &models.ComplexQuery{}
+	query := `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"target-nf-type","value":"UDM"}]}]}`
+	if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	matchesOnlyByType := models.NFProfileDiscovery{
+		NfType:     models.NFTYPE_UDM,
+		NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}},
+	}
+	if !matchesComplexQuery(matchesOnlyByType, complexQueryStruct) {
+		t.Fatalf("expected a profile matching only target-nf-type to satisfy the OR unit")
+	}
+
+	matchesNeither := models.NFProfileDiscovery{
+		NfType:     models.NFTYPE_AMF,
+		NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}},
+	}
+	if matchesComplexQuery(matchesNeither, complexQueryStruct) {
+		t.Fatalf("expected a profile matching neither atom not to satisfy the OR unit")
+	}
+}
+
+// TestMatchesComplexQueryDnfCombinesFqdnWithOtherAttr verifies DNF's AND
+// semantics for a unit combining requester-nf-instance-fqdn with
+// target-nf-type: a profile must match both atoms to satisfy the unit.
+func TestMatchesComplexQueryDnfCombinesFqdnWithOtherAttr(t *testing.T) {
+	complexQueryStruct := &models.ComplexQuery{}
+	query := `{"dnfUnits":[{"dnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"target-nf-type","value":"UDM"}]}]}`
+	if err := json.Unmarshal([]byte(query), complexQueryStruct); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	matchesBoth := models.NFProfileDiscovery{NfType: models.NFTYPE_UDM, NfServices: []models.NFService{{}}}
+	if !matchesComplexQuery(matchesBoth, complexQueryStruct) {
+		t.Fatalf("expected a profile matching both atoms to satisfy the AND unit")
+	}
+
+	matchesOnlyType := models.NFProfileDiscovery{NfType: models.NFTYPE_UDM, NfServices: []models.NFService{{AllowedNfDomains: []string{testOtherFqdn}}}}
+	if matchesComplexQuery(matchesOnlyType, complexQueryStruct) {
+		t.Fatalf("expected a profile matching only one atom not to satisfy the AND unit")
+	}
+}
+
+// TestComplexQueryUsesOnlySupportedAttrs verifies the gate
+// validateComplexQuery uses to decide whether a complexQuery containing
+// requester-nf-instance-fqdn can be safely, exactly re-evaluated in Go.
+func TestComplexQueryUsesOnlySupportedAttrs(t *testing.T) {
+	tests := map[string]struct {
+		complexQuery string
+		want         bool
+	}{
+		"all supported": {
+			`{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"target-nf-type","value":"UDM"}]}]}`,
+			true,
+		},
+		"unsupported attr": {
+			`{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"},{"attr":"tai","value":"{}"}]}]}`,
+			false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			complexQueryStruct := &models.ComplexQuery{}
+			if err := json.Unmarshal([]byte(tc.complexQuery), complexQueryStruct); err != nil {
+				t.Fatalf("unexpected unmarshal error: %v", err)
+			}
+			if got := complexQueryUsesOnlySupportedAttrs(complexQueryStruct); got != tc.want {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
 	}
 }
 
@@ -1374,17 +1529,18 @@ func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
 	}
 }
 
+// TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue verifies that an
+// invalid snssais value is skipped, and - since it is then the only atom in
+// the unit - the unit matches unconditionally rather than leaving an empty
+// $and array, which MongoDB rejects.
 func TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		fieldSnssais: {value: `{"sst":1`},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
-	if !ok {
-		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
-	}
-	if len(andFilters) != 0 {
-		t.Fatalf("expected invalid snssais value to be skipped, got %#v", andFilters)
+	if !ok || len(andFilters) != 1 || len(andFilters[0]) != 0 {
+		t.Fatalf("expected a single match-all alternative for an invalid snssais value, got %#v", filter[mongoOpAnd])
 	}
 }
 
