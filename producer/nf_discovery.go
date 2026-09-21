@@ -480,9 +480,19 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 		// translate raw data to complexQuery structure
 		complexQuery := values[0]
 		complexQueryStruct := &models.ComplexQuery{}
-		err := json.Unmarshal([]byte(complexQuery), complexQueryStruct)
-		if err != nil {
+		if err := json.Unmarshal([]byte(complexQuery), complexQueryStruct); err != nil {
+			// A malformed complexQuery must not fall through to buildFilter as
+			// a zero-value ComplexQuery{} (Cnf and Dnf both nil): that builds
+			// an empty $or MongoDB rejects, surfacing as a 500 system failure
+			// instead of the 400 a client error deserves; filterByComplexQuery
+			// also relies on every complexQuery having already been rejected
+			// here if it fails to parse.
 			logger.DiscoveryLog.Warnln("unmarshal complexQuery Error:", err)
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "complexQuery is not valid JSON", utils.CauseInvalidRequest)
+			problemDetails.SetInvalidParams([]models.InvalidParam{
+				{Param: queryParamComplexQuery},
+			})
+			return problemDetails
 		}
 		// Check either CNF or DNF
 		if complexQueryStruct.Cnf != nil && complexQueryStruct.Dnf != nil {
@@ -516,7 +526,7 @@ func validateComplexQuery(queryParameters url.Values) *models.ProblemDetails {
 			// combining requester-nf-instance-fqdn with any other attribute
 			// is rejected here instead of either reaching MongoDB unsafely or
 			// being silently mis-evaluated.
-			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn within complexQuery can only be combined with target-nf-type, target-nf-instance-id, requester-nf-type, service-names, or supported-features", utils.CauseInvalidRequest)
+			problemDetails := utils.ProblemDetailsWithCause("Invalid Parameter", http.StatusBadRequest, "requester-nf-instance-fqdn within complexQuery can only be combined with target-nf-type, target-nf-instance-id, service-names, or supported-features", utils.CauseInvalidRequest)
 			problemDetails.SetInvalidParams([]models.InvalidParam{
 				{Param: queryParamComplexQuery},
 			})
@@ -596,11 +606,17 @@ func complexQueryUnitHasDuplicateAttr(atoms []models.Atom) bool {
 // these attributes, so that matchesComplexQuery can fully and exactly
 // re-evaluate the request in Go - see filterByComplexQuery - instead of
 // sending the FQDN atom's allowedNfDomains pattern to MongoDB's PCRE-based
-// $regexMatch.
+// $regexMatch. requester-nf-type is deliberately excluded even though
+// matchesComplexQueryAtom implements it: complexQueryFilterSubprocess has no
+// Mongo-side atom for it (still a TODO), so a unit consisting solely of a
+// requester-nf-type atom builds an empty $or/$and MongoDB rejects, unless
+// that unit also happens to contain the FQDN atom itself (which forces the
+// whole-unit/empty-filter match-all fallback); a requester-nf-type atom
+// isolated in its own unit elsewhere in the same query would still reach
+// MongoDB as an invalid empty operator.
 var complexQueryPostFilterSupportedAttrs = map[string]bool{
 	queryParamTargetNFType:            true,
 	queryParamTargetNfInstanceID:      true,
-	queryParamRequesterNFType:         true,
 	queryParamServiceNames:            true,
 	queryParamSupportedFeatures:       true,
 	queryParamRequesterNfInstanceFqdn: true,

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -1093,6 +1094,63 @@ func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnMixedWithUnsupportedA
 	problemDetails := validateComplexQuery(query)
 	if problemDetails == nil {
 		t.Fatal("expected problem details rejecting requester-nf-instance-fqdn combined with an unsupported attribute")
+	}
+}
+
+// TestValidateComplexQueryRejectsRequesterNfInstanceFqdnWithRequesterNfType
+// verifies that a complexQuery combining requester-nf-instance-fqdn with
+// requester-nf-type is rejected, even when the two atoms are in separate
+// units: complexQueryFilterSubprocess has no Mongo-side atom for
+// requester-nf-type (still a TODO), so a unit consisting solely of a
+// requester-nf-type atom would otherwise build an empty $or/$and MongoDB
+// rejects, since that unit (unlike the FQDN one) never triggers the
+// empty-filter match-all fallback.
+func TestValidateComplexQueryRejectsRequesterNfInstanceFqdnWithRequesterNfType(t *testing.T) {
+	query := url.Values{}
+	query.Set("complexQuery", `{"cnfUnits":[{"cnfUnit":[{"attr":"requester-nf-instance-fqdn","value":"example.com"}]},{"cnfUnit":[{"attr":"requester-nf-type","value":"AMF"}]}]}`)
+
+	problemDetails := validateComplexQuery(query)
+	if problemDetails == nil {
+		t.Fatal("expected problem details rejecting requester-nf-instance-fqdn combined with requester-nf-type")
+	}
+}
+
+// TestValidateComplexQueryRejectsMalformedJSON verifies that a complexQuery
+// value which fails to unmarshal as JSON is rejected with a 400, rather than
+// silently continuing with a zero-value ComplexQuery{} (Cnf and Dnf both
+// nil): buildFilter would otherwise construct an empty $or MongoDB rejects,
+// surfacing as a 500 system failure for what is really a client error.
+func TestValidateComplexQueryRejectsMalformedJSON(t *testing.T) {
+	query := url.Values{}
+	query.Set("complexQuery", `{not valid json`)
+
+	problemDetails := validateComplexQuery(query)
+	if problemDetails == nil {
+		t.Fatal("expected problem details rejecting a malformed complexQuery")
+	}
+	if problemDetails.GetStatus() != http.StatusBadRequest {
+		t.Fatalf("expected a 400 status, got %d", problemDetails.GetStatus())
+	}
+}
+
+// TestNFDiscoveryProcedureRejectsMalformedComplexQuery verifies end to end
+// that NFDiscoveryProcedure returns a 400 for a malformed complexQuery value
+// instead of reaching buildFilter/MongoDB.
+func TestNFDiscoveryProcedureRejectsMalformedComplexQuery(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("complexQuery", `{not valid json`)
+
+	response, problemDetails := NFDiscoveryProcedure(query)
+	if response != nil {
+		t.Fatalf("expected no SearchResult for a malformed complexQuery, got %+v", response)
+	}
+	if problemDetails == nil {
+		t.Fatal("expected problem details rejecting a malformed complexQuery")
+	}
+	if problemDetails.GetStatus() != http.StatusBadRequest {
+		t.Fatalf("expected a 400 status, got %d", problemDetails.GetStatus())
 	}
 }
 
