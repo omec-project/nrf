@@ -2595,12 +2595,17 @@ func complexQueryFilterSubprocess(queryParameters map[string]*AtomElem, complexQ
 	addAccessTypeFilter(queryParameters, filter, logicalOperator)
 	addSupportedFeaturesFilter(queryParameters, filter, logicalOperator)
 
-	if len(filter[logicalOperator].([]bson.M)) == 0 {
+	if len(filter[logicalOperator].([]bson.M)) == 0 && queryParameters[queryParamRequesterNfInstanceFqdn] != nil {
 		// A unit consisting solely of a requester-nf-instance-fqdn atom (the
 		// only attribute this function never adds a Mongo condition for)
 		// would otherwise leave filter[logicalOperator] empty, which MongoDB
 		// rejects ($and/$or/$nor require a nonempty array); match
 		// unconditionally instead and let filterByComplexQuery enforce it.
+		// Scoped to units that actually contain that atom: a unit left empty
+		// for any other reason (e.g. a malformed snssais value, or an
+		// attribute inapplicable to the target NF type) has no Go-side
+		// re-evaluation to restore exactness, so it must not be silently
+		// broadened to match every profile.
 		return matchAllComplexQueryUnitFilter(logicalOperator)
 	}
 

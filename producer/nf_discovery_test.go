@@ -1022,6 +1022,23 @@ func TestComplexQueryFilterSubprocessMatchesAllForFqdnOnlyUnit(t *testing.T) {
 	}
 }
 
+// TestComplexQueryFilterSubprocessLeavesUnitEmptyWithoutFqdnAtom verifies that
+// a unit left empty for a reason unrelated to requester-nf-instance-fqdn -
+// here, "amf-region-id" not applying because no target-nf-type=AMF atom is
+// present - is not broadened to match unconditionally: that fallback is
+// scoped to units containing an FQDN atom, since only those have a Go-side
+// re-evaluation (filterByComplexQuery) able to restore exactness afterwards.
+func TestComplexQueryFilterSubprocessLeavesUnitEmptyWithoutFqdnAtom(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamAmfRegionID: {value: "region-1"},
+	}, COMPLEX_QUERY_TYPE_CNF)
+
+	orFilters, ok := filter[mongoOpOr].([]bson.M)
+	if !ok || len(orFilters) != 0 {
+		t.Fatalf("expected no alternatives when the unit's only atom does not apply, got %#v", filter[mongoOpOr])
+	}
+}
+
 // TestComplexQueryFilterSubprocessIgnoresEmptyRequesterNfInstanceFqdn verifies
 // that an atom with an empty requester-nf-instance-fqdn value adds no Mongo
 // condition for the atom itself, mirroring TestBuildFilterOmitsRequesterNfInstanceFqdn
@@ -1659,17 +1676,19 @@ func TestComplexQueryFilterSubprocessNegatesSnssaisWithNor(t *testing.T) {
 }
 
 // TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue verifies that an
-// invalid snssais value is skipped, and - since it is then the only atom in
-// the unit - the unit matches unconditionally rather than leaving an empty
-// $and array, which MongoDB rejects.
+// invalid snssais value is skipped, leaving an empty $and array rather than
+// falling back to matching unconditionally: that fallback is scoped to units
+// containing a requester-nf-instance-fqdn atom (see filterByComplexQuery),
+// which has no Go-side re-evaluation to restore exactness for a unit left
+// empty for an unrelated reason like this one.
 func TestComplexQueryFilterSubprocessSkipsInvalidSnssaisValue(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		fieldSnssais: {value: `{"sst":1`},
 	}, COMPLEX_QUERY_TYPE_DNF)
 
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
-	if !ok || len(andFilters) != 1 || len(andFilters[0]) != 0 {
-		t.Fatalf("expected a single match-all alternative for an invalid snssais value, got %#v", filter[mongoOpAnd])
+	if !ok || len(andFilters) != 0 {
+		t.Fatalf("expected no alternatives for an invalid snssais value, got %#v", filter[mongoOpAnd])
 	}
 }
 
