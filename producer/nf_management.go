@@ -150,13 +150,23 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
-	limitRaw := request.Query.Get("limit")
-	limit, err := strconv.Atoi(limitRaw)
-	if err != nil {
-		logger.ManagementLog.Errorln("error converting limit query parameter:", limitRaw, err)
-		problemDetails := utils.ProblemDetails("Invalid Parameter", http.StatusBadRequest, err.Error())
 
-		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+	// "limit" is an optional query parameter with a minimum of 1. Omitting it
+	// means "no limit", which is conveyed downstream as 0; parsing it
+	// unconditionally would make an optional parameter mandatory.
+	limit := 0
+	if limitRaw := request.Query.Get("limit"); limitRaw != "" {
+		parsed, err := strconv.Atoi(limitRaw)
+		if err != nil || parsed < 1 {
+			// The detail names the parameter and the constraint. The parse error
+			// itself is an implementation detail and belongs in the log.
+			logger.ManagementLog.Errorf("invalid limit query parameter %q: %v", limitRaw, err)
+			problemDetails := utils.ProblemDetailsWithCause(
+				"Invalid Parameter", http.StatusBadRequest,
+				"query parameter 'limit' must be an integer of at least 1", utils.CauseInvalidRequest)
+			return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+		}
+		limit = parsed
 	}
 
 	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
