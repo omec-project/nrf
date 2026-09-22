@@ -1766,6 +1766,158 @@ func TestComplexQueryFilterSubprocessNegatesChfSupportedPlmnWithNor(t *testing.T
 	}
 }
 
+// TestNegateFieldFilterNestsNotForOperatorExpressionsAndNeForScalars verifies
+// negateFieldFilter's two negation modes: $ne for a plain scalar equality,
+// and $not nested inside the field (never wrapping it) for an operator
+// expression such as $elemMatch.
+func TestNegateFieldFilterNestsNotForOperatorExpressionsAndNeForScalars(t *testing.T) {
+	scalarNegated := negateFieldFilter(bson.M{"foo": "bar"})
+	scalarCond, ok := scalarNegated["foo"].(bson.M)
+	if !ok || scalarCond[mongoOpNe] != "bar" {
+		t.Fatalf("expected foo: {$ne: bar}, got %#v", scalarNegated)
+	}
+
+	exprNegated := negateFieldFilter(bson.M{
+		"foo": bson.M{mongoOpElemMatch: bson.M{"a": 1}},
+	})
+	exprCond, ok := exprNegated["foo"].(bson.M)
+	if !ok {
+		t.Fatalf("expected a nested condition under foo, got %#v", exprNegated)
+	}
+	notExpr, ok := exprCond[mongoOpNot].(bson.M)
+	if !ok {
+		t.Fatalf("expected $not nested inside the field, got %#v", exprCond)
+	}
+	if _, exists := notExpr[mongoOpElemMatch]; !exists {
+		t.Fatalf("expected $not to wrap the original $elemMatch expression, got %#v", notExpr)
+	}
+}
+
+// TestComplexQueryFilterSubprocessNegatesScalarFieldsWithNe verifies that
+// negated complex-query atoms backed by a plain scalar value (amf-region-id,
+// ip-domain, access-type) use {field: {$ne: value}} rather than the invalid
+// top-level {$not: {field: value}}.
+func TestComplexQueryFilterSubprocessNegatesScalarFieldsWithNe(t *testing.T) {
+	tests := []struct {
+		name       string
+		atoms      map[string]*AtomElem
+		wantField  string
+		wantNeType string
+	}{
+		{
+			name: "amf-region-id",
+			atoms: map[string]*AtomElem{
+				queryParamTargetNFType: {value: nfTypeAMF},
+				queryParamAmfRegionID:  {value: "region1", negative: true},
+			},
+			wantField: "amfinfo.amfregionid",
+		},
+		{
+			name: "ip-domain",
+			atoms: map[string]*AtomElem{
+				queryParamTargetNFType: {value: nfTypeBSF},
+				queryParamIpDomain:     {value: "domain1", negative: true},
+			},
+			wantField: fieldBsfInfoIpDomainList,
+		},
+		{
+			name: "access-type",
+			atoms: map[string]*AtomElem{
+				queryParamAccessType: {value: "3GPP_ACCESS", negative: true},
+			},
+			wantField: fieldSmfInfoAccessType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := complexQueryFilterSubprocess(tt.atoms, COMPLEX_QUERY_TYPE_DNF)
+			andFilters, ok := filter[mongoOpAnd].([]bson.M)
+			if !ok {
+				t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+			}
+
+			var cond bson.M
+			for _, candidate := range andFilters {
+				if c, ok := candidate[tt.wantField].(bson.M); ok {
+					cond = c
+					break
+				}
+			}
+			if cond == nil {
+				t.Fatalf("expected a %s filter in %+v", tt.wantField, andFilters)
+			}
+			if _, exists := cond[mongoOpNe]; !exists {
+				t.Fatalf("expected %s: {$ne: ...}, got %#v", tt.wantField, cond)
+			}
+			if _, exists := cond[mongoOpNot]; exists {
+				t.Fatalf("did not expect invalid $not on %s, got %#v", tt.wantField, cond)
+			}
+		})
+	}
+}
+
+// TestComplexQueryFilterSubprocessNegatesOperatorFieldsWithNestedNot verifies
+// that negated complex-query atoms backed by an operator expression
+// ($elemMatch, $in, $all) nest $not inside the field rather than wrapping the
+// whole field document, which MongoDB rejects as an invalid top-level
+// operator.
+func TestComplexQueryFilterSubprocessNegatesOperatorFieldsWithNestedNot(t *testing.T) {
+	tests := []struct {
+		name      string
+		atoms     map[string]*AtomElem
+		wantField string
+	}{
+		{
+			name: "supi",
+			atoms: map[string]*AtomElem{
+				queryParamTargetNFType: {value: nfTypeUDM},
+				"supi":                 {value: "imsi-001010000000001", negative: true},
+			},
+			wantField: fieldUdmInfoSupiRanges,
+		},
+		{
+			name: "group-id-list",
+			atoms: map[string]*AtomElem{
+				queryParamTargetNFType: {value: nfTypeUDR},
+				queryParamGroupIDList:  {value: "group1,group2", negative: true},
+			},
+			wantField: "udrinfo.groupid",
+		},
+		{
+			name: "nsi-list",
+			atoms: map[string]*AtomElem{
+				queryParamNsiList: {value: "nsi1,nsi2", negative: true},
+			},
+			wantField: "nsilist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := complexQueryFilterSubprocess(tt.atoms, COMPLEX_QUERY_TYPE_DNF)
+			andFilters, ok := filter[mongoOpAnd].([]bson.M)
+			if !ok {
+				t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+			}
+
+			var cond bson.M
+			for _, candidate := range andFilters {
+				if c, ok := candidate[tt.wantField].(bson.M); ok {
+					cond = c
+					break
+				}
+			}
+			if cond == nil {
+				t.Fatalf("expected a %s filter in %+v", tt.wantField, andFilters)
+			}
+			if _, exists := cond[mongoOpNot]; !exists {
+				t.Fatalf("expected %s: {$not: ...}, got %#v", tt.wantField, cond)
+			}
+		})
+	}
+}
+
 func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchDocument(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		fieldSnssais: {value: `{"sst":1,"sd":"010203"}`},

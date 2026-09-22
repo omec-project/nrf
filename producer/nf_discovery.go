@@ -2809,12 +2809,27 @@ func addNsiListFilter(queryParameters map[string]*AtomElem, filter bson.M, logic
 			},
 		}
 		if queryParameters[queryParamNsiList].negative {
-			nsiListFilter = bson.M{
-				mongoOpNot: nsiListFilter,
-			}
+			nsiListFilter = negateFieldFilter(nsiListFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), nsiListFilter)
 	}
+}
+
+// negateFieldFilter negates a single-field filter document built by the
+// complex-query add*Filter helpers. $not must nest inside the field
+// ({field: {$not: expr}}), never wrap it ({$not: {field: expr}}, which
+// MongoDB rejects as an invalid top-level operator); a plain scalar value
+// negates more directly via $ne.
+func negateFieldFilter(fieldFilter bson.M) bson.M {
+	negated := bson.M{}
+	for field, condition := range fieldFilter {
+		if expr, ok := condition.(bson.M); ok {
+			negated[field] = bson.M{mongoOpNot: expr}
+		} else {
+			negated[field] = bson.M{mongoOpNe: condition}
+		}
+	}
+	return negated
 }
 
 func addDnnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOperator string, targetNfType string) {
@@ -2863,9 +2878,7 @@ func addDnnFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOp
 			return
 		}
 		if queryParameters[queryParamDnn].negative {
-			dnnFilter = bson.M{
-				mongoOpNot: dnnFilter,
-			}
+			dnnFilter = negateFieldFilter(dnnFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), dnnFilter)
 	}
@@ -2885,9 +2898,7 @@ func addSmfServingAreaFilter(queryParameters map[string]*AtomElem, filter bson.M
 			return
 		}
 		if queryParameters[queryParamSmfServingArea].negative {
-			smfServingAreaFilter = bson.M{
-				mongoOpNot: smfServingAreaFilter,
-			}
+			smfServingAreaFilter = negateFieldFilter(smfServingAreaFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), smfServingAreaFilter)
 	}
@@ -2935,9 +2946,7 @@ func addTaiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOp
 			return
 		}
 		if queryParameters["tai"].negative {
-			taiFilter = bson.M{
-				mongoOpNot: taiFilter,
-			}
+			taiFilter = negateFieldFilter(taiFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), taiFilter)
 	}
@@ -2957,9 +2966,7 @@ func addAmfRegionFilter(queryParameters map[string]*AtomElem, filter bson.M, log
 			return
 		}
 		if queryParameters[queryParamAmfRegionID].negative {
-			amfRegionIdFilter = bson.M{
-				mongoOpNot: amfRegionIdFilter,
-			}
+			amfRegionIdFilter = negateFieldFilter(amfRegionIdFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), amfRegionIdFilter)
 	}
@@ -2979,9 +2986,7 @@ func addAmfSetIdFilter(queryParameters map[string]*AtomElem, filter bson.M, logi
 			return
 		}
 		if queryParameters[queryParamAmfSetID].negative {
-			amfSetIdFilter = bson.M{
-				mongoOpNot: amfSetIdFilter,
-			}
+			amfSetIdFilter = negateFieldFilter(amfSetIdFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), amfSetIdFilter)
 	}
@@ -3024,9 +3029,7 @@ func addGuamiFilter(queryParameters map[string]*AtomElem, filter bson.M, logical
 			return
 		}
 		if queryParameters["guami"].negative {
-			guamiFilter = bson.M{
-				mongoOpNot: guamiFilter,
-			}
+			guamiFilter = negateFieldFilter(guamiFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), guamiFilter)
 	}
@@ -3110,9 +3113,7 @@ func addSupiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 			return
 		}
 		if queryParameters["supi"].negative {
-			supiFilter = bson.M{
-				mongoOpNot: supiFilter,
-			}
+			supiFilter = negateFieldFilter(supiFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), supiFilter)
 	}
@@ -3142,9 +3143,7 @@ func addIpv4Filter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 			return
 		}
 		if queryParameters[queryParamUeIpv4Address].negative {
-			ueIpv4AddressFilter = bson.M{
-				mongoOpNot: ueIpv4AddressFilter,
-			}
+			ueIpv4AddressFilter = negateFieldFilter(ueIpv4AddressFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), ueIpv4AddressFilter)
 	}
@@ -3164,9 +3163,7 @@ func addIpDomainFilter(queryParameters map[string]*AtomElem, filter bson.M, logi
 			return
 		}
 		if queryParameters[queryParamIpDomain].negative {
-			ipDomainFilter = bson.M{
-				mongoOpNot: ipDomainFilter,
-			}
+			ipDomainFilter = negateFieldFilter(ipDomainFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), ipDomainFilter)
 	}
@@ -3196,9 +3193,7 @@ func addIpv6PrefixFilter(queryParameters map[string]*AtomElem, filter bson.M, lo
 			return
 		}
 		if queryParameters[queryParamUeIpv6Prefix].negative {
-			ueIpv6PrefixFilter = bson.M{
-				mongoOpNot: ueIpv6PrefixFilter,
-			}
+			ueIpv6PrefixFilter = negateFieldFilter(ueIpv6PrefixFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), ueIpv6PrefixFilter)
 	}
@@ -3237,9 +3232,7 @@ func addPgwFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalOp
 			fieldSmfInfoPgwFqdn: pgw,
 		}
 		if queryParameters["pgw"].negative {
-			pgwFilter = bson.M{
-				mongoOpNot: pgwFilter,
-			}
+			pgwFilter = negateFieldFilter(pgwFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), pgwFilter)
 	}
@@ -3296,9 +3289,7 @@ func addGpsiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 			return
 		}
 		if queryParameters["gpsi"].negative {
-			gpsiFilter = bson.M{
-				mongoOpNot: gpsiFilter,
-			}
+			gpsiFilter = negateFieldFilter(gpsiFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), gpsiFilter)
 	}
@@ -3342,9 +3333,7 @@ func addExternalGroupFilter(queryParameters map[string]*AtomElem, filter bson.M,
 			return
 		}
 		if queryParameters[queryParamExternalGroupIdentity].negative {
-			externalGroupIdentityFilter = bson.M{
-				mongoOpNot: externalGroupIdentityFilter,
-			}
+			externalGroupIdentityFilter = negateFieldFilter(externalGroupIdentityFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), externalGroupIdentityFilter)
 	}
@@ -3364,9 +3353,7 @@ func addDataSetFilter(queryParameters map[string]*AtomElem, filter bson.M, logic
 			return
 		}
 		if queryParameters[queryParamDataSet].negative {
-			dataSetFilter = bson.M{
-				mongoOpNot: dataSetFilter,
-			}
+			dataSetFilter = negateFieldFilter(dataSetFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), dataSetFilter)
 	}
@@ -3391,9 +3378,7 @@ func addRoutingIndicatorFilter(queryParameters map[string]*AtomElem, filter bson
 			return
 		}
 		if queryParameters[queryParamRoutingIndicator].negative {
-			routingIndicatorFilter = bson.M{
-				mongoOpNot: routingIndicatorFilter,
-			}
+			routingIndicatorFilter = negateFieldFilter(routingIndicatorFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), routingIndicatorFilter)
 	}
@@ -3435,9 +3420,7 @@ func addGroupIdListFilter(queryParameters map[string]*AtomElem, filter bson.M, l
 			return
 		}
 		if queryParameters[queryParamGroupIDList].negative {
-			groupIdListFilter = bson.M{
-				mongoOpNot: groupIdListFilter,
-			}
+			groupIdListFilter = negateFieldFilter(groupIdListFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), groupIdListFilter)
 	}
@@ -3473,9 +3456,7 @@ func addDnaiFilter(queryParameters map[string]*AtomElem, filter bson.M, logicalO
 			return
 		}
 		if queryParameters[queryParamDnaiList].negative {
-			dnaiFilter = bson.M{
-				mongoOpNot: dnaiFilter,
-			}
+			dnaiFilter = negateFieldFilter(dnaiFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), dnaiFilter)
 	}
@@ -3495,9 +3476,7 @@ func addUpfIwkEpsFilter(queryParameters map[string]*AtomElem, filter bson.M, log
 			return
 		}
 		if queryParameters[queryParamUpfIwkEpsInd].negative {
-			upfIwkEpsIndFilter = bson.M{
-				mongoOpNot: upfIwkEpsIndFilter,
-			}
+			upfIwkEpsIndFilter = negateFieldFilter(upfIwkEpsIndFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), upfIwkEpsIndFilter)
 	}
@@ -3550,9 +3529,7 @@ func addPreferredLocalityFilter(queryParameters map[string]*AtomElem, filter bso
 			"locality": preferredLocality,
 		}
 		if queryParameters[queryParamPreferredLocality].negative {
-			preferredLocalityFilter = bson.M{
-				mongoOpNot: preferredLocalityFilter,
-			}
+			preferredLocalityFilter = negateFieldFilter(preferredLocalityFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), preferredLocalityFilter)
 	}
@@ -3566,9 +3543,7 @@ func addAccessTypeFilter(queryParameters map[string]*AtomElem, filter bson.M, lo
 			fieldSmfInfoAccessType: accessType,
 		}
 		if queryParameters[queryParamAccessType].negative {
-			accessTypeFilter = bson.M{
-				mongoOpNot: accessTypeFilter,
-			}
+			accessTypeFilter = negateFieldFilter(accessTypeFilter)
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), accessTypeFilter)
 	}
