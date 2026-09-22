@@ -651,6 +651,27 @@ func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
 	return &nfProfile
 }
 
+// notifySubscribers delivers an NF-status notification to every subscriber
+// matching nf, and reports delivery failures to the log only.
+//
+// The profile has already been committed by the time this runs, so a subscriber
+// the NRF cannot reach says nothing about the request that triggered it: TS
+// 29.510 clause 5.2.2.6 makes NFStatusNotify a separate service operation, and
+// the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister are encoding
+// errors and NRF internal errors. Failing the registration here would report a
+// profile as unregistered while the NRF holds and serves it. The deregistration
+// path has always treated the same failure this way.
+//
+// Note this also means every matching subscriber is attempted, where the loop
+// this replaces stopped at the first failure.
+func notifySubscribers(nf models.NFProfile, event models.NotificationEventType, nfInstanceUri string) {
+	for _, uri := range nrfContext.GetNotificationUri(nf) {
+		if pd := SendNFStatusNotify(event, nfInstanceUri, uri); pd != nil {
+			logger.ManagementLog.Warnf("NF status notification to %s failed: %+v", uri, pd)
+		}
+	}
+}
+
 // nfRegistrationOutcome distinguishes the two successful outcomes of a
 // registration request. TS 29.510 gives them different status codes: a newly
 // created profile is 201 Created (clause 5.2.2.2.2 step 2a) and a complete
@@ -766,11 +787,7 @@ func handleNFProfileUpdateOrCreate(
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
 	}
 
-	for _, uri := range nrfContext.GetNotificationUri(nf) {
-		if pd := SendNFStatusNotify(notificationEvent, locationHeaderValue, uri); pd != nil {
-			return outcome, nil, nil, pd
-		}
-	}
+	notifySubscribers(nf, notificationEvent, locationHeaderValue)
 
 	// TS 29.510 clause 5.2.2.2.2 step 2a specifies the Location header for the
 	// resource NFRegister created. Clause 5.2.2.3.1A step 2a, the complete

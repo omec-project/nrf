@@ -429,3 +429,37 @@ func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
 		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
 	}
 }
+
+// notifyingDB answers the Subscriptions lookup with a subscriber whose callback
+// address is closed, so every NF-status notification the register path attempts
+// fails.
+type notifyingDB struct {
+	statusCodeDB
+}
+
+func (db *notifyingDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
+	return []map[string]any{{
+		"subscriptionId":          "subscription-1",
+		"nfStatusNotificationUri": "http://127.0.0.1:1/dead",
+	}}, nil
+}
+
+// A profile committed to the datastore is registered. Delivering NF-status
+// notifications afterwards is a separate service operation (TS 29.510 clause
+// 5.2.2.6), and the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister
+// are encoding errors and NRF internal errors -- not an unreachable subscriber.
+// Reporting 500 here told the registering NF its profile was not stored while
+// the NRF held and served it.
+func TestRegistrationSucceedsWhenSubscriberNotificationFails(t *testing.T) {
+	useDB(t, &notifyingDB{statusCodeDB{putOneExisted: false}})
+	setProfileExpiry(t, true)
+
+	response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
+
+	if response.Status != http.StatusCreated {
+		t.Errorf("status = %d, want %d despite the unreachable subscriber", response.Status, http.StatusCreated)
+	}
+	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
+		t.Errorf("registration reported a failure for a committed profile: %+v", problem)
+	}
+}
