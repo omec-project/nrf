@@ -36,6 +36,7 @@ const (
 	testServiceInstanceId            = "svc-0"
 	testServiceNameNudmSdm           = "nudm-sdm"
 	testNfInstanceAusf1              = "ausf-1"
+	testDnnInternet                  = "internet"
 )
 
 type mockDiscoveryDBClient struct {
@@ -103,6 +104,156 @@ func (db *mockBSFDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bs
 		fieldNfTypeLower:  nfTypeBSF,
 		testFieldNfStatus: nfServiceStatusRegistered,
 	}}, nil
+}
+
+// TestBuildFilterUnrestrictedAlternativesAllowNullField verifies that the
+// "unrestricted"/"serve all NF" alternatives buildFilter adds for a
+// restricting field match a bare nil, not {$exists: false}: a value cleared
+// by a JSON Patch "remove" (see updateNFInstanceProcedure) round-trips
+// through the typed NFProfile model as an explicit BSON null, not a missing
+// key, and only a nil equality check matches both.
+func TestBuildFilterUnrestrictedAlternativesAllowNullField(t *testing.T) {
+	tests := []struct {
+		name          string
+		targetNfType  string
+		param         string
+		value         string
+		matcherField  string
+		expectedField string
+	}{
+		{
+			name:          "BSF dnn",
+			targetNfType:  nfTypeBSF,
+			param:         queryParamDnn,
+			value:         testDnnInternet,
+			expectedField: fieldBsfInfoDnnList,
+		},
+		{
+			name:          "CHF chf-supported-plmn",
+			targetNfType:  nfTypeCHF,
+			param:         queryParamChfSupportedPlmn,
+			value:         `{"mcc":"001","mnc":"01"}`,
+			expectedField: fieldChfInfoPlmnRangeList,
+		},
+		{
+			name:          "SMF access-type",
+			targetNfType:  nfTypeSMF,
+			param:         queryParamAccessType,
+			value:         "3GPP_ACCESS",
+			expectedField: fieldSmfInfoAccessType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query := url.Values{}
+			query.Set("target-nf-type", tt.targetNfType)
+			query.Set("requester-nf-type", nfTypeAMF)
+			query.Set(tt.param, tt.value)
+
+			filter := buildFilter(query)
+			andFilters, ok := filter[mongoOpAnd].([]bson.M)
+			if !ok {
+				t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+			}
+
+			var orFilters []bson.M
+			for _, candidate := range andFilters {
+				alternatives, ok := candidate[mongoOpOr].([]bson.M)
+				if !ok || len(alternatives) == 0 {
+					continue
+				}
+				if _, exists := alternatives[len(alternatives)-1][tt.expectedField]; exists {
+					orFilters = alternatives
+					break
+				}
+			}
+			if orFilters == nil {
+				t.Fatalf("expected a %s alternative in %+v", tt.expectedField, andFilters)
+			}
+
+			unrestricted := orFilters[len(orFilters)-1]
+			got, exists := unrestricted[tt.expectedField]
+			if !exists || got != nil {
+				t.Fatalf("expected the unrestricted alternative to be %s: nil, got %#v", tt.expectedField, unrestricted)
+			}
+		})
+	}
+}
+
+// TestBuildFilterUdmUnrestrictedAlternativeAllowsAllNullFields verifies that
+// the combined "UDM restricts none of supiRanges/gpsiRanges/
+// externalGroupIdentifiersRanges" alternative (used by the supi, gpsi, and
+// external-group-identity discovery queries) matches each field against a
+// bare nil, not {$exists: false}, for the same reason as
+// TestBuildFilterUnrestrictedAlternativesAllowNullField.
+func TestBuildFilterUdmUnrestrictedAlternativeAllowsAllNullFields(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeUDM)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set("supi", "imsi-001010000000001")
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var unrestricted bson.M
+	for _, candidate := range andFilters {
+		alternatives, ok := candidate[mongoOpOr].([]bson.M)
+		if !ok || len(alternatives) != 2 {
+			continue
+		}
+		if _, exists := alternatives[1][fieldUdmInfoSupiRanges]; exists {
+			unrestricted = alternatives[1]
+			break
+		}
+	}
+	if unrestricted == nil {
+		t.Fatalf("expected a UDM supi filter in %+v", andFilters)
+	}
+
+	for _, field := range []string{fieldUdmInfoSupiRanges, fieldUdmInfoGpsiRanges, fieldUdmExtGrpIDRanges} {
+		got, exists := unrestricted[field]
+		if !exists || got != nil {
+			t.Fatalf("expected %s: nil in the unrestricted alternative, got %#v", field, unrestricted)
+		}
+	}
+}
+
+// TestBuildFilterPgwIndRequiresNonNullField verifies that pgw-ind=true, a
+// positive existence check ("SMF has a PGW FQDN configured"), requires the
+// field to both exist and be non-null: $exists: true alone would still match
+// a pgwFqdn a JSON Patch "remove" has nulled out rather than truly deleted.
+func TestBuildFilterPgwIndRequiresNonNullField(t *testing.T) {
+	query := url.Values{}
+	query.Set("target-nf-type", nfTypeSMF)
+	query.Set("requester-nf-type", nfTypeAMF)
+	query.Set(queryParamPgwInd, "true")
+
+	filter := buildFilter(query)
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var pgwIndFilter bson.M
+	for _, candidate := range andFilters {
+		if cond, ok := candidate[fieldSmfInfoPgwFqdn].(bson.M); ok {
+			pgwIndFilter = cond
+			break
+		}
+	}
+	if pgwIndFilter == nil {
+		t.Fatalf("expected a %s filter in %+v", fieldSmfInfoPgwFqdn, andFilters)
+	}
+	if exists, ok := pgwIndFilter[mongoOpExists].(bool); !ok || !exists {
+		t.Fatalf("expected %s: true, got %#v", mongoOpExists, pgwIndFilter)
+	}
+	if ne, exists := pgwIndFilter[mongoOpNe]; !exists || ne != nil {
+		t.Fatalf("expected %s: nil, got %#v", mongoOpNe, pgwIndFilter)
+	}
 }
 
 func TestBuildFilterAllowsUnsetAllowedNfTypes(t *testing.T) {
@@ -487,7 +638,7 @@ func TestBuildFilterMatchesFullSmfDnn(t *testing.T) {
 	query := url.Values{}
 	query.Set("target-nf-type", nfTypeSMF)
 	query.Set("requester-nf-type", nfTypeAMF)
-	query.Set(queryParamDnn, "internet")
+	query.Set(queryParamDnn, testDnnInternet)
 
 	filter := buildFilter(query)
 	andFilters, ok := filter[mongoOpAnd].([]bson.M)
@@ -529,10 +680,10 @@ func TestBuildFilterMatchesFullSmfDnn(t *testing.T) {
 	if len(orFilters) != 2 {
 		t.Fatalf("expected 2 DNN matcher alternatives, got %d", len(orFilters))
 	}
-	if got := orFilters[0][queryParamDnn]; got != "internet" {
+	if got := orFilters[0][queryParamDnn]; got != testDnnInternet {
 		t.Fatalf("expected plain DNN match 'internet', got %#v", got)
 	}
-	if got := orFilters[1]["dnn.string"]; got != "internet" {
+	if got := orFilters[1]["dnn.string"]; got != testDnnInternet {
 		t.Fatalf("expected object DNN match 'internet', got %#v", got)
 	}
 	if got := orFilters[0][queryParamDnn]; got == "i" {

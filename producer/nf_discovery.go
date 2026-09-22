@@ -1353,6 +1353,16 @@ func allNFServices(profile models.NFProfileDiscovery) []models.NFService {
 	return services
 }
 
+// buildFilter's "unrestricted"/"serve all NF" branches (e.g. "no snssais
+// configured, so any snssais query matches") match a bare nil rather than
+// using mongoOpExists: false: a value cleared via a JSON Patch "remove" (see
+// updateNFInstanceProcedure) round-trips through the typed NFProfile model
+// as an explicit BSON null rather than a truly absent key, and $exists only
+// checks for key presence, not its value, so an $exists: false check alone
+// would miss a null field and wrongly keep the restriction in force. A bare
+// nil matches both a missing field and one explicitly set to null. A
+// positive existence check (pgw-ind) instead pairs mongoOpExists: true with
+// $ne: nil, for the same reason.
 func buildFilter(queryParameters url.Values) bson.M {
 	// build the filter
 	filter := bson.M{
@@ -1580,7 +1590,7 @@ func handleSnssais(queryParameters url.Values, filter bson.M) {
 			}
 
 			// if not assign, serve all NF
-			snssaisBsonArray = append(snssaisBsonArray, bson.M{fieldSnssais: bson.M{mongoOpExists: false}})
+			snssaisBsonArray = append(snssaisBsonArray, bson.M{fieldSnssais: nil})
 
 			snssaisFilter := bson.M{
 				mongoOpOr: snssaisBsonArray,
@@ -1649,9 +1659,7 @@ func handleDnn(queryParameters url.Values, filter bson.M, targetNfType string) {
 						fieldBsfInfoDnnList: dnn,
 					},
 					{
-						fieldBsfInfoDnnList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldBsfInfoDnnList: nil,
 					},
 				},
 			}
@@ -1662,9 +1670,7 @@ func handleDnn(queryParameters url.Values, filter bson.M, targetNfType string) {
 						fieldPcfInfoDnnList: dnn,
 					},
 					{
-						fieldPcfInfoDnnList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldPcfInfoDnnList: nil,
 					},
 				},
 			}
@@ -1687,9 +1693,7 @@ func handleSmfServingArea(queryParameters url.Values, filter bson.M, targetNfTyp
 						fieldUpfInfoSmfServingArea: smfServingArea,
 					},
 					{
-						fieldUpfInfoSmfServingArea: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUpfInfoSmfServingArea: nil,
 					},
 				},
 			}
@@ -1829,11 +1833,6 @@ func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) 
 					{
 						fieldPcfInfoSupiRanges: nil,
 					},
-					{
-						fieldPcfInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-					},
 				},
 			}
 		case nfTypeCHF:
@@ -1852,9 +1851,7 @@ func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldChfInfoSupiRangeList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldChfInfoSupiRangeList: nil,
 					},
 				},
 			}
@@ -1874,9 +1871,7 @@ func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldAusfInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldAusfInfoSupiRanges: nil,
 					},
 				},
 			}
@@ -1896,17 +1891,9 @@ func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldUdmInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmExtGrpIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdmInfoSupiRanges: nil,
+						fieldUdmInfoGpsiRanges: nil,
+						fieldUdmExtGrpIDRanges: nil,
 					},
 				},
 			}
@@ -1926,17 +1913,9 @@ func handleSupi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldUdrInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrExtGroupIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdrInfoSupiRanges:   nil,
+						fieldUdrInfoGpsiRanges:   nil,
+						fieldUdrExtGroupIDRanges: nil,
 					},
 				},
 			}
@@ -1969,9 +1948,7 @@ func handleUeIpv4(queryParameters url.Values, filter bson.M, targetNfType string
 						},
 					},
 					{
-						fieldBsfInfoIpv4AddressRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldBsfInfoIpv4AddressRanges: nil,
 					},
 				},
 			}
@@ -1994,9 +1971,7 @@ func handleIpDomain(queryParameters url.Values, filter bson.M, targetNfType stri
 						fieldBsfInfoIpDomainList: ipDomain,
 					},
 					{
-						fieldBsfInfoIpDomainList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldBsfInfoIpDomainList: nil,
 					},
 				},
 			}
@@ -2029,9 +2004,7 @@ func handleUeIpv6Prefix(queryParameters url.Values, filter bson.M, targetNfType 
 						},
 					},
 					{
-						fieldBsfInfoIpv6PrefixRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldBsfInfoIpv6PrefixRanges: nil,
 					},
 				},
 			}
@@ -2050,6 +2023,7 @@ func handlePgwInd(queryParameters url.Values, filter bson.M) {
 			pgwIndFilter := bson.M{
 				fieldSmfInfoPgwFqdn: bson.M{
 					mongoOpExists: true,
+					mongoOpNe:     nil,
 				},
 			}
 			filter[mongoOpAnd] = append(filter[mongoOpAnd].([]bson.M), pgwIndFilter)
@@ -2091,9 +2065,7 @@ func handleGpsi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldChfInfoGpsiRangeList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldChfInfoGpsiRangeList: nil,
 					},
 				},
 			}
@@ -2113,17 +2085,9 @@ func handleGpsi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldUdmInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmExtGrpIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdmInfoSupiRanges: nil,
+						fieldUdmInfoGpsiRanges: nil,
+						fieldUdmExtGrpIDRanges: nil,
 					},
 				},
 			}
@@ -2143,17 +2107,9 @@ func handleGpsi(queryParameters url.Values, filter bson.M, targetNfType string) 
 						},
 					},
 					{
-						fieldUdrInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrExtGroupIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdrInfoSupiRanges:   nil,
+						fieldUdrInfoGpsiRanges:   nil,
+						fieldUdrExtGroupIDRanges: nil,
 					},
 				},
 			}
@@ -2188,17 +2144,9 @@ func handleExternalGroupIdentity(queryParameters url.Values, filter bson.M, targ
 						},
 					},
 					{
-						fieldUdmInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdmExtGrpIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdmInfoSupiRanges: nil,
+						fieldUdmInfoGpsiRanges: nil,
+						fieldUdmExtGrpIDRanges: nil,
 					},
 				},
 			}
@@ -2218,17 +2166,9 @@ func handleExternalGroupIdentity(queryParameters url.Values, filter bson.M, targ
 						},
 					},
 					{
-						fieldUdrInfoSupiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrInfoGpsiRanges: bson.M{
-							mongoOpExists: false,
-						},
-
-						fieldUdrExtGroupIDRanges: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdrInfoSupiRanges:   nil,
+						fieldUdrInfoGpsiRanges:   nil,
+						fieldUdrExtGroupIDRanges: nil,
 					},
 				},
 			}
@@ -2251,9 +2191,7 @@ func handleDataSet(queryParameters url.Values, filter bson.M, targetNfType strin
 						fieldUdrInfoSupportedDataSets: dataSet,
 					},
 					{
-						fieldUdrInfoSupportedDataSets: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdrInfoSupportedDataSets: nil,
 					},
 				},
 			}
@@ -2277,9 +2215,7 @@ func handleRoutingIndicator(queryParameters url.Values, filter bson.M, targetNfT
 						fieldAusfInfoRoutingIndicators: routingIndicator,
 					},
 					{
-						fieldAusfInfoRoutingIndicators: bson.M{
-							mongoOpExists: false,
-						},
+						fieldAusfInfoRoutingIndicators: nil,
 					},
 				},
 			}
@@ -2290,9 +2226,7 @@ func handleRoutingIndicator(queryParameters url.Values, filter bson.M, targetNfT
 						fieldUdmInfoRoutingIndicators: routingIndicator,
 					},
 					{
-						fieldUdmInfoRoutingIndicators: bson.M{
-							mongoOpExists: false,
-						},
+						fieldUdmInfoRoutingIndicators: nil,
 					},
 				},
 			}
@@ -2418,9 +2352,7 @@ func handleChfSupportedPlmn(queryParameters url.Values, filter bson.M, targetNfT
 						},
 					},
 					{
-						fieldChfInfoPlmnRangeList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldChfInfoPlmnRangeList: nil,
 					},
 				},
 			}
@@ -2453,9 +2385,7 @@ func handleAccessType(queryParameters url.Values, filter bson.M) {
 					fieldSmfInfoAccessType: accessType,
 				},
 				{
-					fieldSmfInfoAccessType: bson.M{
-						mongoOpExists: false,
-					},
+					fieldSmfInfoAccessType: nil,
 				},
 			},
 		}
@@ -3283,6 +3213,7 @@ func addPgwIndFilter(queryParameters map[string]*AtomElem, filter bson.M, logica
 			pgwIndFilter = bson.M{
 				fieldSmfInfoPgwFqdn: bson.M{
 					mongoOpExists: true,
+					mongoOpNe:     nil,
 				},
 			}
 		}
@@ -3593,9 +3524,7 @@ func addChfSupportedPlmnFilter(queryParameters map[string]*AtomElem, filter bson
 						},
 					},
 					{
-						fieldChfInfoPlmnRangeList: bson.M{
-							mongoOpExists: false,
-						},
+						fieldChfInfoPlmnRangeList: nil,
 					},
 				},
 			}
