@@ -190,8 +190,8 @@ func validateRequesterFqdn(request models.AccessTokenReq) (*models.AccessTokenEr
 // query, which likewise requires NfServiceStatus REGISTERED when a specific
 // service name is requested. This is unlike the empty-scope fallback
 // (anyNFServiceAllowsFqdn), which deliberately does not filter by
-// registration status, consistent with the MongoDB-backed discovery
-// predicate for requester-nfinstance-fqdn without a service-name scope.
+// registration status, consistent with anyNFServiceAllowsFqdn, the same
+// function discovery's empty-scope requester-nf-instance-fqdn check uses.
 func requestedServicesAllowFqdn(profile models.NFProfileDiscovery, scope, requesterFqdn string) bool {
 	requestedServiceNames := strings.Fields(scope)
 	if len(requestedServiceNames) == 0 {
