@@ -87,10 +87,10 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
-	problemDetails = utils.ProblemDetailsUnspecified()
-	logger.ManagementLog.Debugln("register failed")
+	problemDetails = utils.ProblemDetailsSystemFailure("registration produced no result")
+	logger.ManagementLog.Errorln("register failed: procedure returned neither a profile nor a problem")
 	stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
-	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -180,9 +180,9 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 		logger.ManagementLog.Debugln("GetNFInstances failed")
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
-	problemDetails = utils.ProblemDetailsUnspecified()
-	logger.ManagementLog.Debugln("GetNFInstances failed")
-	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	problemDetails = utils.ProblemDetailsSystemFailure("NF instance retrieval produced no result")
+	logger.ManagementLog.Errorln("GetNFInstances failed: procedure returned neither a result nor a problem")
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -252,10 +252,10 @@ func HandleCreateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 		stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.GetReqNfType()), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
-	problemDetails = utils.ProblemDetailsUnspecified()
-	logger.ManagementLog.Debugln("CreateSubscription failed")
+	problemDetails = utils.ProblemDetailsSystemFailure("subscription creation produced no result")
+	logger.ManagementLog.Errorln("CreateSubscription failed: procedure returned neither a result nor a problem")
 	stats.IncrementNrfSubscriptionsStats("subscribe", string(subscription.GetReqNfType()), "FAILURE")
-	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response bson.M,

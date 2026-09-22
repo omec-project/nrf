@@ -40,8 +40,9 @@ func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	} else if errResponse != nil {
 		return httpwrapper.NewResponse(http.StatusBadRequest, nil, errResponse)
 	}
-	problemDetails := utils.ProblemDetailsUnspecified()
-	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	problemDetails := utils.ProblemDetailsSystemFailure("access token request produced no result")
+	logger.AccessTokenLog.Errorln("access token request failed: procedure returned neither a token nor an error")
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 // AccessTokenProcedure is kept with its original two-value return signature

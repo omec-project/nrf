@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
+	nrfUtil "github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/util/httpwrapper"
@@ -43,9 +44,9 @@ func HTTPGetNFInstances(c *gin.Context) {
 	if err != nil {
 		logger.ManagementLog.Warnln(err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
-		c.JSON(http.StatusInternalServerError, problemDetails)
+		nrfUtil.WriteProblem(c, http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(httpResponse.Status, contentTypeJSON, responseBody.Bytes())
+		c.Data(httpResponse.Status, nrfUtil.ResponseContentType(httpResponse.Status), responseBody.Bytes())
 	}
 }
 
