@@ -40,6 +40,9 @@ type statusCodeDB struct {
 	profilesDeleted bool
 	// getOne is returned by RestfulAPIGetOne; nil means "no such document".
 	getOne map[string]any
+	// getOneErr makes RestfulAPIGetOne fail, standing for a datastore that
+	// cannot be read as opposed to a document that is not there.
+	getOneErr error
 	// getMany is returned by RestfulAPIGetMany; empty means "no such document".
 	getMany []map[string]any
 }
@@ -49,11 +52,22 @@ func (db *statusCodeDB) RestfulAPIPutOne(string, bson.M, map[string]any) (bool, 
 }
 
 func (db *statusCodeDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
-	return db.getOne, nil
+	return db.getOne, db.getOneErr
 }
 
 func (db *statusCodeDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
 	return db.getMany, nil
+}
+
+// RestfulAPIJSONPatch mirrors what the datastore does when the filter matches
+// nothing: the patch is applied to a nil document and fails. Without that, a
+// case about an absent subscription would never reach the code path that
+// reported the failure as success.
+func (db *statusCodeDB) RestfulAPIJSONPatch(string, bson.M, []byte) error {
+	if db.getOne == nil {
+		return errors.New("patch against a document that is not there")
+	}
+	return nil
 }
 
 func (db *statusCodeDB) RestfulAPIDeleteMany(string, bson.M) error {
@@ -290,5 +304,105 @@ func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
 	}
 	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
 		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
+	}
+}
+
+// TS 29.510 clause 5.2.2.4.2 step 2b: an nfInstanceID that is not registered is
+// 404, not a successful 204.
+func TestDeregisterReportsUnknownInstanceAsNotFound(t *testing.T) {
+	tests := []struct {
+		name       string
+		stored     []map[string]any
+		wantStatus int
+	}{
+		{"instance is not registered", nil, http.StatusNotFound},
+		{
+			"instance is registered",
+			[]map[string]any{{"nfinstanceid": testInstanceID, "nftype": "AUSF"}},
+			http.StatusNoContent,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useDB(t, &statusCodeDB{getMany: tc.stored})
+
+			request := newRequest(nil)
+			request.Params["nfInstanceID"] = testInstanceID
+			response := producer.HandleNFDeregisterRequest(request)
+
+			if response.Status != tc.wantStatus {
+				t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// TS 29.510 clause 5.2.2.3.1B step 2b. This is the path the NFs heartbeat over,
+// so the code returned for a profile the NRF has lost decides whether they
+// recover: their fallback triggers on any problem, but 500 misdescribes it.
+func TestPatchReportsUnknownInstanceAsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest(nil)
+	request.Params["nfInstanceID"] = testInstanceID
+	request.Body = []byte(`[{"op":"replace","path":"/nfStatus","value":"REGISTERED"}]`)
+	response := producer.HandleUpdateNFInstanceRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+func TestRemoveUnknownSubscriptionReportsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest(nil)
+	request.Params["subscriptionID"] = "no-such-subscription"
+	response := producer.HandleRemoveSubscriptionRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+// TS 29.510 clause 5.2.2.5.6 step 2a defines 204 as the success answer to a
+// subscription update, so 204 cannot also be the answer for a subscription the
+// NRF does not hold; 404 is what the API defines for that operation. The patch
+// fails inside the datastore in this case, which the handler reported as 204.
+func TestUpdateUnknownSubscriptionReportsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest([]byte(`[{"op":"replace","path":"/validityTime","value":"2026-01-01T00:00:00Z"}]`))
+	request.Params["subscriptionID"] = "no-such-subscription"
+	response := producer.HandleUpdateSubscriptionRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+// A datastore that cannot be read is a fault on the NRF's side, not the client
+// naming a resource that is not there, so neither subscription operation may
+// report it as 404.
+func TestSubscriptionReadFailureIsNotReportedAsNotFound(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle func(*httpwrapper.Request) *httpwrapper.Response
+	}{
+		{"removal", producer.HandleRemoveSubscriptionRequest},
+		{"update", producer.HandleUpdateSubscriptionRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useDB(t, &statusCodeDB{getOneErr: errors.New("datastore unreachable")})
+
+			request := newRequest([]byte(`[]`))
+			request.Params["subscriptionID"] = "some-subscription"
+			response := tc.handle(request)
+
+			if response.Status != http.StatusInternalServerError {
+				t.Errorf("status = %d, want %d", response.Status, http.StatusInternalServerError)
+			}
+		})
 	}
 }
