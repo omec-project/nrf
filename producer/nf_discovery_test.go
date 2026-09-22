@@ -37,6 +37,7 @@ const (
 	testServiceNameNudmSdm           = "nudm-sdm"
 	testNfInstanceAusf1              = "ausf-1"
 	testDnnInternet                  = "internet"
+	testDataSetSubscription          = "SUBSCRIPTION"
 )
 
 type mockDiscoveryDBClient struct {
@@ -1793,16 +1794,65 @@ func TestNegateFieldFilterNestsNotForOperatorExpressionsAndNeForScalars(t *testi
 	}
 }
 
+// TestAddDataSetFilterUsesAtomValue verifies that addDataSetFilter builds the
+// data-set filter from the AtomElem's string value, not the *AtomElem
+// pointer itself, for both the positive and negated paths.
+func TestAddDataSetFilterUsesAtomValue(t *testing.T) {
+	t.Run("positive", func(t *testing.T) {
+		filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+			queryParamTargetNFType: {value: nfTypeUDR},
+			queryParamDataSet:      {value: testDataSetSubscription},
+		}, COMPLEX_QUERY_TYPE_DNF)
+		andFilters, ok := filter[mongoOpAnd].([]bson.M)
+		if !ok {
+			t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+		}
+		var got interface{}
+		for _, candidate := range andFilters {
+			if v, exists := candidate[fieldUdrInfoSupportedDataSets]; exists {
+				got = v
+				break
+			}
+		}
+		if got != testDataSetSubscription {
+			t.Fatalf("expected %s: %q, got %#v", fieldUdrInfoSupportedDataSets, testDataSetSubscription, got)
+		}
+	})
+
+	t.Run("negated", func(t *testing.T) {
+		filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+			queryParamTargetNFType: {value: nfTypeUDR},
+			queryParamDataSet:      {value: testDataSetSubscription, negative: true},
+		}, COMPLEX_QUERY_TYPE_DNF)
+		andFilters, ok := filter[mongoOpAnd].([]bson.M)
+		if !ok {
+			t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+		}
+		var cond bson.M
+		for _, candidate := range andFilters {
+			if c, ok := candidate[fieldUdrInfoSupportedDataSets].(bson.M); ok {
+				cond = c
+				break
+			}
+		}
+		if cond == nil {
+			t.Fatalf("expected a %s filter in %+v", fieldUdrInfoSupportedDataSets, andFilters)
+		}
+		if got := cond[mongoOpNe]; got != testDataSetSubscription {
+			t.Fatalf("expected %s: {$ne: %q}, got %#v", fieldUdrInfoSupportedDataSets, testDataSetSubscription, cond)
+		}
+	})
+}
+
 // TestComplexQueryFilterSubprocessNegatesScalarFieldsWithNe verifies that
 // negated complex-query atoms backed by a plain scalar value (amf-region-id,
 // ip-domain, access-type) use {field: {$ne: value}} rather than the invalid
 // top-level {$not: {field: value}}.
 func TestComplexQueryFilterSubprocessNegatesScalarFieldsWithNe(t *testing.T) {
 	tests := []struct {
-		name       string
-		atoms      map[string]*AtomElem
-		wantField  string
-		wantNeType string
+		name      string
+		atoms     map[string]*AtomElem
+		wantField string
 	}{
 		{
 			name: "amf-region-id",

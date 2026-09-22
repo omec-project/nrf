@@ -3343,7 +3343,7 @@ func addDataSetFilter(queryParameters map[string]*AtomElem, filter bson.M, logic
 	// [Query-26] data-set
 	if queryParameters[queryParamDataSet] != nil {
 		var dataSetFilter bson.M
-		dataSet := queryParameters[queryParamDataSet]
+		dataSet := queryParameters[queryParamDataSet].value
 		if targetNfType == nfTypeUDR {
 			dataSetFilter = bson.M{
 				fieldUdrInfoSupportedDataSets: dataSet,
