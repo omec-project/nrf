@@ -3222,7 +3222,7 @@ func addPgwIndFilter(queryParameters map[string]*AtomElem, filter bson.M, logica
 		}
 		if queryParameters[queryParamPgwInd].negative {
 			pgwIndFilter = bson.M{
-				mongoOpNot: pgwIndFilter,
+				fieldSmfInfoPgwFqdn: nil,
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), pgwIndFilter)
@@ -3534,7 +3534,7 @@ func addChfSupportedPlmnFilter(queryParameters map[string]*AtomElem, filter bson
 		}
 		if queryParameters[queryParamChfSupportedPlmn].negative {
 			chfSupportedPlmnFilter = bson.M{
-				mongoOpNot: chfSupportedPlmnFilter,
+				mongoOpNor: []bson.M{chfSupportedPlmnFilter},
 			}
 		}
 		filter[logicalOperator] = append(filter[logicalOperator].([]bson.M), chfSupportedPlmnFilter)

@@ -1717,6 +1717,55 @@ func TestComplexQueryFilterSubprocessNegatesSupportedFeaturesWithNor(t *testing.
 	}
 }
 
+// TestComplexQueryFilterSubprocessNegatesPgwIndWithNilEquality verifies that
+// the negated pgw-ind complex query filter matches a bare nil rather than the
+// invalid top-level {$not: {field: ...}}: the negation of "pgwFqdn exists and
+// is non-null" is exactly "pgwFqdn is missing or null", which bare-nil
+// equality already matches.
+func TestComplexQueryFilterSubprocessNegatesPgwIndWithNilEquality(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamPgwInd: {value: "true", negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok || len(andFilters) != 1 {
+		t.Fatalf("expected 1 pgw-ind filter, got %#v", filter[mongoOpAnd])
+	}
+	got, exists := andFilters[0][fieldSmfInfoPgwFqdn]
+	if !exists || got != nil {
+		t.Fatalf("expected %s: nil, got %#v", fieldSmfInfoPgwFqdn, andFilters[0])
+	}
+}
+
+// TestComplexQueryFilterSubprocessNegatesChfSupportedPlmnWithNor verifies that
+// the negated chf-supported-plmn complex query filter uses $nor (not the
+// invalid top-level $not) to negate the whole $or alternative.
+func TestComplexQueryFilterSubprocessNegatesChfSupportedPlmnWithNor(t *testing.T) {
+	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
+		queryParamTargetNFType:     {value: nfTypeCHF},
+		queryParamChfSupportedPlmn: {value: `{"mcc":"001","mnc":"01"}`, negative: true},
+	}, COMPLEX_QUERY_TYPE_DNF)
+
+	andFilters, ok := filter[mongoOpAnd].([]bson.M)
+	if !ok {
+		t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
+	}
+
+	var norFilters []bson.M
+	for _, candidate := range andFilters {
+		if nor, ok := candidate[mongoOpNor].([]bson.M); ok {
+			norFilters = nor
+			break
+		}
+	}
+	if norFilters == nil || len(norFilters) != 1 {
+		t.Fatalf("expected a $nor-wrapped chf-supported-plmn filter in %+v", andFilters)
+	}
+	if _, exists := norFilters[0][mongoOpOr]; !exists {
+		t.Fatalf("expected $nor to wrap the $or alternative, got %#v", norFilters[0])
+	}
+}
+
 func TestComplexQueryFilterSubprocessBuildsSnssaisElemMatchDocument(t *testing.T) {
 	filter := complexQueryFilterSubprocess(map[string]*AtomElem{
 		fieldSnssais: {value: `{"sst":1,"sd":"010203"}`},
