@@ -69,12 +69,19 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 	logger.ManagementLog.Infoln("Handle NFRegisterRequest")
 	nfProfile := request.Body.(models.NFProfile)
 
-	header, response, problemDetails := NFRegisterProcedure(nfProfile)
+	outcome, header, response, problemDetails := NFRegisterProcedure(nfProfile)
 
 	if response != nil {
 		logger.ManagementLog.Debugln("register success")
 		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "SUCCESS")
-		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+		// 201 only when the profile did not exist before; a complete
+		// replacement of an existing one is 200 (TS 29.510 clauses 5.2.2.2.2
+		// step 2a and 5.2.2.3.1A step 2a).
+		status := http.StatusCreated
+		if outcome == nfProfileReplaced {
+			status = http.StatusOK
+		}
+		return httpwrapper.NewResponse(status, header, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Debugln("register failed")
 		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
@@ -588,8 +595,20 @@ func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
 	return &nfProfile
 }
 
-func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, response *models.NFProfile,
-	problemDetails *models.ProblemDetails,
+// nfRegistrationOutcome distinguishes the two successful outcomes of a
+// registration request. TS 29.510 gives them different status codes: a newly
+// created profile is 201 Created (clause 5.2.2.2.2 step 2a) and a complete
+// replacement of an existing one, over the same PUT, is 200 OK (clause
+// 5.2.2.3.1A step 2a).
+type nfRegistrationOutcome int
+
+const (
+	nfProfileCreated nfRegistrationOutcome = iota
+	nfProfileReplaced
+)
+
+func NFRegisterProcedure(nfProfile models.NFProfile) (outcome nfRegistrationOutcome, header http.Header,
+	response *models.NFProfile, problemDetails *models.ProblemDetails,
 ) {
 	logger.ManagementLog.Debugln("[NRF] In NFRegisterProcedure")
 	var nf models.NFProfile
@@ -597,7 +616,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 	if err != nil {
 		logger.ManagementLog.Errorln("NfProfile Validation failed", err)
 		problemDetails = utils.ProblemDetailsWithCause("NF profile validation failed", http.StatusBadRequest, err.Error(), utils.CauseInvalidRequest)
-		return nil, nil, problemDetails
+		return nfProfileCreated, nil, nil, problemDetails
 	}
 
 	// make location header
@@ -608,13 +627,13 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 	if err != nil {
 		logger.ManagementLog.Errorln("bson marshal error in NFRegisterProcedure:", err)
 		problemDetails = utils.ProblemDetailsSystemFailure(err.Error())
-		return nil, nil, problemDetails
+		return nfProfileCreated, nil, nil, problemDetails
 	}
 	err = bson.Unmarshal(bsonBytes, &putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("bson unmarshal error in NFRegisterProcedure:", err)
 		problemDetails = utils.ProblemDetailsSystemFailure(err.Error())
-		return nil, nil, problemDetails
+		return nfProfileCreated, nil, nil, problemDetails
 	}
 	// set db info
 	collName := collNfProfile
@@ -629,7 +648,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (header http.Header, respon
 		nfs, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 		if getErr != nil {
 			logger.ManagementLog.Warnln("Error fetching existing NF profile: ", getErr)
-			return nil, nil, utils.ProblemDetailsSystemFailure(getErr.Error())
+			return nfProfileCreated, nil, nil, utils.ProblemDetailsSystemFailure(getErr.Error())
 		}
 		if len(nfs) == 0 {
 			putData["createdAt"] = time.Now()
@@ -646,45 +665,46 @@ func handleNFProfileUpdateOrCreate(
 	collName string,
 	filter bson.M,
 	putData bson.M,
-) (http.Header, *models.NFProfile, *models.ProblemDetails) {
-	var header http.Header
-	ok, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
+) (nfRegistrationOutcome, http.Header, *models.NFProfile, *models.ProblemDetails) {
+	// RestfulAPIPutOne upserts and reports MatchedCount > 0, i.e. whether a
+	// profile for this NF instance already existed. That is the only
+	// authoritative answer: a separate existence query would both cost a second
+	// unindexed lookup and race with a concurrent registration of the same
+	// instance.
+	existed, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("RestfulAPIPutOne error:", err)
-		return nil, nil, utils.ProblemDetailsSystemFailure(err.Error())
+		return nfProfileCreated, nil, nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
-	if ok { // update existing document
+
+	outcome := nfProfileCreated
+	notificationEvent := models.NOTIFICATIONEVENTTYPE_NF_REGISTERED
+	if existed {
+		outcome = nfProfileReplaced
+		notificationEvent = models.NOTIFICATIONEVENTTYPE_NF_PROFILE_CHANGED
 		profileCache.evict(nf.GetNfInstanceId())
 		logger.ManagementLog.Infoln("RestfulAPIPutOne update")
-		uriList := nrfContext.GetNotificationUri(nf)
-		// set info for NotificationData
-		Notification_event := models.NOTIFICATIONEVENTTYPE_NF_PROFILE_CHANGED
-		nfInstanceUri := locationHeaderValue
-		// receive the rsp from handler
-		for _, uri := range uriList {
-			if pd := SendNFStatusNotify(Notification_event, nfInstanceUri, uri); pd != nil {
-				return nil, nil, pd
-			}
-		}
-		header = make(http.Header)
-		header.Add("Location", locationHeaderValue)
-		return header, &nf, nil
-	} else { // Create NF Profile case
+	} else {
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
-		uriList := nrfContext.GetNotificationUri(nf)
-		// set info for NotificationData
-		notification_event := models.NOTIFICATIONEVENTTYPE_NF_REGISTERED
-		nfInstanceUri := locationHeaderValue
-		for _, uri := range uriList {
-			if pd := SendNFStatusNotify(notification_event, nfInstanceUri, uri); pd != nil {
-				return nil, nil, pd
-			}
+	}
+
+	for _, uri := range nrfContext.GetNotificationUri(nf) {
+		if pd := SendNFStatusNotify(notificationEvent, locationHeaderValue, uri); pd != nil {
+			return outcome, nil, nil, pd
 		}
+	}
+
+	// TS 29.510 clause 5.2.2.2.2 step 2a specifies the Location header for the
+	// resource NFRegister created. Clause 5.2.2.3.1A step 2a, the complete
+	// replacement of an existing profile over the same PUT, specifies no such
+	// header, the resource having already existed.
+	var header http.Header
+	if outcome == nfProfileCreated {
 		header = make(http.Header)
 		header.Add("Location", locationHeaderValue)
 		logger.ManagementLog.Infoln("location header:", locationHeaderValue)
-		return header, &nf, nil
 	}
+	return outcome, header, &nf, nil
 }
 
 func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
