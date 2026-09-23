@@ -59,7 +59,7 @@ func TestRequireContentType(t *testing.T) {
 				if recorder.Code != http.StatusUnsupportedMediaType {
 					t.Errorf("status = %d, want %d", recorder.Code, http.StatusUnsupportedMediaType)
 				}
-				if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, contentTypeProblemJSON) {
+				if got := recorder.Result().Header.Get("Content-Type"); !strings.HasPrefix(got, contentTypeProblemJSON) {
 					t.Errorf("Content-Type = %q, want %q", got, contentTypeProblemJSON)
 				}
 			}

@@ -52,7 +52,7 @@ func TestRegisterProblemHandlers(t *testing.T) {
 			if recorder.Code != tc.wantStatus {
 				t.Errorf("status = %d, want %d", recorder.Code, tc.wantStatus)
 			}
-			if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, util.ContentTypeProblemJSON) {
+			if got := recorder.Result().Header.Get("Content-Type"); !strings.HasPrefix(got, util.ContentTypeProblemJSON) {
 				t.Errorf("Content-Type = %q, want %q", got, util.ContentTypeProblemJSON)
 			}
 			var problem map[string]any
