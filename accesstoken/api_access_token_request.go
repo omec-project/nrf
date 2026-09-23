@@ -40,7 +40,10 @@ func HTTPAccessTokenRequest(c *gin.Context) {
 	logger.AccessTokenLog.Infoln("Handle Post /oauth2/token")
 	var accessTokenReq models.AccessTokenReq
 
-	err := c.Bind(&accessTokenReq)
+	// ShouldBind, not Bind: Bind aborts with its own 400 and writes the status
+	// line before this branch runs, after which the problem+json media type
+	// WriteProblem sets can no longer reach the client.
+	err := c.ShouldBind(&accessTokenReq)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
