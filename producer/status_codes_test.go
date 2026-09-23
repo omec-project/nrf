@@ -9,9 +9,12 @@ package producer_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 
 	"github.com/omec-project/nrf/dbadapter"
@@ -361,6 +364,75 @@ func TestSubscriptionReadFailureIsNotReportedAsNotFound(t *testing.T) {
 	}
 }
 
+// notifyingDB answers the Subscriptions lookup with one subscription per
+// callback URI, in the order given.
+type notifyingDB struct {
+	statusCodeDB
+	callbackURIs []string
+}
+
+func (db *notifyingDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
+	rows := make([]map[string]any, 0, len(db.callbackURIs))
+	for i, uri := range db.callbackURIs {
+		rows = append(rows, map[string]any{
+			"subscriptionId":          fmt.Sprintf("subscription-%d", i+1),
+			"nfStatusNotificationUri": uri,
+		})
+	}
+	return rows, nil
+}
+
+// closedCallbackURI is the address of a listener this test opened and closed,
+// so a notification sent to it is refused. It does not depend on some fixed
+// port happening to have nothing listening on it.
+func closedCallbackURI(t *testing.T) string {
+	t.Helper()
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	uri := "http://" + listener.Addr().String() + "/dead"
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return uri
+}
+
+// A profile committed to the datastore is registered. Delivering NF-status
+// notifications afterwards is a separate service operation (TS 29.510 clause
+// 5.2.2.6), and the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister
+// are encoding errors and NRF internal errors -- not an unreachable subscriber.
+// Reporting 500 here told the registering NF its profile was not stored while
+// the NRF held and served it.
+func TestRegistrationSucceedsWhenSubscriberNotificationFails(t *testing.T) {
+	var delivered atomic.Int32
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		delivered.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer live.Close()
+
+	// The refused subscriber comes first. A failed notification must neither
+	// fail the registration nor end delivery to the subscribers after it.
+	useDB(t, &notifyingDB{
+		statusCodeDB: statusCodeDB{putOneExisted: false},
+		callbackURIs: []string{closedCallbackURI(t), live.URL + "/live"},
+	})
+	setProfileExpiry(t, true)
+
+	response := producer.HandleNFRegisterRequest(newRequest(testProfile("22222222-2222-4222-8222-222222222222")))
+
+	if response.Status != http.StatusCreated {
+		t.Errorf("status = %d, want %d despite the unreachable subscriber", response.Status, http.StatusCreated)
+	}
+	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
+		t.Errorf("registration reported a failure for a committed profile: %+v", problem)
+	}
+	if delivered.Load() == 0 {
+		t.Error("the subscriber after the unreachable one was never notified")
+	}
+}
+
 // The failure a deregistration of an unknown instance is recorded under keeps
 // its NF type label: the procedure looks the type up before deciding the
 // instance is absent, and returning an empty string would record the failure
@@ -427,39 +499,5 @@ func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
 	}
 	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
 		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
-	}
-}
-
-// notifyingDB answers the Subscriptions lookup with a subscriber whose callback
-// address is closed, so every NF-status notification the register path attempts
-// fails.
-type notifyingDB struct {
-	statusCodeDB
-}
-
-func (db *notifyingDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
-	return []map[string]any{{
-		"subscriptionId":          "subscription-1",
-		"nfStatusNotificationUri": "http://127.0.0.1:1/dead",
-	}}, nil
-}
-
-// A profile committed to the datastore is registered. Delivering NF-status
-// notifications afterwards is a separate service operation (TS 29.510 clause
-// 5.2.2.6), and the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister
-// are encoding errors and NRF internal errors -- not an unreachable subscriber.
-// Reporting 500 here told the registering NF its profile was not stored while
-// the NRF held and served it.
-func TestRegistrationSucceedsWhenSubscriberNotificationFails(t *testing.T) {
-	useDB(t, &notifyingDB{statusCodeDB{putOneExisted: false}})
-	setProfileExpiry(t, true)
-
-	response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
-
-	if response.Status != http.StatusCreated {
-		t.Errorf("status = %d, want %d despite the unreachable subscriber", response.Status, http.StatusCreated)
-	}
-	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
-		t.Errorf("registration reported a failure for a committed profile: %+v", problem)
 	}
 }
