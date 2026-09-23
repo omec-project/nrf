@@ -368,7 +368,10 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 	// never registered has no subscriptions keyed on it.
 	if len(nfProfilesRaw) == 0 {
 		logger.ManagementLog.Warnf("deregistration of unregistered NF instance [%s]", nfInstanceID)
-		return "", utils.ProblemDetailsContextNotFound("NF instance not found")
+		// nfType is the metric label the handler records this failure under,
+		// so it is returned even here: nfTypeUnknown for an instance that was
+		// never registered, rather than an empty label.
+		return nfType, utils.ProblemDetailsContextNotFound("NF instance not found")
 	}
 
 	time.Sleep(time.Duration(1) * time.Second)

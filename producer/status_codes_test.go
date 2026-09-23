@@ -43,7 +43,10 @@ type statusCodeDB struct {
 	// getOneErr makes RestfulAPIGetOne fail, standing for a datastore that
 	// cannot be read as opposed to a document that is not there.
 	getOneErr error
-	// getMany is returned by RestfulAPIGetMany; empty means "no such document".
+	// getMany is what RestfulAPIGetMany returns for the NF profile collection;
+	// empty means "no such document". Other collections, the Subscriptions one
+	// in particular, answer empty: a profile row read back as a subscription
+	// would make the procedure under test notify an empty URI.
 	getMany []map[string]any
 }
 
@@ -55,7 +58,10 @@ func (db *statusCodeDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error)
 	return db.getOne, db.getOneErr
 }
 
-func (db *statusCodeDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
+func (db *statusCodeDB) RestfulAPIGetMany(collName string, _ bson.M) ([]map[string]any, error) {
+	if collName != "NfProfile" {
+		return nil, nil
+	}
 	return db.getMany, nil
 }
 
@@ -255,58 +261,6 @@ func TestNotificationEventAgreesWithStatusCode(t *testing.T) {
 	}
 }
 
-// The profile-expiry cases leave the process-global configuration as they
-// found it. Registering with expiry disabled rewrites NfKeepAliveTime, which
-// setProfileExpiry has to undo as well as the flag.
-func TestProfileExpiryModesRestoreTheConfiguration(t *testing.T) {
-	// Values, not the struct: factory.NrfConfig.Configuration is a pointer, so
-	// holding it would compare the configuration with itself.
-	beforeExpiry := factory.NrfConfig.Configuration.NfProfileExpiryEnable
-	beforeKeepAlive := factory.NrfConfig.Configuration.NfKeepAliveTime
-
-	for _, mode := range profileExpiryModes {
-		t.Run(mode.name, func(t *testing.T) {
-			useDB(t, storedProfileDB(false))
-			setProfileExpiry(t, mode.enabled)
-
-			producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
-		})
-	}
-
-	after := factory.NrfConfig.Configuration
-	if after.NfProfileExpiryEnable != beforeExpiry || after.NfKeepAliveTime != beforeKeepAlive {
-		t.Errorf("configuration after = {expiry %v, keepAlive %d}, want {expiry %v, keepAlive %d}",
-			after.NfProfileExpiryEnable, after.NfKeepAliveTime, beforeExpiry, beforeKeepAlive)
-	}
-}
-
-// failingReadDB is a datastore whose single-document reads fail, standing for
-// a transient read error while writes still succeed.
-type failingReadDB struct {
-	statusCodeDB
-}
-
-func (db *failingReadDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
-	return nil, errors.New("transient read failure")
-}
-
-// With expiry disabled, the read made before the legacy cleanup only decides
-// between 200 and 201. A failure of that read must not fail the registration:
-// the profile is still written, and it is reported as created.
-func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
-	useDB(t, &failingReadDB{statusCodeDB{putOneExisted: false}})
-	setProfileExpiry(t, false)
-
-	response := producer.HandleNFRegisterRequest(newRequest(testProfile("33333333-3333-4333-8333-333333333333")))
-
-	if response.Status != http.StatusCreated {
-		t.Errorf("status = %d, want %d despite the failed read", response.Status, http.StatusCreated)
-	}
-	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
-		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
-	}
-}
-
 // TS 29.510 clause 5.2.2.4.2 step 2b: an nfInstanceID that is not registered is
 // 404, not a successful 204.
 func TestDeregisterReportsUnknownInstanceAsNotFound(t *testing.T) {
@@ -318,7 +272,7 @@ func TestDeregisterReportsUnknownInstanceAsNotFound(t *testing.T) {
 		{"instance is not registered", nil, http.StatusNotFound},
 		{
 			"instance is registered",
-			[]map[string]any{{"nfinstanceid": testInstanceID, "nftype": "AUSF"}},
+			[]map[string]any{storedProfileRow()},
 			http.StatusNoContent,
 		},
 	}
@@ -404,5 +358,74 @@ func TestSubscriptionReadFailureIsNotReportedAsNotFound(t *testing.T) {
 				t.Errorf("status = %d, want %d", response.Status, http.StatusInternalServerError)
 			}
 		})
+	}
+}
+
+// The failure a deregistration of an unknown instance is recorded under keeps
+// its NF type label: the procedure looks the type up before deciding the
+// instance is absent, and returning an empty string would record the failure
+// under an empty label instead of nfTypeUnknown.
+func TestDeregisterOfUnknownInstanceKeepsItsMetricLabel(t *testing.T) {
+	useDB(t, &statusCodeDB{})
+
+	nfType, problem := producer.NFDeregisterProcedure(testInstanceID)
+
+	if problem == nil || problem.GetStatus() != http.StatusNotFound {
+		t.Fatalf("problem = %+v, want a 404", problem)
+	}
+	if nfType != "UNKNOWN_NF" {
+		t.Errorf("nfType = %q, want %q", nfType, "UNKNOWN_NF")
+	}
+}
+
+// The profile-expiry cases leave the process-global configuration as they
+// found it. Registering with expiry disabled rewrites NfKeepAliveTime, which
+// setProfileExpiry has to undo as well as the flag.
+func TestProfileExpiryModesRestoreTheConfiguration(t *testing.T) {
+	// Values, not the struct: factory.NrfConfig.Configuration is a pointer, so
+	// holding it would compare the configuration with itself.
+	beforeExpiry := factory.NrfConfig.Configuration.NfProfileExpiryEnable
+	beforeKeepAlive := factory.NrfConfig.Configuration.NfKeepAliveTime
+
+	for _, mode := range profileExpiryModes {
+		t.Run(mode.name, func(t *testing.T) {
+			useDB(t, storedProfileDB(false))
+			setProfileExpiry(t, mode.enabled)
+
+			producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
+		})
+	}
+
+	after := factory.NrfConfig.Configuration
+	if after.NfProfileExpiryEnable != beforeExpiry || after.NfKeepAliveTime != beforeKeepAlive {
+		t.Errorf("configuration after = {expiry %v, keepAlive %d}, want {expiry %v, keepAlive %d}",
+			after.NfProfileExpiryEnable, after.NfKeepAliveTime, beforeExpiry, beforeKeepAlive)
+	}
+}
+
+// failingReadDB is a datastore whose single-document reads fail, standing for
+// a transient read error while writes still succeed.
+type failingReadDB struct {
+	statusCodeDB
+}
+
+func (db *failingReadDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
+	return nil, errors.New("transient read failure")
+}
+
+// With expiry disabled, the read made before the legacy cleanup only decides
+// between 200 and 201. A failure of that read must not fail the registration:
+// the profile is still written, and it is reported as created.
+func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
+	useDB(t, &failingReadDB{statusCodeDB{putOneExisted: false}})
+	setProfileExpiry(t, false)
+
+	response := producer.HandleNFRegisterRequest(newRequest(testProfile("33333333-3333-4333-8333-333333333333")))
+
+	if response.Status != http.StatusCreated {
+		t.Errorf("status = %d, want %d despite the failed read", response.Status, http.StatusCreated)
+	}
+	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
+		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
 	}
 }
