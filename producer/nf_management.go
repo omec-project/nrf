@@ -684,8 +684,12 @@ func handleNFProfileUpdateOrCreate(
 	// separate existence query would race with a concurrent registration of the
 	// same instance. With expiry disabled it cannot be: the legacy cleanup has
 	// already deleted the profile, so the upsert always inserts, and the answer
-	// has to come from the read made before that delete. The cleanup has made
-	// the sequence non-atomic already, so that read loses nothing.
+	// has to come from the read made before that delete. That read is not
+	// atomic with the write: two concurrent registrations of the same instance
+	// can both find it absent, and the second's cleanup deletes what the first
+	// just wrote, so both answer 201. This mode answered 201 to every
+	// re-registration before, so the window only narrows; closing it would
+	// mean the cleanup sparing the registering instance's own profile.
 	existed, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("RestfulAPIPutOne error:", err)
