@@ -434,6 +434,64 @@ func TestRegistrationSucceedsWhenSubscriberNotificationFails(t *testing.T) {
 	}
 }
 
+// "limit" is required:false with minimum:1 in the definition, and clause
+// 5.2.2.8.1 reserves 400 for "errors in the input data in the URI query
+// parameters". Omitting it is not such an error.
+func TestGetNFInstancesTreatsLimitAsOptional(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+	}{
+		{"limit omitted", "", http.StatusOK},
+		{"limit supplied", "limit=5", http.StatusOK},
+		// Present but empty is not omitted: the parameter is there, and its
+		// value is not an integer of at least 1.
+		{"limit supplied empty", "limit=", http.StatusBadRequest},
+		{"limit not a number", "limit=abc", http.StatusBadRequest},
+		{"limit below the minimum", "limit=0", http.StatusBadRequest},
+		{"limit negative", "limit=-1", http.StatusBadRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useDB(t, &statusCodeDB{getOne: map[string]any{}})
+
+			request := newRequest(nil)
+			query, err := url.ParseQuery(tc.query)
+			if err != nil {
+				t.Fatalf("bad test query %q: %v", tc.query, err)
+			}
+			request.Query = query
+			response := producer.HandleGetNFInstancesRequest(request)
+
+			if response.Status != tc.wantStatus {
+				t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// A rejected "limit" must describe the parameter, not echo the parse error:
+// strconv's text is an implementation detail and belongs in the log.
+func TestRejectedLimitDoesNotLeakInternalErrorText(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: map[string]any{}})
+
+	request := newRequest(nil)
+	request.Query = url.Values{"limit": []string{"abc"}}
+	response := producer.HandleGetNFInstancesRequest(request)
+
+	problem, ok := response.Body.(*models.ProblemDetails)
+	if !ok {
+		t.Fatalf("body is %T, want *models.ProblemDetails", response.Body)
+	}
+	if strings.Contains(problem.GetDetail(), "strconv") {
+		t.Errorf("detail leaks internal error text: %q", problem.GetDetail())
+	}
+	if !strings.Contains(problem.GetDetail(), "limit") {
+		t.Errorf("detail should name the offending parameter, got %q", problem.GetDetail())
+	}
+}
+
 // The failure a deregistration of an unknown instance is recorded under keeps
 // its NF type label: the procedure looks the type up before deciding the
 // instance is absent, and returning an empty string would record the failure
@@ -500,60 +558,5 @@ func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
 	}
 	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
 		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
-	}
-}
-
-// "limit" is required:false with minimum:1 in the definition, and clause
-// 5.2.2.8.1 reserves 400 for "errors in the input data in the URI query
-// parameters". Omitting it is not such an error.
-func TestGetNFInstancesTreatsLimitAsOptional(t *testing.T) {
-	tests := []struct {
-		name       string
-		query      string
-		wantStatus int
-	}{
-		{"limit omitted", "", http.StatusOK},
-		{"limit supplied", "limit=5", http.StatusOK},
-		{"limit not a number", "limit=abc", http.StatusBadRequest},
-		{"limit below the minimum", "limit=0", http.StatusBadRequest},
-		{"limit negative", "limit=-1", http.StatusBadRequest},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			useDB(t, &statusCodeDB{getOne: map[string]any{}})
-
-			request := newRequest(nil)
-			query, err := url.ParseQuery(tc.query)
-			if err != nil {
-				t.Fatalf("bad test query %q: %v", tc.query, err)
-			}
-			request.Query = query
-			response := producer.HandleGetNFInstancesRequest(request)
-
-			if response.Status != tc.wantStatus {
-				t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
-			}
-		})
-	}
-}
-
-// A rejected "limit" must describe the parameter, not echo the parse error:
-// strconv's text is an implementation detail and belongs in the log.
-func TestRejectedLimitDoesNotLeakInternalErrorText(t *testing.T) {
-	useDB(t, &statusCodeDB{getOne: map[string]any{}})
-
-	request := newRequest(nil)
-	request.Query = url.Values{"limit": []string{"abc"}}
-	response := producer.HandleGetNFInstancesRequest(request)
-
-	problem, ok := response.Body.(*models.ProblemDetails)
-	if !ok {
-		t.Fatalf("body is %T, want *models.ProblemDetails", response.Body)
-	}
-	if strings.Contains(problem.GetDetail(), "strconv") {
-		t.Errorf("detail leaks internal error text: %q", problem.GetDetail())
-	}
-	if !strings.Contains(problem.GetDetail(), "limit") {
-		t.Errorf("detail should name the offending parameter, got %q", problem.GetDetail())
 	}
 }
