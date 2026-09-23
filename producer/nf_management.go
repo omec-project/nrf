@@ -639,8 +639,19 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (outcome nfRegistrationOutc
 	collName := collNfProfile
 	nfInstanceId := nf.GetNfInstanceId()
 	filter := bson.M{fieldNfInstanceId: nfInstanceId}
+	// replacedBeforeCleanup records whether this instance was registered before
+	// the legacy cleanup below ran. That cleanup deletes every profile of this
+	// NF type, this instance's included, so by the time the upsert runs it can
+	// no longer see the profile it is replacing.
+	replacedBeforeCleanup := false
 	// fallback to older approach
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		existing, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
+		if getErr != nil {
+			logger.ManagementLog.Warnln("Error fetching existing NF profile: ", getErr)
+			return nfProfileCreated, nil, nil, utils.ProblemDetailsSystemFailure(getErr.Error())
+		}
+		replacedBeforeCleanup = len(existing) > 0
 		NFDeleteAll(string(nf.NfType))
 	} else {
 		timein := time.Now().Local().Add(time.Second * time.Duration(nf.GetHeartBeatTimer()*3))
@@ -655,7 +666,7 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (outcome nfRegistrationOutc
 		}
 	}
 	// Update NF Profile case
-	return handleNFProfileUpdateOrCreate(nf, nfProfile, locationHeaderValue, collName, filter, putData)
+	return handleNFProfileUpdateOrCreate(nf, nfProfile, locationHeaderValue, collName, filter, putData, replacedBeforeCleanup)
 }
 
 func handleNFProfileUpdateOrCreate(
@@ -665,17 +676,22 @@ func handleNFProfileUpdateOrCreate(
 	collName string,
 	filter bson.M,
 	putData bson.M,
+	replacedBeforeCleanup bool,
 ) (nfRegistrationOutcome, http.Header, *models.NFProfile, *models.ProblemDetails) {
 	// RestfulAPIPutOne upserts and reports MatchedCount > 0, i.e. whether a
-	// profile for this NF instance already existed. That is the only
-	// authoritative answer: a separate existence query would both cost a second
-	// unindexed lookup and race with a concurrent registration of the same
-	// instance.
+	// profile for this NF instance already existed. With profile expiry enabled
+	// that is the authoritative answer, taken from the write itself, where a
+	// separate existence query would race with a concurrent registration of the
+	// same instance. With expiry disabled it cannot be: the legacy cleanup has
+	// already deleted the profile, so the upsert always inserts, and the answer
+	// has to come from the read made before that delete. The cleanup has made
+	// the sequence non-atomic already, so that read loses nothing.
 	existed, err := dbadapter.DBClient.RestfulAPIPutOne(collName, filter, putData)
 	if err != nil {
 		logger.ManagementLog.Errorln("RestfulAPIPutOne error:", err)
 		return nfProfileCreated, nil, nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
+	existed = existed || replacedBeforeCleanup
 
 	outcome := nfProfileCreated
 	notificationEvent := models.NOTIFICATIONEVENTTYPE_NF_REGISTERED

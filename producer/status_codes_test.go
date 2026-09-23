@@ -33,6 +33,10 @@ type statusCodeDB struct {
 	// this NF instance already existed, which is the create-versus-update
 	// signal the status code is derived from.
 	putOneExisted bool
+	// profilesDeleted is set by RestfulAPIDeleteMany. A profile deleted before
+	// the upsert is no longer there for the upsert to match, so RestfulAPIPutOne
+	// then reports false whatever putOneExisted says, as the datastore would.
+	profilesDeleted bool
 	// getOne is returned by RestfulAPIGetOne; nil means "no such document".
 	getOne map[string]any
 	// getMany is returned by RestfulAPIGetMany; empty means "no such document".
@@ -40,7 +44,7 @@ type statusCodeDB struct {
 }
 
 func (db *statusCodeDB) RestfulAPIPutOne(string, bson.M, map[string]any) (bool, error) {
-	return db.putOneExisted, nil
+	return db.putOneExisted && !db.profilesDeleted, nil
 }
 
 func (db *statusCodeDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
@@ -51,17 +55,49 @@ func (db *statusCodeDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, err
 	return db.getMany, nil
 }
 
-func (db *statusCodeDB) RestfulAPIDeleteMany(string, bson.M) error { return nil }
+func (db *statusCodeDB) RestfulAPIDeleteMany(string, bson.M) error {
+	db.profilesDeleted = true
+	return nil
+}
 
 func (db *statusCodeDB) RestfulAPIDeleteOne(string, bson.M) error { return nil }
 
-// enableProfileExpiry turns on the profile-expiry configuration a case needs and
+// storedProfileRow is this case's NF profile as the datastore holds it, under
+// the driver's lower-cased field names.
+func storedProfileRow() map[string]any {
+	return map[string]any{"nfinstanceid": testInstanceID, "nftype": "AUSF"}
+}
+
+// storedProfileDB is a datastore that does or does not already hold this
+// case's NF profile, answering both the read and the upsert consistently.
+func storedProfileDB(stored bool) *statusCodeDB {
+	db := &statusCodeDB{putOneExisted: stored}
+	if stored {
+		db.getOne = storedProfileRow()
+	}
+	return db
+}
+
+// profileExpiryModes are the two ways a registration reaches its upsert. With
+// expiry disabled, the default when the key is absent from the configuration,
+// the NRF first deletes every profile of the registering NF type, so the upsert
+// can no longer tell a replacement from a creation by itself. Anything derived
+// from that distinction has to be tested in both.
+var profileExpiryModes = []struct {
+	name    string
+	enabled bool
+}{
+	{"expiry enabled", true},
+	{"expiry disabled", false},
+}
+
+// setProfileExpiry sets the profile-expiry configuration a case needs and
 // restores the previous value, so the flag cannot leak into cases that run
 // after it. factory.NrfConfig is process-global.
-func enableProfileExpiry(t *testing.T) {
+func setProfileExpiry(t *testing.T, enabled bool) {
 	t.Helper()
 	previous := factory.NrfConfig.Configuration.NfProfileExpiryEnable
-	factory.NrfConfig.Configuration.NfProfileExpiryEnable = true
+	factory.NrfConfig.Configuration.NfProfileExpiryEnable = enabled
 	t.Cleanup(func() { factory.NrfConfig.Configuration.NfProfileExpiryEnable = previous })
 }
 
@@ -107,24 +143,26 @@ func TestRegisterDistinguishesCreateFromUpdate(t *testing.T) {
 		{"profile did not exist", false, http.StatusCreated, true},
 		{"profile already existed", true, http.StatusOK, false},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			useDB(t, &statusCodeDB{putOneExisted: tc.alreadyExisted})
-			enableProfileExpiry(t)
+	for _, mode := range profileExpiryModes {
+		for _, tc := range tests {
+			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {
+				useDB(t, storedProfileDB(tc.alreadyExisted))
+				setProfileExpiry(t, mode.enabled)
 
-			response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
+				response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
 
-			if response.Status != tc.wantStatus {
-				t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
-			}
-			_, hasLocation := response.Header["Location"]
-			if hasLocation != tc.wantLocation {
-				t.Errorf("Location header present = %v, want %v", hasLocation, tc.wantLocation)
-			}
-			if response.Body == nil {
-				t.Error("expected the stored profile in the response body on both outcomes")
-			}
-		})
+				if response.Status != tc.wantStatus {
+					t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
+				}
+				_, hasLocation := response.Header["Location"]
+				if hasLocation != tc.wantLocation {
+					t.Errorf("Location header present = %v, want %v", hasLocation, tc.wantLocation)
+				}
+				if response.Body == nil {
+					t.Error("expected the stored profile in the response body on both outcomes")
+				}
+			})
+		}
 	}
 }
 
@@ -154,42 +192,44 @@ func TestNotificationEventAgreesWithStatusCode(t *testing.T) {
 		{"create", false, http.StatusCreated, models.NOTIFICATIONEVENTTYPE_NF_REGISTERED},
 		{"update", true, http.StatusOK, models.NOTIFICATIONEVENTTYPE_NF_PROFILE_CHANGED},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			received := make(chan models.NotificationData, 1)
-			subscriber := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var data models.NotificationData
-				if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-					t.Errorf("decoding notification: %v", err)
+	for _, mode := range profileExpiryModes {
+		for _, tc := range tests {
+			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {
+				received := make(chan models.NotificationData, 1)
+				subscriber := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var data models.NotificationData
+					if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+						t.Errorf("decoding notification: %v", err)
+					}
+					// Several subscription conditions can match the same profile, so
+					// more than one notification may arrive. Never block the handler:
+					// a stalled subscriber would hold the NRF's client until its
+					// 10 s notify timeout and make this test take that long.
+					select {
+					case received <- data:
+					default:
+					}
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				defer subscriber.Close()
+
+				useDB(t, &capturingDB{*storedProfileDB(tc.alreadyExisted), subscriber.URL})
+				setProfileExpiry(t, mode.enabled)
+
+				response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
+
+				if response.Status != tc.wantStatus {
+					t.Fatalf("status = %d, want %d", response.Status, tc.wantStatus)
 				}
-				// Several subscription conditions can match the same profile, so
-				// more than one notification may arrive. Never block the handler:
-				// a stalled subscriber would hold the NRF's client until its
-				// 10 s notify timeout and make this test take that long.
 				select {
-				case received <- data:
+				case data := <-received:
+					if data.Event != tc.wantEvent {
+						t.Errorf("notification event = %v, want %v (status was %d)", data.Event, tc.wantEvent, response.Status)
+					}
 				default:
+					t.Error("no notification was delivered to the subscriber")
 				}
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			defer subscriber.Close()
-
-			useDB(t, &capturingDB{statusCodeDB{putOneExisted: tc.alreadyExisted}, subscriber.URL})
-			enableProfileExpiry(t)
-
-			response := producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
-
-			if response.Status != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", response.Status, tc.wantStatus)
-			}
-			select {
-			case data := <-received:
-				if data.Event != tc.wantEvent {
-					t.Errorf("notification event = %v, want %v (status was %d)", data.Event, tc.wantEvent, response.Status)
-				}
-			default:
-				t.Error("no notification was delivered to the subscriber")
-			}
-		})
+			})
+		}
 	}
 }
