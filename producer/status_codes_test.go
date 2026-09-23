@@ -92,13 +92,19 @@ var profileExpiryModes = []struct {
 }
 
 // setProfileExpiry sets the profile-expiry configuration a case needs and
-// restores the previous value, so the flag cannot leak into cases that run
-// after it. factory.NrfConfig is process-global.
+// restores it afterwards, so it cannot leak into cases that run later.
+// factory.NrfConfig is process-global. NfKeepAliveTime is restored as well:
+// registering with expiry disabled overwrites it with one day, so restoring the
+// flag alone would leave later cases with that keep-alive.
 func setProfileExpiry(t *testing.T, enabled bool) {
 	t.Helper()
-	previous := factory.NrfConfig.Configuration.NfProfileExpiryEnable
+	previousExpiry := factory.NrfConfig.Configuration.NfProfileExpiryEnable
+	previousKeepAlive := factory.NrfConfig.Configuration.NfKeepAliveTime
 	factory.NrfConfig.Configuration.NfProfileExpiryEnable = enabled
-	t.Cleanup(func() { factory.NrfConfig.Configuration.NfProfileExpiryEnable = previous })
+	t.Cleanup(func() {
+		factory.NrfConfig.Configuration.NfProfileExpiryEnable = previousExpiry
+		factory.NrfConfig.Configuration.NfKeepAliveTime = previousKeepAlive
+	})
 }
 
 func useDB(t *testing.T, db dbadapter.DBInterface) {
@@ -231,5 +237,30 @@ func TestNotificationEventAgreesWithStatusCode(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The profile-expiry cases leave the process-global configuration as they
+// found it. Registering with expiry disabled rewrites NfKeepAliveTime, which
+// setProfileExpiry has to undo as well as the flag.
+func TestProfileExpiryModesRestoreTheConfiguration(t *testing.T) {
+	// Values, not the struct: factory.NrfConfig.Configuration is a pointer, so
+	// holding it would compare the configuration with itself.
+	beforeExpiry := factory.NrfConfig.Configuration.NfProfileExpiryEnable
+	beforeKeepAlive := factory.NrfConfig.Configuration.NfKeepAliveTime
+
+	for _, mode := range profileExpiryModes {
+		t.Run(mode.name, func(t *testing.T) {
+			useDB(t, storedProfileDB(false))
+			setProfileExpiry(t, mode.enabled)
+
+			producer.HandleNFRegisterRequest(newRequest(testProfile(testInstanceID)))
+		})
+	}
+
+	after := factory.NrfConfig.Configuration
+	if after.NfProfileExpiryEnable != beforeExpiry || after.NfKeepAliveTime != beforeKeepAlive {
+		t.Errorf("configuration after = {expiry %v, keepAlive %d}, want {expiry %v, keepAlive %d}",
+			after.NfProfileExpiryEnable, after.NfKeepAliveTime, beforeExpiry, beforeKeepAlive)
 	}
 }
