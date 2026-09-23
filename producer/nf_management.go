@@ -153,9 +153,12 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 
 	// "limit" is an optional query parameter with a minimum of 1. Omitting it
 	// means "no limit", which is conveyed downstream as 0; parsing it
-	// unconditionally would make an optional parameter mandatory.
+	// unconditionally would make an optional parameter mandatory. Presence is
+	// tested on the key rather than on the value, because "?limit=" supplies
+	// the parameter with a value that does not satisfy it.
 	limit := 0
-	if limitRaw := request.Query.Get("limit"); limitRaw != "" {
+	if request.Query.Has("limit") {
+		limitRaw := request.Query.Get("limit")
 		parsed, err := strconv.Atoi(limitRaw)
 		if err != nil || parsed < 1 {
 			// The detail names the parameter and the constraint. The parse error
