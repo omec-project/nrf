@@ -258,6 +258,17 @@ func ConnectToDBClient(dbName string, url string, enableStream bool, nfProfileEx
 		logger.AppLog.Fatalf("could not ensure the Subscriptions indexes: %v", err)
 	}
 
+	// Outside the nfProfileExpiryEnable branch below: registration, heartbeat,
+	// deregistration, discovery and token issue all look profiles up by
+	// instance ID whether or not they expire.
+	nfProfileCtx, cancelNfProfile := context.WithTimeout(context.Background(), ttlIndexRetryTimeout)
+	defer cancelNfProfile()
+	if err := ensureIndexes(nfProfileCtx, wrapped, nfProfileCollection, nfProfileIndexes()); err != nil {
+		// Without it every one of those lookups scans NfProfile, and the NRF
+		// still answers correctly -- only slower as the collection grows.
+		logger.AppLog.Fatalf("could not ensure the NfProfile indexes: %v", err)
+	}
+
 	if nfProfileExpiryEnable {
 		logger.AppLog.Infoln("NfProfile document expiry enabled")
 		ctx, cancel := context.WithTimeout(context.Background(), ttlIndexRetryTimeout)
@@ -381,15 +392,41 @@ func subscriptionsIndexes() []mongoapi.IndexSpec {
 	}
 }
 
+// nfProfileIndexes are the indexes the NfProfile collection needs besides the
+// TTL index, which ensureTTLIndex owns.
+//
+// The key is the stored, lower-cased field name the producer filters on
+// (fieldNfInstanceId), not the camel-case nfInstanceId of the API model. An
+// index on the camel-case spelling would be built, reported present, and never
+// used.
+//
+// Not unique: uniqueness is not wanted as a constraint here, and a collection
+// that already holds a duplicate would make the index impossible to create and
+// the NRF unable to start.
+func nfProfileIndexes() []mongoapi.IndexSpec {
+	return []mongoapi.IndexSpec{
+		{
+			Name: "nfProfileByNfInstanceId",
+			Keys: mongoapi.AscendingKeys("nfinstanceid"),
+		},
+	}
+}
+
 // ensureSubscriptionsIndexes makes the Subscriptions collection carry every
 // index in subscriptionsIndexes.
 func ensureSubscriptionsIndexes(ctx context.Context, db indexEnsurer) error {
-	for _, spec := range subscriptionsIndexes() {
-		description := fmt.Sprintf("index '%s' in collection '%s'", spec.Name, subscriptionsCollection)
+	return ensureIndexes(ctx, db, subscriptionsCollection, subscriptionsIndexes())
+}
+
+// ensureIndexes makes collName carry every index in specs, retrying each one
+// through retryEnsure.
+func ensureIndexes(ctx context.Context, db indexEnsurer, collName string, specs []mongoapi.IndexSpec) error {
+	for _, spec := range specs {
+		description := fmt.Sprintf("index '%s' in collection '%s'", spec.Name, collName)
 		err := retryEnsure(ctx, description, func() error {
 			opCtx, cancel := context.WithTimeout(ctx, ttlIndexOpTimeout)
 			defer cancel()
-			return db.EnsureIndex(opCtx, subscriptionsCollection, spec)
+			return db.EnsureIndex(opCtx, collName, spec)
 		})
 		if err != nil {
 			return fmt.Errorf("could not ensure %s: %w", description, err)
