@@ -26,11 +26,20 @@ func InitNrfContext() {
 	NrfNfProfile.SetNfType(models.NFTYPE_NRF)
 	NrfNfProfile.SetNfStatus(models.NFSTATUS_REGISTERED)
 
-	nfServices := InitNFService(configuration.ServiceNameList, config.Info.Version)
+	nfServices := initNFService(configuration.ServiceNameList, config.Info.Version)
 	NrfNfProfile.SetNfServices(nfServices)
+
+	// nfServiceList: TS 29.510 Rel-16 replacement for nfServices, kept in sync
+	// so consumers that only check nfServiceList (e.g. discovery) still see
+	// the NRF's own services.
+	nfServiceList := make(map[string]models.NFService, len(nfServices))
+	for _, nfService := range nfServices {
+		nfServiceList[nfService.GetServiceInstanceId()] = nfService
+	}
+	NrfNfProfile.SetNfServiceList(nfServiceList)
 }
 
-func InitNFService(srvNameList []string, version string) []models.NFService {
+func initNFService(srvNameList []string, version string) []models.NFService {
 	tmpVersion := strings.Split(version, ".")
 	nfServices := make([]models.NFService, len(srvNameList))
 	ipEndPoint := models.NewIpEndPoint()
