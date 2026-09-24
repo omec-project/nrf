@@ -8,6 +8,7 @@ package producer_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -262,5 +263,32 @@ func TestProfileExpiryModesRestoreTheConfiguration(t *testing.T) {
 	if after.NfProfileExpiryEnable != beforeExpiry || after.NfKeepAliveTime != beforeKeepAlive {
 		t.Errorf("configuration after = {expiry %v, keepAlive %d}, want {expiry %v, keepAlive %d}",
 			after.NfProfileExpiryEnable, after.NfKeepAliveTime, beforeExpiry, beforeKeepAlive)
+	}
+}
+
+// failingReadDB is a datastore whose single-document reads fail, standing for
+// a transient read error while writes still succeed.
+type failingReadDB struct {
+	statusCodeDB
+}
+
+func (db *failingReadDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
+	return nil, errors.New("transient read failure")
+}
+
+// With expiry disabled, the read made before the legacy cleanup only decides
+// between 200 and 201. A failure of that read must not fail the registration:
+// the profile is still written, and it is reported as created.
+func TestRegistrationSurvivesAFailedPreCleanupRead(t *testing.T) {
+	useDB(t, &failingReadDB{statusCodeDB{putOneExisted: false}})
+	setProfileExpiry(t, false)
+
+	response := producer.HandleNFRegisterRequest(newRequest(testProfile("33333333-3333-4333-8333-333333333333")))
+
+	if response.Status != http.StatusCreated {
+		t.Errorf("status = %d, want %d despite the failed read", response.Status, http.StatusCreated)
+	}
+	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
+		t.Errorf("registration failed on a read that only chooses the status code: %+v", problem)
 	}
 }

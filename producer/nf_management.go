@@ -646,12 +646,14 @@ func NFRegisterProcedure(nfProfile models.NFProfile) (outcome nfRegistrationOutc
 	replacedBeforeCleanup := false
 	// fallback to older approach
 	if !factory.NrfConfig.Configuration.NfProfileExpiryEnable {
+		// This read only chooses between 200 and 201, so a failure of it is
+		// logged and the registration goes ahead, reported as a creation.
 		existing, getErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 		if getErr != nil {
 			logger.ManagementLog.Warnln("Error fetching existing NF profile: ", getErr)
-			return nfProfileCreated, nil, nil, utils.ProblemDetailsSystemFailure(getErr.Error())
+		} else {
+			replacedBeforeCleanup = len(existing) > 0
 		}
-		replacedBeforeCleanup = len(existing) > 0
 		NFDeleteAll(string(nf.NfType))
 	} else {
 		timein := time.Now().Local().Add(time.Second * time.Duration(nf.GetHeartBeatTimer()*3))
