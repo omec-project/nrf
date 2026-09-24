@@ -213,7 +213,7 @@ func TestNFRegisterProcedureSuccess(t *testing.T) {
 			nf.SetNfInstanceId(uuid.New().String())
 			nf.SetNfStatus(models.NFSTATUS_REGISTERED)
 			nf.SetPlmnList(tc.nfPlmnList)
-			_, data, err := producer.NFRegisterProcedure(*nf)
+			_, _, data, err := producer.NFRegisterProcedure(*nf)
 			if err != nil {
 				t.Fatalf("failed to register NF: %v", err)
 			}
@@ -267,7 +267,7 @@ func TestNFRegisterProcedureFailure(t *testing.T) {
 			nf.SetNfInstanceId(uuid.New().String())
 			nf.SetNfStatus(models.NFSTATUS_REGISTERED)
 			nf.SetPlmnList(tc.nfPlmnList)
-			_, data, err := producer.NFRegisterProcedure(*nf)
+			_, _, data, err := producer.NFRegisterProcedure(*nf)
 			if err == nil {
 				t.Errorf("Expected error, got: %v", data)
 			}
@@ -293,7 +293,7 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 	nf.SetNfType(models.NFTYPE_AUSF)
 	nf.SetNfInstanceId(uuid.New().String())
 	nf.SetNfStatus(models.NFSTATUS_REGISTERED)
-	_, data, err := producer.NFRegisterProcedure(*nf)
+	_, _, data, err := producer.NFRegisterProcedure(*nf)
 	if err == nil {
 		t.Errorf("Expected error, got: %v", data)
 	}
