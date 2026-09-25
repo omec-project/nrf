@@ -116,6 +116,10 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 			problemDetails := utils.ProblemDetailsWithCause("NF profile validation failed", http.StatusBadRequest, err.Error(), utils.CauseInvalidRequest)
 			return httpwrapper.NewResponse(http.StatusBadRequest, nil, problemDetails)
 		}
+		if errors.Is(err, errNfInstanceNotFound) {
+			problemDetails := utils.ProblemDetailsContextNotFound("NF instance not found")
+			return httpwrapper.NewResponse(http.StatusNotFound, nil, problemDetails)
+		}
 		if errors.Is(err, errConcurrentNfInstanceUpdate) {
 			// 409, not 500: the client's own request never failed server-side, it
 			// just kept losing a race with other updates; a plain retry is the
@@ -146,13 +150,26 @@ func HandleUpdateNFInstanceRequest(request *httpwrapper.Request) *httpwrapper.Re
 func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.ManagementLog.Infoln("handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
-	limitRaw := request.Query.Get("limit")
-	limit, err := strconv.Atoi(limitRaw)
-	if err != nil {
-		logger.ManagementLog.Errorln("error converting limit query parameter:", limitRaw, err)
-		problemDetails := utils.ProblemDetails("Invalid Parameter", http.StatusBadRequest, err.Error())
 
-		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+	// "limit" is an optional query parameter with a minimum of 1. Omitting it
+	// means "no limit", which is conveyed downstream as 0; parsing it
+	// unconditionally would make an optional parameter mandatory. Presence is
+	// tested on the key rather than on the value, because "?limit=" supplies
+	// the parameter with a value that does not satisfy it.
+	limit := 0
+	if request.Query.Has("limit") {
+		limitRaw := request.Query.Get("limit")
+		parsed, err := strconv.Atoi(limitRaw)
+		if err != nil || parsed < 1 {
+			// The detail names the parameter and the constraint. The parse error
+			// itself is an implementation detail and belongs in the log.
+			logger.ManagementLog.Errorf("invalid limit query parameter %q: %v", limitRaw, err)
+			problemDetails := utils.ProblemDetailsWithCause(
+				"Invalid Parameter", http.StatusBadRequest,
+				"query parameter 'limit' must be an integer of at least 1", utils.CauseInvalidRequest)
+			return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+		}
+		limit = parsed
 	}
 
 	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
@@ -172,7 +189,17 @@ func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	logger.ManagementLog.Infoln("Handle RemoveSubscription")
 	subscriptionID := request.Params["subscriptionID"]
 
-	nfType := GetNfTypeBySubscriptionID(request.Params["subscriptionID"])
+	nfType, found, err := GetNfTypeBySubscriptionID(subscriptionID)
+	if err != nil {
+		stats.IncrementNrfSubscriptionsStats("unsubscribe", nfType, "FAILURE")
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil,
+			utils.ProblemDetailsSystemFailure("failed to read subscription"))
+	}
+	if !found {
+		logger.ManagementLog.Warnf("removal of unknown subscription [%s]", subscriptionID)
+		stats.IncrementNrfSubscriptionsStats("unsubscribe", nfType, "FAILURE")
+		return httpwrapper.NewResponse(http.StatusNotFound, nil, utils.ProblemDetailsContextNotFound("Subscription not found"))
+	}
 	RemoveSubscriptionProcedure(subscriptionID)
 	stats.IncrementNrfSubscriptionsStats("unsubscribe", nfType, "SUCCESS")
 
@@ -184,7 +211,22 @@ func HandleUpdateSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.
 	subscriptionID := request.Params["subscriptionID"]
 	patchJSON := request.Body.([]byte)
 
-	nfType := GetNfTypeBySubscriptionID(subscriptionID)
+	// The subscription has to be looked up before the patch is attempted, not
+	// only for the statistics label: patching a subscription that is not there
+	// fails inside the datastore, and that failure is reported below as 204,
+	// which clause 5.2.2.5.6 step 2a defines as success.
+	nfType, found, err := GetNfTypeBySubscriptionID(subscriptionID)
+	if err != nil {
+		stats.IncrementNrfSubscriptionsStats("update", nfType, "FAILURE")
+		return httpwrapper.NewResponse(http.StatusInternalServerError, nil,
+			utils.ProblemDetailsSystemFailure("failed to read subscription"))
+	}
+	if !found {
+		logger.ManagementLog.Warnf("update of unknown subscription [%s]", subscriptionID)
+		stats.IncrementNrfSubscriptionsStats("update", nfType, "FAILURE")
+		return httpwrapper.NewResponse(http.StatusNotFound, nil, utils.ProblemDetailsContextNotFound("Subscription not found"))
+	}
+
 	response := UpdateSubscriptionProcedure(subscriptionID, patchJSON)
 
 	if response != nil {
@@ -331,6 +373,20 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 		return "", problemDetails
 	}
 
+	// TS 29.510 clause 5.2.2.4.2 step 2b: an nfInstanceID that is not in the
+	// NRF's list of registered instances is 404, not a successful 204. This
+	// read is the one the procedure already performs to build the notification
+	// payload, so answering from it costs nothing. Returning here also skips
+	// the subscription purge below, which is correct: an instance that was
+	// never registered has no subscriptions keyed on it.
+	if len(nfProfilesRaw) == 0 {
+		logger.ManagementLog.Warnf("deregistration of unregistered NF instance [%s]", nfInstanceID)
+		// nfType is the metric label the handler records this failure under,
+		// so it is returned even here: nfTypeUnknown for an instance that was
+		// never registered, rather than an empty label.
+		return nfType, utils.ProblemDetailsContextNotFound("NF instance not found")
+	}
+
 	time.Sleep(time.Duration(1) * time.Second)
 
 	deleteManyErr := dbadapter.DBClient.RestfulAPIDeleteMany(collName, filter)
@@ -421,6 +477,11 @@ var errInvalidPatchedNfProfile = errors.New("invalid NF profile after patch")
 // resubmit instead.
 var errConcurrentNfInstanceUpdate = errors.New("NF instance was modified concurrently; retry the request")
 
+// errNfInstanceNotFound reports that the request named an NF instance the NRF
+// does not hold. TS 29.510 clause 5.2.2.3.1B step 2b requires 404 for this,
+// where a generic failure would otherwise surface as 500.
+var errNfInstanceNotFound = errors.New("NF instance not found")
+
 // decodeNFProfile decodes a raw MongoDB NF profile document into
 // models.NFProfile. The document's keys are the driver's default-lowercased
 // BSON field names (e.g. "nfservices", "allowednfdomains"; see the fieldXxx
@@ -505,9 +566,17 @@ func updateNFInstanceProcedure(nfInstanceID string, patchJSON []byte) (*models.N
 	// generally safe to blindly replay against a document that changed shape
 	// since it was snapshotted.
 	previousDoc, getPreviousErr := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
-	if getPreviousErr != nil || previousDoc == nil {
+	if getPreviousErr != nil {
 		logger.ManagementLog.Errorln("failed to get NF instance:", getPreviousErr)
 		return nil, fmt.Errorf("failed to get NF instance: %v", getPreviousErr)
+	}
+	// An absent document is the client naming an instance that is not
+	// registered, not a fault on our side: TS 29.510 clause 5.2.2.3.1B step 2b
+	// requires 404 for it. The datastore reports this as a nil document with no
+	// error, which is why it has to be separated from getPreviousErr above.
+	if previousDoc == nil {
+		logger.ManagementLog.Warnf("patch for unregistered NF instance [%s]", nfInstanceID)
+		return nil, errNfInstanceNotFound
 	}
 
 	previousProfile, decodeErr := decodeNFProfile(previousDoc)
@@ -593,6 +662,27 @@ func GetNFInstanceProcedure(nfInstanceID string) *models.NFProfile {
 
 	nfProfile := util.ConvertNFProfileDiscoveryToNFProfile(decodedProfiles[0])
 	return &nfProfile
+}
+
+// notifySubscribers delivers an NF-status notification to every subscriber
+// matching nf, and reports delivery failures to the log only.
+//
+// The profile has already been committed by the time this runs, so a subscriber
+// the NRF cannot reach says nothing about the request that triggered it: TS
+// 29.510 clause 5.2.2.6 makes NFStatusNotify a separate service operation, and
+// the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister are encoding
+// errors and NRF internal errors. Failing the registration here would report a
+// profile as unregistered while the NRF holds and serves it. The deregistration
+// path has always treated the same failure this way.
+//
+// Note this also means every matching subscriber is attempted, where the loop
+// this replaces stopped at the first failure.
+func notifySubscribers(nf models.NFProfile, event models.NotificationEventType, nfInstanceUri string) {
+	for _, uri := range nrfContext.GetNotificationUri(nf) {
+		if pd := SendNFStatusNotify(event, nfInstanceUri, uri); pd != nil {
+			logger.ManagementLog.Warnf("NF status notification to %s failed: %+v", uri, pd)
+		}
+	}
 }
 
 // nfRegistrationOutcome distinguishes the two successful outcomes of a
@@ -710,11 +800,7 @@ func handleNFProfileUpdateOrCreate(
 		logger.ManagementLog.Infoln("create NF Profile", nfProfile.GetNfType())
 	}
 
-	for _, uri := range nrfContext.GetNotificationUri(nf) {
-		if pd := SendNFStatusNotify(notificationEvent, locationHeaderValue, uri); pd != nil {
-			return outcome, nil, nil, pd
-		}
-	}
+	notifySubscribers(nf, notificationEvent, locationHeaderValue)
 
 	// TS 29.510 clause 5.2.2.2.2 step 2a specifies the Location header for the
 	// resource NFRegister created. Clause 5.2.2.3.1A step 2a, the complete
@@ -729,17 +815,30 @@ func handleNFProfileUpdateOrCreate(
 	return outcome, header, &nf, nil
 }
 
-func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string) {
+// GetNfTypeBySubscriptionID reports the requesting NF type recorded against a
+// subscription, whether that subscription exists at all, and whether the
+// datastore could be read.
+//
+// All three answers have to be separate. nfTypeUnknown is also what a
+// subscription that exists but carries no reqNfType returns, so it cannot serve
+// as an absence test; and a datastore that cannot be read is a fault on our
+// side, not a client naming a resource that is not there, so it must not be
+// reported as absence either.
+func GetNfTypeBySubscriptionID(subscriptionID string) (nfType string, found bool, err error) {
 	collName := collSubscriptions
 	filter := bson.M{fieldSubscriptionId: subscriptionID}
 	response, err := dbadapter.DBClient.RestfulAPIGetOne(collName, filter)
 	if err != nil {
-		return nfTypeUnknown
+		logger.ManagementLog.Errorf("error fetching subscription [%s]: %v", subscriptionID, err)
+		return nfTypeUnknown, false, err
+	}
+	if response == nil {
+		return nfTypeUnknown, false, nil
 	}
 	if response["reqNfType"] != nil {
-		return fmt.Sprint(response["reqNfType"])
+		return fmt.Sprint(response["reqNfType"]), true, nil
 	}
-	return nfTypeUnknown
+	return nfTypeUnknown, true, nil
 }
 
 func GetNfTypeByNfInstanceID(nfInstanceID string) (nfType string) {
