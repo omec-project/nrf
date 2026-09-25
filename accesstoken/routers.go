@@ -25,6 +25,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/nrf/logger"
+	nrfUtil "github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/v2/utils"
 	utilLogger "github.com/omec-project/util/logger"
 )
@@ -91,7 +92,7 @@ func DefaultHandleFunc(c *gin.Context) {
 
 func writeNotImplementedProblem(c *gin.Context, detail string) {
 	problemDetails := utils.ProblemDetailsNotImplemented(detail)
-	c.JSON(http.StatusNotImplemented, problemDetails)
+	nrfUtil.WriteProblem(c, http.StatusNotImplemented, problemDetails)
 }
 
 func shouldSkipRoute(pattern string) bool {

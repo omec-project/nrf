@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/producer"
+	nrfUtil "github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/utils"
@@ -35,6 +36,11 @@ import (
 // Create a new subscription
 func HTTPCreateSubscription(c *gin.Context) {
 	logger.ManagementLog.Infoln("Handle Post /subscriptions")
+
+	if !requireContentType(c, contentTypeJSON) {
+		return
+	}
+
 	var subscription models.SubscriptionData
 
 	// step 1: retrieve http request body
@@ -42,7 +48,7 @@ func HTTPCreateSubscription(c *gin.Context) {
 	if err != nil {
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		logger.ManagementLog.Errorf("Get Request Body error: %+v", err)
-		c.JSON(http.StatusInternalServerError, problemDetails)
+		nrfUtil.WriteProblem(c, http.StatusInternalServerError, problemDetails)
 		return
 	}
 
@@ -52,7 +58,7 @@ func HTTPCreateSubscription(c *gin.Context) {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
 		logger.ManagementLog.Errorln(problemDetail)
-		c.JSON(http.StatusBadRequest, rsp)
+		nrfUtil.WriteProblem(c, http.StatusBadRequest, rsp)
 		return
 	}
 
@@ -63,8 +69,8 @@ func HTTPCreateSubscription(c *gin.Context) {
 	if err != nil {
 		logger.ManagementLog.Errorln(err)
 		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
-		c.JSON(http.StatusInternalServerError, problemDetails)
+		nrfUtil.WriteProblem(c, http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(httpResponse.Status, contentTypeJSON, responseBody.Bytes())
+		c.Data(httpResponse.Status, nrfUtil.ResponseContentType(httpResponse.Status), responseBody.Bytes())
 	}
 }

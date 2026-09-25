@@ -21,6 +21,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
+	nrfUtil "github.com/omec-project/nrf/util"
 	openapiLogger "github.com/omec-project/openapi/v2/logger"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
@@ -96,6 +97,11 @@ func (nrf *NRF) Start() {
 	dbadapter.ConnectToDBClient(config.MongoDBName, config.MongoDBUrl, config.MongoDBStreamEnable, config.NfProfileExpiryEnable)
 
 	router := utilLogger.NewGinWithZap(logger.GinLog)
+
+	// An SBI client cannot parse gin's plain-text "404 page not found", which is
+	// what an unserved path or a method the API does not define for a resource
+	// would otherwise return.
+	nrfUtil.RegisterProblemHandlers(router, logger.GinLog)
 
 	accesstoken.AddService(router)
 	discovery.AddService(router)

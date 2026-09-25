@@ -1062,8 +1062,17 @@ func addNfGroupCond(nfProfile models.NFProfile, uriList *[]string) {
 	}
 }
 
+// NnrfUriListLimit truncates originalUL to at most limit entries.
+//
+// A limit of zero or less means "no limit" and leaves the list untouched. The
+// caller uses zero for an omitted "limit" query parameter, which is optional;
+// without this guard the truncation below would treat it as "keep nothing" and
+// return an empty collection, and a negative value would reach make() with a
+// negative length and panic.
 func NnrfUriListLimit(originalUL *UriList, limit int) {
-	// response limit
+	if limit <= 0 {
+		return
+	}
 
 	if limit < len(originalUL.Link.Item) {
 		b := new(Links)
