@@ -9,9 +9,12 @@ package producer_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 
 	"github.com/omec-project/nrf/dbadapter"
@@ -40,7 +43,13 @@ type statusCodeDB struct {
 	profilesDeleted bool
 	// getOne is returned by RestfulAPIGetOne; nil means "no such document".
 	getOne map[string]any
-	// getMany is returned by RestfulAPIGetMany; empty means "no such document".
+	// getOneErr makes RestfulAPIGetOne fail, standing for a datastore that
+	// cannot be read as opposed to a document that is not there.
+	getOneErr error
+	// getMany is what RestfulAPIGetMany returns for the NF profile collection;
+	// empty means "no such document". Other collections, the Subscriptions one
+	// in particular, answer empty: a profile row read back as a subscription
+	// would make the procedure under test notify an empty URI.
 	getMany []map[string]any
 }
 
@@ -49,11 +58,25 @@ func (db *statusCodeDB) RestfulAPIPutOne(string, bson.M, map[string]any) (bool, 
 }
 
 func (db *statusCodeDB) RestfulAPIGetOne(string, bson.M) (map[string]any, error) {
-	return db.getOne, nil
+	return db.getOne, db.getOneErr
 }
 
-func (db *statusCodeDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
+func (db *statusCodeDB) RestfulAPIGetMany(collName string, _ bson.M) ([]map[string]any, error) {
+	if collName != "NfProfile" {
+		return nil, nil
+	}
 	return db.getMany, nil
+}
+
+// RestfulAPIJSONPatch mirrors what the datastore does when the filter matches
+// nothing: the patch is applied to a nil document and fails. Without that, a
+// case about an absent subscription would never reach the code path that
+// reported the failure as success.
+func (db *statusCodeDB) RestfulAPIJSONPatch(string, bson.M, []byte) error {
+	if db.getOne == nil {
+		return errors.New("patch against a document that is not there")
+	}
+	return nil
 }
 
 func (db *statusCodeDB) RestfulAPIDeleteMany(string, bson.M) error {
@@ -238,6 +261,192 @@ func TestNotificationEventAgreesWithStatusCode(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TS 29.510 clause 5.2.2.4.2 step 2b: an nfInstanceID that is not registered is
+// 404, not a successful 204.
+func TestDeregisterReportsUnknownInstanceAsNotFound(t *testing.T) {
+	tests := []struct {
+		name       string
+		stored     []map[string]any
+		wantStatus int
+	}{
+		{"instance is not registered", nil, http.StatusNotFound},
+		{
+			"instance is registered",
+			[]map[string]any{storedProfileRow()},
+			http.StatusNoContent,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useDB(t, &statusCodeDB{getMany: tc.stored})
+
+			request := newRequest(nil)
+			request.Params["nfInstanceID"] = testInstanceID
+			response := producer.HandleNFDeregisterRequest(request)
+
+			if response.Status != tc.wantStatus {
+				t.Errorf("status = %d, want %d", response.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// TS 29.510 clause 5.2.2.3.1B step 2b. This is the path the NFs heartbeat over,
+// so the code returned for a profile the NRF has lost decides whether they
+// recover: their fallback triggers on any problem, but 500 misdescribes it.
+func TestPatchReportsUnknownInstanceAsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest(nil)
+	request.Params["nfInstanceID"] = testInstanceID
+	request.Body = []byte(`[{"op":"replace","path":"/nfStatus","value":"REGISTERED"}]`)
+	response := producer.HandleUpdateNFInstanceRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+func TestRemoveUnknownSubscriptionReportsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest(nil)
+	request.Params["subscriptionID"] = "no-such-subscription"
+	response := producer.HandleRemoveSubscriptionRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+// TS 29.510 clause 5.2.2.5.6 step 2a defines 204 as the success answer to a
+// subscription update, so 204 cannot also be the answer for a subscription the
+// NRF does not hold; 404 is what the API defines for that operation. The patch
+// fails inside the datastore in this case, which the handler reported as 204.
+func TestUpdateUnknownSubscriptionReportsNotFound(t *testing.T) {
+	useDB(t, &statusCodeDB{getOne: nil})
+
+	request := newRequest([]byte(`[{"op":"replace","path":"/validityTime","value":"2026-01-01T00:00:00Z"}]`))
+	request.Params["subscriptionID"] = "no-such-subscription"
+	response := producer.HandleUpdateSubscriptionRequest(request)
+
+	if response.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Status, http.StatusNotFound)
+	}
+}
+
+// A datastore that cannot be read is a fault on the NRF's side, not the client
+// naming a resource that is not there, so neither subscription operation may
+// report it as 404.
+func TestSubscriptionReadFailureIsNotReportedAsNotFound(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle func(*httpwrapper.Request) *httpwrapper.Response
+	}{
+		{"removal", producer.HandleRemoveSubscriptionRequest},
+		{"update", producer.HandleUpdateSubscriptionRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useDB(t, &statusCodeDB{getOneErr: errors.New("datastore unreachable")})
+
+			request := newRequest([]byte(`[]`))
+			request.Params["subscriptionID"] = "some-subscription"
+			response := tc.handle(request)
+
+			if response.Status != http.StatusInternalServerError {
+				t.Errorf("status = %d, want %d", response.Status, http.StatusInternalServerError)
+			}
+		})
+	}
+}
+
+// notifyingDB answers the Subscriptions lookup with one subscription per
+// callback URI, in the order given.
+type notifyingDB struct {
+	statusCodeDB
+	callbackURIs []string
+}
+
+func (db *notifyingDB) RestfulAPIGetMany(string, bson.M) ([]map[string]any, error) {
+	rows := make([]map[string]any, 0, len(db.callbackURIs))
+	for i, uri := range db.callbackURIs {
+		rows = append(rows, map[string]any{
+			"subscriptionId":          fmt.Sprintf("subscription-%d", i+1),
+			"nfStatusNotificationUri": uri,
+		})
+	}
+	return rows, nil
+}
+
+// closedCallbackURI is the address of a listener this test opened and closed,
+// so a notification sent to it is refused. It does not depend on some fixed
+// port happening to have nothing listening on it.
+func closedCallbackURI(t *testing.T) string {
+	t.Helper()
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	uri := "http://" + listener.Addr().String() + "/dead"
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return uri
+}
+
+// A profile committed to the datastore is registered. Delivering NF-status
+// notifications afterwards is a separate service operation (TS 29.510 clause
+// 5.2.2.6), and the failures clause 5.2.2.2.2 step 2b enumerates for NFRegister
+// are encoding errors and NRF internal errors -- not an unreachable subscriber.
+// Reporting 500 here told the registering NF its profile was not stored while
+// the NRF held and served it.
+func TestRegistrationSucceedsWhenSubscriberNotificationFails(t *testing.T) {
+	var delivered atomic.Int32
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		delivered.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer live.Close()
+
+	// The refused subscriber comes first. A failed notification must neither
+	// fail the registration nor end delivery to the subscribers after it.
+	useDB(t, &notifyingDB{
+		statusCodeDB: statusCodeDB{putOneExisted: false},
+		callbackURIs: []string{closedCallbackURI(t), live.URL + "/live"},
+	})
+	setProfileExpiry(t, true)
+
+	response := producer.HandleNFRegisterRequest(newRequest(testProfile("22222222-2222-4222-8222-222222222222")))
+
+	if response.Status != http.StatusCreated {
+		t.Errorf("status = %d, want %d despite the unreachable subscriber", response.Status, http.StatusCreated)
+	}
+	if problem, isProblem := response.Body.(*models.ProblemDetails); isProblem {
+		t.Errorf("registration reported a failure for a committed profile: %+v", problem)
+	}
+	if delivered.Load() == 0 {
+		t.Error("the subscriber after the unreachable one was never notified")
+	}
+}
+
+// The failure a deregistration of an unknown instance is recorded under keeps
+// its NF type label: the procedure looks the type up before deciding the
+// instance is absent, and returning an empty string would record the failure
+// under an empty label instead of nfTypeUnknown.
+func TestDeregisterOfUnknownInstanceKeepsItsMetricLabel(t *testing.T) {
+	useDB(t, &statusCodeDB{})
+
+	nfType, problem := producer.NFDeregisterProcedure(testInstanceID)
+
+	if problem == nil || problem.GetStatus() != http.StatusNotFound {
+		t.Fatalf("problem = %+v, want a 404", problem)
+	}
+	if nfType != "UNKNOWN_NF" {
+		t.Errorf("nfType = %q, want %q", nfType, "UNKNOWN_NF")
 	}
 }
 
