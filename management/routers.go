@@ -20,11 +20,13 @@ package management
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/nrf/logger"
+	nrfUtil "github.com/omec-project/nrf/util"
 	"github.com/omec-project/openapi/v2/utils"
 	utilLogger "github.com/omec-project/util/logger"
 )
@@ -53,6 +55,44 @@ const (
 
 // contentTypeJSON is the media type used for JSON request/response bodies.
 const contentTypeJSON = "application/json"
+
+// contentTypeJSONPatch is what TS 29.510 defines for the PATCH operations'
+// request bodies. It is deliberately not application/json: the heartbeat every
+// NF sends is a PATCH, so a check that accepted only application/json would
+// reject conformant traffic from the whole core.
+const contentTypeJSONPatch = "application/json-patch+json"
+
+// contentTypeProblemJSON is the media type the API definition gives every error
+// response.
+const contentTypeProblemJSON = "application/problem+json"
+
+// requireContentType reports whether the request's declared media type is one
+// the operation accepts, answering 415 and returning false when it is not.
+//
+// Matching is on the media type alone, so parameters such as
+// "application/json; charset=utf-8" are accepted. A request that declares no
+// Content-Type at all is accepted and assumed to use the operation's primary
+// type: the NRF has never required the header, and rejecting it would change
+// behaviour for clients about which there is no evidence.
+func requireContentType(c *gin.Context, accepted ...string) bool {
+	raw := c.GetHeader("Content-Type")
+	if raw == "" {
+		return true
+	}
+	mediaType, _, err := mime.ParseMediaType(raw)
+	if err == nil {
+		for _, want := range accepted {
+			if strings.EqualFold(mediaType, want) {
+				return true
+			}
+		}
+	}
+	logger.ManagementLog.Warnf("unsupported Content-Type %q, expected one of %v", raw, accepted)
+	problemDetails := utils.ProblemDetails("Unsupported Media Type", http.StatusUnsupportedMediaType,
+		fmt.Sprintf("Content-Type must be one of %s", strings.Join(accepted, ", ")))
+	nrfUtil.WriteProblem(c, http.StatusUnsupportedMediaType, problemDetails)
+	return false
+}
 
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
@@ -99,7 +139,7 @@ func DefaultHandleFunc(c *gin.Context) {
 
 func writeNotImplementedProblem(c *gin.Context, detail string) {
 	problemDetails := utils.ProblemDetailsNotImplemented(detail)
-	c.JSON(http.StatusNotImplemented, problemDetails)
+	nrfUtil.WriteProblem(c, http.StatusNotImplemented, problemDetails)
 }
 
 func shouldSkipRoute(pattern string) bool {

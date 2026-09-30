@@ -411,9 +411,10 @@ func HandleNFDiscoveryRequest(request *httpwrapper.Request) *httpwrapper.Respons
 		stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
-	problemDetails = utils.ProblemDetailsUnspecified()
+	problemDetails = utils.ProblemDetailsSystemFailure("discovery produced no result")
+	logger.DiscoveryLog.Errorln("discovery failed: procedure returned neither a result nor a problem")
 	stats.IncrementNrfNfInstancesStats(requesterNfType, targetNfType, "FAILURE")
-	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 func NFDiscoveryProcedure(queryParameters url.Values) (response *models.SearchResult,
