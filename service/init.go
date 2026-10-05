@@ -121,7 +121,12 @@ func (nrf *NRF) Start() {
 
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	logger.InitLog.Infof("binding addr: [%s]", bindAddr)
-	sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
+	// TLS key logging is a debugging aid: off unless the operator sets SSLKEYLOGFILE.
+	sslLog := os.Getenv("SSLKEYLOGFILE")
+	if sslLog != "" {
+		logger.InitLog.Warnf("TLS key logging is enabled (SSLKEYLOGFILE=%s): SBI traffic is "+
+			"decryptable by anyone who can read this file", sslLog)
+	}
 	server, err := http2_util.NewServer(bindAddr, sslLog, router)
 
 	if server == nil {
