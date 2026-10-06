@@ -48,24 +48,24 @@ type mockBSFDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	switch collName {
 	case collUriList:
-		return map[string]interface{}{
+		return map[string]any{
 			fieldNfType: nfTypeUDM,
-			testFieldLink: map[string]interface{}{
-				testFieldItem: []map[string]interface{}{{
+			testFieldLink: map[string]any{
+				testFieldItem: []map[string]any{{
 					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/udm-1",
 				}},
 			},
 		}, nil
 	case collNfProfile:
 		if filter[fieldNfInstanceId] == testNfInstanceUdm1 {
-			return map[string]interface{}{
+			return map[string]any{
 				fieldNfInstanceId: testNfInstanceUdm1,
 				fieldNfTypeLower:  nfTypeUDM,
 				testFieldNfStatus: nfServiceStatusRegistered,
-				fieldNfServices: []map[string]interface{}{{
+				fieldNfServices: []map[string]any{{
 					fieldServiceName:     "nudm-ueau",
 					fieldNfServiceStatus: nfServiceStatusRegistered,
 				}},
@@ -76,7 +76,7 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M
 	return nil, nil
 }
 
-func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName == collNfProfile {
 		return []map[string]any{
 			{
@@ -95,12 +95,12 @@ func (db *mockDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.
 	return nil, nil
 }
 
-func (db *mockBSFDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockBSFDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName != collNfProfile {
 		return nil, nil
 	}
 
-	return []map[string]interface{}{{
+	return []map[string]any{{
 		fieldNfInstanceId: "bsf-1",
 		fieldNfTypeLower:  nfTypeBSF,
 		testFieldNfStatus: nfServiceStatusRegistered,
@@ -752,16 +752,16 @@ type mockFqdnDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName != collNfProfile {
 		return nil, nil
 	}
-	return []map[string]interface{}{
+	return []map[string]any{
 		{
 			fieldNfInstanceId: testNfInstanceUdmAllowed,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
-			fieldNfServices: []map[string]interface{}{{
+			fieldNfServices: []map[string]any{{
 				fieldServiceName:     testServiceNameNudmSdm,
 				fieldNfServiceStatus: nfServiceStatusRegistered,
 			}},
@@ -770,7 +770,7 @@ func (db *mockFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter b
 			fieldNfInstanceId: testNfInstanceUdmBlocked,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
-			fieldNfServices: []map[string]interface{}{{
+			fieldNfServices: []map[string]any{{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
 				fieldAllowedNfDomains: []string{testOtherFqdn},
@@ -818,12 +818,12 @@ type mockFqdnFallbackDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	if collName == collUriList {
-		return map[string]interface{}{
+		return map[string]any{
 			fieldNfType: nfTypeUDM,
-			testFieldLink: map[string]interface{}{
-				testFieldItem: []map[string]interface{}{{
+			testFieldLink: map[string]any{
+				testFieldItem: []map[string]any{{
 					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/" + testNfInstanceUdmFallbackAllowed,
 				}},
 			},
@@ -832,16 +832,16 @@ func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetOne(collName string, f
 	return nil, nil
 }
 
-func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockFqdnFallbackDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName != collNfProfile {
 		return nil, nil
 	}
-	return []map[string]interface{}{
+	return []map[string]any{
 		{
 			fieldNfInstanceId: testNfInstanceUdmBlocked,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
-			fieldNfServices: []map[string]interface{}{{
+			fieldNfServices: []map[string]any{{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
 				fieldAllowedNfDomains: []string{testOtherFqdn},
@@ -900,14 +900,14 @@ type mockErroringDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockErroringDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockErroringDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName == collNfProfile {
 		return nil, errors.New("simulated $regexMatch failure")
 	}
 	return nil, nil
 }
 
-func (db *mockErroringDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockErroringDiscoveryDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	return nil, nil
 }
 
@@ -1383,16 +1383,16 @@ type mockComplexQueryFqdnDiscoveryDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockComplexQueryFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockComplexQueryFqdnDiscoveryDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	if collName != collNfProfile {
 		return nil, nil
 	}
-	return []map[string]interface{}{
+	return []map[string]any{
 		{
 			fieldNfInstanceId: testNfInstanceUdmAllowed,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
-			fieldNfServices: []map[string]interface{}{{
+			fieldNfServices: []map[string]any{{
 				fieldServiceName:     testServiceNameNudmSdm,
 				fieldNfServiceStatus: nfServiceStatusRegistered,
 			}},
@@ -1401,7 +1401,7 @@ func (db *mockComplexQueryFqdnDiscoveryDBClient) RestfulAPIGetMany(collName stri
 			fieldNfInstanceId: testNfInstanceUdmBlocked,
 			fieldNfTypeLower:  nfTypeUDM,
 			testFieldNfStatus: nfServiceStatusRegistered,
-			fieldNfServices: []map[string]interface{}{{
+			fieldNfServices: []map[string]any{{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
 				fieldAllowedNfDomains: []string{testOtherFqdn},
@@ -1807,7 +1807,7 @@ func TestAddDataSetFilterUsesAtomValue(t *testing.T) {
 		if !ok {
 			t.Fatalf("unexpected $and filter type: %T", filter[mongoOpAnd])
 		}
-		var got interface{}
+		var got any
 		for _, candidate := range andFilters {
 			if v, exists := candidate[fieldUdrInfoSupportedDataSets]; exists {
 				got = v
@@ -2380,12 +2380,12 @@ type mockCacheTestDBClient struct {
 	getManyCalled bool
 }
 
-func (db *mockCacheTestDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockCacheTestDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	if collName == collUriList {
-		return map[string]interface{}{
+		return map[string]any{
 			fieldNfType: nfTypeAMF,
-			testFieldLink: map[string]interface{}{
-				testFieldItem: []map[string]interface{}{{
+			testFieldLink: map[string]any{
+				testFieldItem: []map[string]any{{
 					testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-cached",
 				}},
 			},
@@ -2394,7 +2394,7 @@ func (db *mockCacheTestDBClient) RestfulAPIGetOne(collName string, filter bson.M
 	return nil, nil
 }
 
-func (db *mockCacheTestDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockCacheTestDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	db.getManyCalled = true
 	return nil, nil
 }
@@ -2440,12 +2440,12 @@ type mockMalformedBatchDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	if collName == collUriList {
-		return map[string]interface{}{
+		return map[string]any{
 			fieldNfType: nfTypeAMF,
-			testFieldLink: map[string]interface{}{
-				testFieldItem: []map[string]interface{}{
+			testFieldLink: map[string]any{
+				testFieldItem: []map[string]any{
 					{testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-valid"},
 					{testFieldHref: "https://nrf:29510/nnrf-nfm/v1/nf-instances/amf-invalid"},
 				},
@@ -2455,7 +2455,7 @@ func (db *mockMalformedBatchDBClient) RestfulAPIGetOne(collName string, filter b
 	return nil, nil
 }
 
-func (db *mockMalformedBatchDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *mockMalformedBatchDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	return []map[string]any{
 		{
 			fieldNfInstanceId: "amf-valid",

@@ -288,7 +288,7 @@ func CreateSubscriptionProcedure(subscription models.SubscriptionData) (response
 	}
 }
 
-func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (response map[string]interface{}) {
+func UpdateSubscriptionProcedure(subscriptionID string, patchJSON []byte) (response map[string]any) {
 	collName := collSubscriptions
 	filter := bson.M{fieldSubscriptionId: subscriptionID}
 
@@ -486,8 +486,8 @@ var errNfInstanceNotFound = errors.New("NF instance not found")
 // models.NFProfile. The document's keys are the driver's default-lowercased
 // BSON field names (e.g. "nfservices", "allowednfdomains"; see the fieldXxx
 // constants in nf_discovery.go), not the model's JSON field names.
-func decodeNFProfile(raw map[string]interface{}) (models.NFProfile, error) {
-	nfProfiles, decodeErr := util.Decode([]map[string]interface{}{raw}, time.RFC3339)
+func decodeNFProfile(raw map[string]any) (models.NFProfile, error) {
+	nfProfiles, decodeErr := util.Decode([]map[string]any{raw}, time.RFC3339)
 	if decodeErr != nil {
 		return models.NFProfile{}, fmt.Errorf("decoding error: %v", decodeErr)
 	}
@@ -530,16 +530,16 @@ func applyJSONPatchToNFProfile(profile models.NFProfile, patchJSON []byte) (mode
 	return patched, nil
 }
 
-// nfProfileToBSONMap converts nf to the map[string]interface{} shape
+// nfProfileToBSONMap converts nf to the map[string]any shape
 // MongoDB documents use (the driver's default-lowercased BSON keys),
 // mirroring the bson.Marshal/Unmarshal round trip NFRegisterProcedure uses
 // to build putData.
-func nfProfileToBSONMap(nf models.NFProfile) (map[string]interface{}, error) {
+func nfProfileToBSONMap(nf models.NFProfile) (map[string]any, error) {
 	bsonBytes, err := bson.Marshal(nf)
 	if err != nil {
 		return nil, fmt.Errorf("bson marshal error: %w", err)
 	}
-	data := map[string]interface{}{}
+	data := map[string]any{}
 	if err := bson.Unmarshal(bsonBytes, &data); err != nil {
 		return nil, fmt.Errorf("bson unmarshal error: %w", err)
 	}

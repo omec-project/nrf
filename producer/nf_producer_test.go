@@ -43,32 +43,32 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *MockMongoDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIGetOne")
 	return nil, nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]interface{}, error) {
+func (db *MockMongoDBClient) RestfulAPIGetMany(collName string, filter bson.M) ([]map[string]any, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIGetMany")
 	return nil, nil
 }
 
-func (db *MockMongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]interface{}, timeout int32, timeField string) bool {
+func (db *MockMongoDBClient) PutOneWithTimeout(collName string, filter bson.M, putData map[string]any, timeout int32, timeField string) bool {
 	logger.HandlerLog.Infoln("called Mock PutOneWithTimeout")
 	return true
 }
 
-func (db *MockMongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
+func (db *MockMongoDBClient) RestfulAPIPutOne(collName string, filter bson.M, putData map[string]any) (bool, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIPutOne")
 	return true, nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]interface{}) (bool, error) {
+func (db *MockMongoDBClient) RestfulAPIPutOneNotUpdate(collName string, filter bson.M, putData map[string]any) (bool, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIPutOneNotUpdate")
 	return true, nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]interface{}) error {
+func (db *MockMongoDBClient) RestfulAPIPutMany(collName string, filterArray []bson.M, putDataArray []map[string]any) error {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIPutMany")
 	return nil
 }
@@ -83,7 +83,7 @@ func (db *MockMongoDBClient) RestfulAPIDeleteMany(collName string, filter bson.M
 	return nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]interface{}) error {
+func (db *MockMongoDBClient) RestfulAPIMergePatch(collName string, filter bson.M, patchData map[string]any) error {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIMergePatch")
 	return nil
 }
@@ -92,7 +92,7 @@ func (db *MockMongoDBClient) RestfulAPIJSONPatch(collName string, filter bson.M,
 	return nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *MockMongoDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]any) (bool, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIReplaceIfUnchanged")
 	return true, nil
 }
@@ -102,12 +102,12 @@ func (db *MockMongoDBClient) RestfulAPIJSONPatchExtend(collName string, filter b
 	return nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]interface{}) (bool, error) {
+func (db *MockMongoDBClient) RestfulAPIPost(collName string, filter bson.M, postData map[string]any) (bool, error) {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIPost")
 	return true, nil
 }
 
-func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, postDataArray []interface{}) bool {
+func (db *MockMongoDBClient) RestfulAPIPostMany(collName string, filter bson.M, postDataArray []any) bool {
 	logger.HandlerLog.Infoln("called Mock RestfulAPIPost")
 	return true
 }
@@ -305,14 +305,14 @@ func TestNFRegisterProcedureFailureNoProvidedPlmnListAndWebconsoleUnreachable(t 
 // produced by applying a JSON Patch to validPreviousNfDoc().
 type ReplaceCaptureDBClient struct {
 	MockMongoDBClient
-	replaceCalls []map[string]interface{}
+	replaceCalls []map[string]any
 }
 
-func (db *ReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *ReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	return validPreviousNfDoc(), nil
 }
 
-func (db *ReplaceCaptureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *ReplaceCaptureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]any) (bool, error) {
 	db.replaceCalls = append(db.replaceCalls, putData)
 	return true, nil
 }
@@ -350,7 +350,7 @@ type metadataPreservingReplaceCaptureDBClient struct {
 	ReplaceCaptureDBClient
 }
 
-func (db *metadataPreservingReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *metadataPreservingReplaceCaptureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	doc := validPreviousNfDoc()
 	doc["createdAt"] = time.Now()
 	return doc, nil
@@ -393,12 +393,12 @@ func TestHandleUpdateNFInstanceRequestPreservesNonModelMetadata(t *testing.T) {
 // "nfservices", not the model's JSON field name "nfServices"), since that
 // is what MongoDB's default BSON marshaling of models.NFProfile (no bson
 // struct tags) actually produces.
-func validPreviousNfDoc() map[string]interface{} {
-	return map[string]interface{}{
+func validPreviousNfDoc() map[string]any {
+	return map[string]any{
 		"nfinstanceid": testUpdateNfInstanceId,
 		"nftype":       string(models.NFTYPE_AUSF),
 		"nfstatus":     string(models.NFSTATUS_REGISTERED),
-		"nfservices": []map[string]interface{}{{
+		"nfservices": []map[string]any{{
 			"servicename":     "nausf-auth",
 			"scheme":          string(models.URISCHEME_HTTPS),
 			"nfservicestatus": string(models.NFSERVICESTATUS_REGISTERED),
@@ -502,11 +502,11 @@ type rejectingReplaceDBClient struct {
 	t *testing.T
 }
 
-func (db *rejectingReplaceDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *rejectingReplaceDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	return validPreviousNfDoc(), nil
 }
 
-func (db *rejectingReplaceDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *rejectingReplaceDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]any) (bool, error) {
 	db.t.Fatal("expected RestfulAPIReplaceIfUnchanged not to be called for a patch that produces an invalid NF profile")
 	return false, nil
 }
@@ -579,11 +579,11 @@ type replaceFailureDBClient struct {
 	MockMongoDBClient
 }
 
-func (db *replaceFailureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *replaceFailureDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	return validPreviousNfDoc(), nil
 }
 
-func (db *replaceFailureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *replaceFailureDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]any) (bool, error) {
 	return false, errors.New("simulated database failure")
 }
 
@@ -654,12 +654,12 @@ type conflictingDBClient struct {
 	replaceAttempts int
 }
 
-func (db *conflictingDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *conflictingDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	db.getOneCalls++
 	return validPreviousNfDoc(), nil
 }
 
-func (db *conflictingDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]interface{}) (bool, error) {
+func (db *conflictingDBClient) RestfulAPIReplaceIfUnchanged(collName string, filter bson.M, expectedCurrent, putData map[string]any) (bool, error) {
 	db.replaceAttempts++
 	return false, nil
 }

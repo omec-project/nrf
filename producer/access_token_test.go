@@ -22,17 +22,17 @@ const (
 
 type mockAccessTokenDBClient struct {
 	dbadapter.DBInterface
-	profile map[string]interface{}
+	profile map[string]any
 }
 
-func (db *mockAccessTokenDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *mockAccessTokenDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	if collName == collNfProfile && filter[fieldNfInstanceId] == testTargetNfInstanceId {
 		return db.profile, nil
 	}
 	return nil, nil
 }
 
-func withMockAccessTokenDB(t *testing.T, profile map[string]interface{}) {
+func withMockAccessTokenDB(t *testing.T, profile map[string]any) {
 	t.Helper()
 	original := dbadapter.DBClient
 	dbadapter.DBClient = &mockAccessTokenDBClient{profile: profile}
@@ -108,7 +108,7 @@ type erroringAccessTokenDBClient struct {
 	dbadapter.DBInterface
 }
 
-func (db *erroringAccessTokenDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]interface{}, error) {
+func (db *erroringAccessTokenDBClient) RestfulAPIGetOne(collName string, filter bson.M) (map[string]any, error) {
 	return nil, errors.New("simulated database failure")
 }
 
@@ -140,7 +140,7 @@ func TestValidateRequesterFqdnFailsClosedOnLookupError(t *testing.T) {
 // errRequesterFqdnValidationUnavailable (500) rather than an ordinary
 // *models.AccessTokenErr policy rejection (400).
 func TestValidateRequesterFqdnFailsClosedOnUndecodableProfile(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
@@ -162,11 +162,11 @@ func TestValidateRequesterFqdnFailsClosedOnUndecodableProfile(t *testing.T) {
 }
 
 func TestValidateRequesterFqdnAllowsUnrestrictedProfile(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{{
+		fieldNfServices: []map[string]any{{
 			fieldServiceName:     testServiceNameNudmSdm,
 			fieldNfServiceStatus: nfServiceStatusRegistered,
 		}},
@@ -182,11 +182,11 @@ func TestValidateRequesterFqdnAllowsUnrestrictedProfile(t *testing.T) {
 }
 
 func TestValidateRequesterFqdnRejectsDisallowedDomain(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{{
+		fieldNfServices: []map[string]any{{
 			fieldServiceName:      testServiceNameNudmSdm,
 			fieldNfServiceStatus:  nfServiceStatusRegistered,
 			fieldAllowedNfDomains: []string{testOtherFqdn},
@@ -209,11 +209,11 @@ func TestValidateRequesterFqdnRejectsDisallowedDomain(t *testing.T) {
 }
 
 func TestValidateRequesterFqdnAllowsMatchingPattern(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{{
+		fieldNfServices: []map[string]any{{
 			fieldServiceName:      testServiceNameNudmSdm,
 			fieldNfServiceStatus:  nfServiceStatusRegistered,
 			fieldAllowedNfDomains: []string{`^.*\.example\.com$`},
@@ -234,11 +234,11 @@ func TestValidateRequesterFqdnAllowsMatchingPattern(t *testing.T) {
 // access to a service named in scope whose allowedNfDomains restricts the
 // requesterFqdn: only services named in scope are evaluated.
 func TestValidateRequesterFqdnScopedToRestrictedServiceIsRejected(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{
+		fieldNfServices: []map[string]any{
 			{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
@@ -268,11 +268,11 @@ func TestValidateRequesterFqdnScopedToRestrictedServiceIsRejected(t *testing.T) 
 // a restriction on a service not named in scope does not block a request for
 // a different, unrestricted service.
 func TestValidateRequesterFqdnScopedToUnrestrictedServiceIsAllowed(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{
+		fieldNfServices: []map[string]any{
 			{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
@@ -300,11 +300,11 @@ func TestValidateRequesterFqdnScopedToUnrestrictedServiceIsAllowed(t *testing.T)
 // unrelated services, so an unknown or misspelled scope cannot be authorized
 // by an unrestricted service unrelated to the request.
 func TestValidateRequesterFqdnRejectsUnmatchedScope(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{
+		fieldNfServices: []map[string]any{
 			{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
@@ -337,19 +337,19 @@ func TestValidateRequesterFqdnRejectsUnmatchedScope(t *testing.T) {
 // allowed if any matching entry allows it, even though another matching entry
 // restricts allowedNfDomains to a different domain.
 func TestValidateRequesterFqdnAllowsWhenDuplicateServiceEntryAllows(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{
+		fieldNfServices: []map[string]any{
 			{
 				fieldServiceName:      testServiceNameNudmSdm,
 				fieldNfServiceStatus:  nfServiceStatusRegistered,
 				fieldAllowedNfDomains: []string{testOtherFqdn},
 			},
 		},
-		fieldNfServiceList: map[string]interface{}{
-			testServiceInstanceId: map[string]interface{}{
+		fieldNfServiceList: map[string]any{
+			testServiceInstanceId: map[string]any{
 				fieldServiceName:     testServiceNameNudmSdm,
 				fieldNfServiceStatus: nfServiceStatusRegistered,
 			},
@@ -372,11 +372,11 @@ func TestValidateRequesterFqdnAllowsWhenDuplicateServiceEntryAllows(t *testing.T
 // profile, so an unknown or misspelled name cannot ride along with a
 // legitimate one.
 func TestValidateRequesterFqdnRejectsScopeMixingKnownAndUnknownServices(t *testing.T) {
-	withMockAccessTokenDB(t, map[string]interface{}{
+	withMockAccessTokenDB(t, map[string]any{
 		fieldNfInstanceId: testTargetNfInstanceId,
 		fieldNfTypeLower:  nfTypeUDM,
 		testFieldNfStatus: nfServiceStatusRegistered,
-		fieldNfServices: []map[string]interface{}{
+		fieldNfServices: []map[string]any{
 			{
 				fieldServiceName:     testServiceNameNudmSdm,
 				fieldNfServiceStatus: nfServiceStatusRegistered,

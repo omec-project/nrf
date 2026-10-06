@@ -811,7 +811,7 @@ func filterByComplexQuery(profiles []models.NFProfileDiscovery, queryParameters 
 }
 
 func sortNFProfiles(
-	nfProfilesRaw []map[string]interface{},
+	nfProfilesRaw []map[string]any,
 	queryParameters url.Values,
 ) []models.NFProfileDiscovery {
 	sort.Slice(nfProfilesRaw, func(i, j int) bool {
@@ -966,7 +966,7 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 			return nil, dbErr
 		}
 
-		profilesByInstanceID := make(map[string]map[string]interface{}, len(profileListRaw))
+		profilesByInstanceID := make(map[string]map[string]any, len(profileListRaw))
 		for _, profileRaw := range profileListRaw {
 			if profileRaw == nil {
 				continue
