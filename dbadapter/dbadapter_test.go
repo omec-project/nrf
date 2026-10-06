@@ -213,7 +213,7 @@ func TestToInt32(t *testing.T) {
 // unchangedCondition compares only fieldDocVersion, not the rest of
 // expectedCurrent: comparing whole documents (or their nested arrays/objects)
 // via MongoDB's $eq is order-sensitive, but RestfulAPIGetOne decodes
-// documents into map[string]interface{}, which never preserves field order,
+// documents into map[string]any, which never preserves field order,
 // so an order-sensitive comparison would misreport an unchanged profile as
 // changed.
 func TestUnchangedConditionComparesVersionNotWholeDocument(t *testing.T) {
@@ -221,9 +221,9 @@ func TestUnchangedConditionComparesVersionNotWholeDocument(t *testing.T) {
 	filter := bson.M{testFieldNfInstanceId: testNfInstanceId}
 
 	t.Run("versioned document compares only the version", func(t *testing.T) {
-		expectedCurrent := map[string]interface{}{
+		expectedCurrent := map[string]any{
 			testFieldNfInstanceId: testNfInstanceId,
-			"nfServices":          []interface{}{map[string]interface{}{"b": 2, "a": 1}},
+			"nfServices":          []any{map[string]any{"b": 2, "a": 1}},
 			fieldDocVersion:       "v1",
 		}
 		got := unchangedCondition(filter, expectedCurrent)
@@ -234,7 +234,7 @@ func TestUnchangedConditionComparesVersionNotWholeDocument(t *testing.T) {
 	})
 
 	t.Run("unversioned document requires the version to still be absent", func(t *testing.T) {
-		expectedCurrent := map[string]interface{}{testFieldNfInstanceId: testNfInstanceId}
+		expectedCurrent := map[string]any{testFieldNfInstanceId: testNfInstanceId}
 		got := unchangedCondition(filter, expectedCurrent)
 		want := bson.M{testFieldNfInstanceId: testNfInstanceId, fieldDocVersion: bson.M{mongoOpExists: false}}
 		if !reflect.DeepEqual(got, want) {
@@ -244,7 +244,7 @@ func TestUnchangedConditionComparesVersionNotWholeDocument(t *testing.T) {
 }
 
 func TestStampDocVersionAddsUniqueTokenWithoutMutatingInput(t *testing.T) {
-	original := map[string]interface{}{testFieldNfInstanceId: "nf-1"}
+	original := map[string]any{testFieldNfInstanceId: "nf-1"}
 
 	stamped1 := stampDocVersion(original)
 	stamped2 := stampDocVersion(original)
@@ -282,7 +282,7 @@ func TestAppendDocVersionPatchOpAddsVersionWithoutDisturbingExistingOps(t *testi
 		t.Fatalf("appendDocVersionPatchOp() error = %v", err)
 	}
 
-	var ops []map[string]interface{}
+	var ops []map[string]any
 	if err := json.Unmarshal(stampedJSON, &ops); err != nil {
 		t.Fatalf("failed to decode stamped patch: %v", err)
 	}
