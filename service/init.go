@@ -121,7 +121,8 @@ func (nrf *NRF) Start() {
 
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	logger.InitLog.Infof("binding addr: [%s]", bindAddr)
-	sslLog := filepath.Dir(factory.NrfConfig.CfgLocation) + "/sslkey.log"
+	// TLS key logging is a debugging aid: off unless the operator sets SSLKEYLOGFILE.
+	sslLog := os.Getenv("SSLKEYLOGFILE")
 	server, err := http2_util.NewServer(bindAddr, sslLog, router)
 
 	if server == nil {
@@ -138,6 +139,10 @@ func (nrf *NRF) Start() {
 	case "http":
 		err = server.ListenAndServe()
 	case "https":
+		if server.TLSConfig != nil && server.TLSConfig.KeyLogWriter != nil {
+			logger.InitLog.Warnf("TLS key logging is enabled (SSLKEYLOGFILE=%s): SBI traffic is "+
+				"decryptable by anyone who can read this file", sslLog)
+		}
 		err = server.ListenAndServeTLS(config.Sbi.TLS.PEM, config.Sbi.TLS.Key)
 	default:
 		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
