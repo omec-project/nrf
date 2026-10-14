@@ -123,23 +123,34 @@ func removeEmptyStrings(v any) any {
 // TS 29.510 clause 6.1.6.2.2 (NFProfile) and TS 23.501 clause 5.15.2 (S-NSSAI)
 // that mapstructure's WeaklyTypedInput coercion would otherwise silently bypass.
 func validateNFProfileDiscovery(p models.NFProfileDiscovery) error {
-	if priority, ok := p.GetPriorityOk(); ok && (*priority < 0 || *priority > 65535) {
-		return fmt.Errorf("priority %d out of range [0, 65535]", *priority)
+	priority, _ := p.GetPriorityOk()
+	capacity, _ := p.GetCapacityOk()
+	load, _ := p.GetLoadOk()
+	ranges := []struct {
+		name     string
+		value    *int32
+		min, max int32
+	}{
+		{"priority", priority, 0, 65535},
+		{"capacity", capacity, 0, 65535},
+		{"load", load, 0, 100},
 	}
-	if capacity, ok := p.GetCapacityOk(); ok && (*capacity < 0 || *capacity > 65535) {
-		return fmt.Errorf("capacity %d out of range [0, 65535]", *capacity)
-	}
-	if load, ok := p.GetLoadOk(); ok && (*load < 0 || *load > 100) {
-		return fmt.Errorf("load %d out of range [0, 100]", *load)
-	}
-	for i, snssai := range p.SNssais {
-		if snssai.GetSst() < 0 || snssai.GetSst() > 255 {
-			return fmt.Errorf("sNssais[%d].sst %d out of range [0, 255]", i, snssai.GetSst())
+	for _, r := range ranges {
+		if r.value != nil && (*r.value < r.min || *r.value > r.max) {
+			return fmt.Errorf("%s %d out of range [%d, %d]", r.name, *r.value, r.min, r.max)
 		}
 	}
-	for i, snssai := range p.AllowedNssais {
-		if snssai.GetSst() < 0 || snssai.GetSst() > 255 {
-			return fmt.Errorf("allowedNssais[%d].sst %d out of range [0, 255]", i, snssai.GetSst())
+	if err := validateSNssaiSstRange("sNssais", p.GetSNssais()); err != nil {
+		return err
+	}
+	return validateSNssaiSstRange("allowedNssais", p.GetAllowedNssais())
+}
+
+// validateSNssaiSstRange checks the SST of each S-NSSAI against TS 23.501 clause 5.15.2.
+func validateSNssaiSstRange(field string, snssais []models.Snssai) error {
+	for i, snssai := range snssais {
+		if sst := snssai.GetSst(); sst < 0 || sst > 255 {
+			return fmt.Errorf("%s[%d].sst %d out of range [0, 255]", field, i, sst)
 		}
 	}
 	return nil

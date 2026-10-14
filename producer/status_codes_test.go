@@ -254,8 +254,8 @@ func TestNotificationEventAgreesWithStatusCode(t *testing.T) {
 				}
 				select {
 				case data := <-received:
-					if data.Event != tc.wantEvent {
-						t.Errorf("notification event = %v, want %v (status was %d)", data.Event, tc.wantEvent, response.Status)
+					if data.GetEvent() != tc.wantEvent {
+						t.Errorf("notification event = %v, want %v (status was %d)", data.GetEvent(), tc.wantEvent, response.Status)
 					}
 				default:
 					t.Error("no notification was delivered to the subscriber")

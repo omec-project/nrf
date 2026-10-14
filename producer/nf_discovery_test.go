@@ -972,7 +972,7 @@ func TestNFDiscoveryProcedureFailsClosedOnMongoQueryErrorWithUnsupportedFallback
 func TestNormalizeDiscoveryQueryParametersSupportsExplodedStructuredParams(t *testing.T) {
 	query := url.Values{}
 	openapi.ParameterAddToHeaderOrQuery(query, "target-plmn-list", []models.PlmnId{{Mcc: "001", Mnc: "01"}}, "", "")
-	openapi.ParameterAddToHeaderOrQuery(query, fieldSnssais, []models.Snssai{{Sst: 1, Sd: openapi.PtrString("010203")}}, "", "")
+	openapi.ParameterAddToHeaderOrQuery(query, fieldSnssais, []models.Snssai{{Sst: 1, Sd: new("010203")}}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "tai", models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"}, "", "")
 	openapi.ParameterAddToHeaderOrQuery(query, "guami", models.Guami{PlmnId: models.PlmnIdNid{Mcc: "001", Mnc: "01"}, AmfId: "000001"}, "", "")
 

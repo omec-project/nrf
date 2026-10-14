@@ -32,6 +32,11 @@ import (
 
 const nfStatusNotifyTimeout = 10 * time.Second
 
+// maxNotifyResponseBodyBytes caps how much of a notification response body is
+// drained/read, so a misbehaving peer can't stall a request for the full
+// timeout by streaming unbounded data.
+const maxNotifyResponseBodyBytes = 1 << 20
+
 var nfStatusNotifyHTTPClient = &http.Client{Timeout: nfStatusNotifyTimeout}
 
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -73,7 +78,7 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 
 	if response != nil {
 		logger.ManagementLog.Debugln("register success")
-		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "SUCCESS")
+		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.GetNfType()), "SUCCESS")
 		// 201 only when the profile did not exist before; a complete
 		// replacement of an existing one is 200 (TS 29.510 clauses 5.2.2.2.2
 		// step 2a and 5.2.2.3.1A step 2a).
@@ -84,12 +89,12 @@ func HandleNFRegisterRequest(request *httpwrapper.Request) *httpwrapper.Response
 		return httpwrapper.NewResponse(status, header, response)
 	} else if problemDetails != nil {
 		logger.ManagementLog.Debugln("register failed")
-		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
+		stats.IncrementNrfRegistrationsStats("register", string(nfProfile.GetNfType()), "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	}
 	problemDetails = utils.ProblemDetailsSystemFailure("registration produced no result")
 	logger.ManagementLog.Errorln("register failed: procedure returned neither a profile nor a problem")
-	stats.IncrementNrfRegistrationsStats("register", string(nfProfile.NfType), "FAILURE")
+	stats.IncrementNrfRegistrationsStats("register", string(nfProfile.GetNfType()), "FAILURE")
 	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
@@ -435,29 +440,37 @@ func NFDeregisterProcedure(nfInstanceID string) (nfType string, problemDetails *
 }
 
 func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
-	if nfProfile.GetNfType() == models.NFTYPE_AMF {
-		url := "http://amf:29518" + "/namf-oam/v1/amfInstanceDown/" + nfInstanceID
-		notifyCtx, cancel := context.WithTimeout(context.Background(), nfStatusNotifyTimeout)
-		defer cancel()
+	if nfProfile.GetNfType() != models.NFTYPE_AMF {
+		return
+	}
 
-		req, err := http.NewRequestWithContext(notifyCtx, http.MethodPost, url, nil)
-		if err != nil {
-			logger.ManagementLog.Infoln("Error in creating request ", err)
-			return
+	url := "http://amf:29518" + "/namf-oam/v1/amfInstanceDown/" + nfInstanceID
+	notifyCtx, cancel := context.WithTimeout(context.Background(), nfStatusNotifyTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(notifyCtx, http.MethodPost, url, nil)
+	if err != nil {
+		logger.ManagementLog.Infoln("Error in creating request ", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := nfStatusNotifyHTTPClient.Do(req)
+	if err != nil {
+		logger.ManagementLog.Infoln("Errored when sending request to the server", err)
+		return
+	}
+	defer func() {
+		// Draining before Close lets the transport reuse the connection.
+		if _, copyErr := io.Copy(io.Discard, io.LimitReader(resp.Body, maxNotifyResponseBodyBytes)); copyErr != nil {
+			logger.ManagementLog.Errorf("NF down notification response body cannot drain: %+v", copyErr)
 		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := nfStatusNotifyHTTPClient.Do(req)
-		if err != nil {
-			logger.ManagementLog.Infoln("Errored when sending request to the server", err)
-			return
+		if bodyCloseErr := resp.Body.Close(); bodyCloseErr != nil {
+			logger.ManagementLog.Errorf("NF down notification response body cannot close: %+v", bodyCloseErr)
 		}
-		if resp != nil && resp.Body != nil {
-			defer func() {
-				if bodyCloseErr := resp.Body.Close(); bodyCloseErr != nil {
-					logger.ManagementLog.Errorf("NF down notification response body cannot close: %+v", bodyCloseErr)
-				}
-			}()
-		}
+	}()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		logger.ManagementLog.Warnf("AMF instance down notification to %s returned status %d", url, resp.StatusCode)
 	}
 }
 
@@ -887,14 +900,22 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 		return problemDetails
 	}
 	if res != nil {
+		// Shared across the error-body read and the drain below so the two
+		// together never consume more than maxNotifyResponseBodyBytes total.
+		limitedBody := io.LimitReader(res.Body, maxNotifyResponseBodyBytes)
 		defer func() {
+			// Draining before Close lets the transport reuse the connection;
+			// the success path below never reads the body otherwise.
+			if _, copyErr := io.Copy(io.Discard, limitedBody); copyErr != nil {
+				logger.ManagementLog.Errorf("NotificationApi response body cannot drain: %+v", copyErr)
+			}
 			if resCloseErr := res.Body.Close(); resCloseErr != nil {
 				logger.ManagementLog.Errorf("NotificationApi response body cannot close: %+v", resCloseErr)
 			}
 		}()
 		if status := res.StatusCode; status != http.StatusNoContent && status != http.StatusOK {
 			logger.ManagementLog.Warnln("error status in NotificationPost:", status)
-			responseBody, readErr := io.ReadAll(res.Body)
+			responseBody, readErr := io.ReadAll(limitedBody)
 			if readErr == nil && len(responseBody) > 0 {
 				var remoteProblem models.ProblemDetails
 				if decodeErr := json.Unmarshal(responseBody, &remoteProblem); decodeErr == nil {
