@@ -32,6 +32,11 @@ import (
 
 const nfStatusNotifyTimeout = 10 * time.Second
 
+// maxNotifyResponseBodyBytes caps how much of a notification response body is
+// drained/read, so a misbehaving peer can't stall a request for the full
+// timeout by streaming unbounded data.
+const maxNotifyResponseBodyBytes = 1 << 20
+
 var nfStatusNotifyHTTPClient = &http.Client{Timeout: nfStatusNotifyTimeout}
 
 func HandleNFDeregisterRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -456,7 +461,7 @@ func sendNFDownNotification(nfProfile models.NFProfile, nfInstanceID string) {
 	}
 	defer func() {
 		// Draining before Close lets the transport reuse the connection.
-		if _, copyErr := io.Copy(io.Discard, resp.Body); copyErr != nil {
+		if _, copyErr := io.Copy(io.Discard, io.LimitReader(resp.Body, maxNotifyResponseBodyBytes)); copyErr != nil {
 			logger.ManagementLog.Errorf("NF down notification response body cannot drain: %+v", copyErr)
 		}
 		if bodyCloseErr := resp.Body.Close(); bodyCloseErr != nil {
@@ -895,14 +900,22 @@ func SendNFStatusNotify(Notification_event models.NotificationEventType, nfInsta
 		return problemDetails
 	}
 	if res != nil {
+		// Shared across the error-body read and the drain below so the two
+		// together never consume more than maxNotifyResponseBodyBytes total.
+		limitedBody := io.LimitReader(res.Body, maxNotifyResponseBodyBytes)
 		defer func() {
+			// Draining before Close lets the transport reuse the connection;
+			// the success path below never reads the body otherwise.
+			if _, copyErr := io.Copy(io.Discard, limitedBody); copyErr != nil {
+				logger.ManagementLog.Errorf("NotificationApi response body cannot drain: %+v", copyErr)
+			}
 			if resCloseErr := res.Body.Close(); resCloseErr != nil {
 				logger.ManagementLog.Errorf("NotificationApi response body cannot close: %+v", resCloseErr)
 			}
 		}()
 		if status := res.StatusCode; status != http.StatusNoContent && status != http.StatusOK {
 			logger.ManagementLog.Warnln("error status in NotificationPost:", status)
-			responseBody, readErr := io.ReadAll(res.Body)
+			responseBody, readErr := io.ReadAll(limitedBody)
 			if readErr == nil && len(responseBody) > 0 {
 				var remoteProblem models.ProblemDetails
 				if decodeErr := json.Unmarshal(responseBody, &remoteProblem); decodeErr == nil {
