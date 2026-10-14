@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -49,10 +50,15 @@ func Ipv6IntToIpv6String(ip *big.Int) string {
 	// full 16-byte address, since a leading zero byte is a normal IPv6 value.
 	var buf [net.IPv6len]byte
 	ip.FillBytes(buf[:])
-	return net.IP(buf[:]).String()
+	// netip.Addr.String (unlike net.IP.String) keeps IPv4-mapped values in
+	// IPv6 notation instead of collapsing them to dotted-decimal IPv4.
+	return netip.AddrFrom16(buf).String()
 }
 
-// EncodeGroupId - Encode GroupId to number string(output pattern: [10][3][3][25])
+// EncodeGroupId - Encode GroupId (hex segments [10]-[3]-[3]-[25]) to a
+// fixed-width decimal string ([13][3][3][31]) so lexicographic ordering of
+// the result matches numeric ordering of the two converted hex components:
+// 16^10-1 needs 13 decimal digits and 16^25-1 needs 31.
 func EncodeGroupId(groupId string) string {
 	externalGroupIdentitySplit := strings.Split(groupId, "-")
 
@@ -60,11 +66,17 @@ func EncodeGroupId(groupId string) string {
 	if err != nil {
 		logger.UtilLog.Errorln("invalid group service identifier", externalGroupIdentitySplit[0], err)
 	}
-	localGroupId, err := strconv.ParseInt(externalGroupIdentitySplit[3], 16, 64)
-	if err != nil {
-		logger.UtilLog.Errorln("invalid local group id", externalGroupIdentitySplit[3], err)
+	// 25-digit local-group component can exceed int64, so parse with big.Int.
+	localGroupId, ok := new(big.Int).SetString(externalGroupIdentitySplit[3], 16)
+	if !ok {
+		logger.UtilLog.Errorln("invalid local group id", externalGroupIdentitySplit[3])
+		localGroupId = new(big.Int)
 	}
 
-	return fmt.Sprintf("%010d%s%03s%025d",
-		groupServiceIdentifier, externalGroupIdentitySplit[1], externalGroupIdentitySplit[2], localGroupId)
+	networkComponent := externalGroupIdentitySplit[2]
+	if len(networkComponent) == 2 {
+		networkComponent = "0" + networkComponent
+	}
+	return fmt.Sprintf("%013d%s%s%031d",
+		groupServiceIdentifier, externalGroupIdentitySplit[1], networkComponent, localGroupId)
 }
