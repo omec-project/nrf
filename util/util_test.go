@@ -9,10 +9,10 @@
 package util
 
 import (
+	"maps"
 	"testing"
 	"time"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 )
 
@@ -49,7 +49,7 @@ func TestDecode(t *testing.T) {
 		fieldSNssais: &[]models.Snssai{ // range 0-255
 			{
 				Sst: 1, // eMBB per TS 23.501
-				Sd:  openapi.PtrString("010203"),
+				Sd:  new("010203"),
 			},
 		},
 		"NsiList": []string{
@@ -78,7 +78,7 @@ func TestDecode(t *testing.T) {
 		fieldAllowedNssais: &[]models.Snssai{
 			{
 				Sst: 2, // URLLC per TS 23.501
-				Sd:  openapi.PtrString("040506"),
+				Sd:  new("040506"),
 			},
 		},
 		fieldPriority:          1,
@@ -160,7 +160,7 @@ func TestDecodeRangeValidation(t *testing.T) {
 		{
 			name:    "AllowedNssais Sst above max (333)",
 			field:   fieldAllowedNssais,
-			value:   &[]models.Snssai{{Sst: 333, Sd: openapi.PtrString("000001")}},
+			value:   &[]models.Snssai{{Sst: 333, Sd: new("000001")}},
 			wantErr: true,
 		},
 		{
@@ -238,9 +238,7 @@ func TestDecodeRangeValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			profile := map[string]any{}
-			for k, v := range baseProfile {
-				profile[k] = v
-			}
+			maps.Copy(profile, baseProfile)
 			profile[tc.field] = tc.value
 
 			_, err := Decode([]map[string]any{profile}, time.RFC3339)
@@ -317,7 +315,7 @@ func TestConvertNFProfileDiscoveryToNFProfile(t *testing.T) {
 		NfInstanceId:  "instance-1",
 		NfType:        models.NFTYPE_UDM,
 		NfStatus:      models.NFSTATUS_REGISTERED,
-		Priority:      openapi.PtrInt32(7),
+		Priority:      new(int32(7)),
 		Ipv4Addresses: []string{"10.0.0.1"},
 		PlmnList: []models.PlmnId{{
 			Mcc: "001",
@@ -341,7 +339,7 @@ func TestConvertNFProfileDiscoveryToNFProfile(t *testing.T) {
 		t.Fatalf("unexpected ipv4 addresses: %+v", got)
 	}
 	plmnList, ok := profile.GetPlmnListOk()
-	if !ok || len(plmnList) != 1 || plmnList[0].Mcc != "001" || plmnList[0].Mnc != "01" {
+	if !ok || len(plmnList) != 1 || plmnList[0].GetMcc() != "001" || plmnList[0].GetMnc() != "01" {
 		t.Fatalf("unexpected PLMN list: %+v", plmnList)
 	}
 	if profile.GetRecoveryTime() != recoveryTime {

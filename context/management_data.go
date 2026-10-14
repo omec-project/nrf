@@ -814,7 +814,7 @@ func setUriListByFilter(filter bson.M, uriList *[]string) {
 		t reflect.Type,
 		data any,
 	) (any, error) {
-		if t == reflect.TypeOf(time.Time{}) && f == reflect.TypeOf("") {
+		if t == reflect.TypeFor[time.Time]() && f == reflect.TypeFor[string]() {
 			return time.Parse(time.RFC3339, data.(string))
 		}
 		return data, nil
@@ -841,11 +841,9 @@ func setUriListByFilter(filter bson.M, uriList *[]string) {
 }
 
 func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
-	var b *Links
 	var flag bool
 	var c []models.Link
 	flag = true
-	b = new(Links)
 	items := originalUL.Link.Item
 	size := len(location) + len(items)
 
@@ -868,8 +866,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 		copy(c, items)
 	}
 
-	b.Item = c
-	UL.Link = *b
+	UL.Link.Item = c
 }
 
 func GetNotificationUri(nfProfile models.NFProfile) []string {
@@ -1075,10 +1072,8 @@ func NnrfUriListLimit(originalUL *UriList, limit int) {
 	}
 
 	if limit < len(originalUL.Link.Item) {
-		b := new(Links)
 		c := make([]models.Link, limit)
 		copy(c, originalUL.Link.Item[:limit])
-		b.Item = c
-		originalUL.Link = *b
+		originalUL.Link.Item = c
 	}
 }

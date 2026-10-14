@@ -103,7 +103,7 @@ func TestNnrfNFManagementDataModelRejectsInvalidAllowedNfDomainsPattern(t *testi
 				},
 			},
 		}
-		nfprofile.NfServiceList = &nfServiceList
+		nfprofile.SetNfServiceList(nfServiceList)
 		var nf models.NFProfile
 		if err := NnrfNFManagementDataModel(&nf, nfprofile); err == nil {
 			t.Fatal("expected an error for an invalid allowedNfDomains pattern in nfServiceList")
