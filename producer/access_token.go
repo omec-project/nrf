@@ -22,8 +22,7 @@ import (
 )
 
 func HandleAccessTokenRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// Param of AccessTokenRsp
-	logger.AccessTokenLog.Infoln("Handle AccessTokenRequest")
+	logger.AccessTokenLog.Infoln("handle AccessTokenRequest")
 
 	accessTokenReq := request.Body.(models.AccessTokenReq)
 
@@ -84,22 +83,19 @@ func accessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	}
 
 	// Create AccessToken
-	accessTokenClaims := models.AccessTokenClaims{
-		Iss:   "1234567",            // TODO: NF instance id of the NRF
-		Sub:   request.NfInstanceId, // nfInstanceId of service consumer
-		Aud:   aud,                  // nfInstanceId of service producer
-		Scope: scope,                // TODO: the name of the NF services for which the
-		Exp:   int32(expiresAt.Unix()),
-	}
+	var accessTokenClaims models.AccessTokenClaims
+	accessTokenClaims.SetIss("1234567")            // TODO: NF instance id of the NRF
+	accessTokenClaims.SetSub(request.NfInstanceId) // nfInstanceId of service consumer
+	accessTokenClaims.SetAud(aud)                  // nfInstanceId of service producer
+	accessTokenClaims.SetScope(scope)              // TODO: the name of the NF services for which the
+	accessTokenClaims.SetExp(int32(expiresAt.Unix()))
 
 	mySigningKey := []byte("NRF") // AllYourBase
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenJWTClaims{AccessTokenClaims: accessTokenClaims})
 	accessToken, signErr := token.SignedString(mySigningKey)
 	if signErr != nil {
 		logger.AccessTokenLog.Warnln("Signed string error: ", signErr)
-		errResponse = &models.AccessTokenErr{
-			Error: "invalid_request",
-		}
+		errResponse = models.NewAccessTokenErr("invalid_request")
 
 		return nil, errResponse, nil
 	}
@@ -204,7 +200,7 @@ func requestedServicesAllowFqdn(profile models.NFProfileDiscovery, scope, reques
 		matched := false
 		allowed := false
 		for _, service := range services {
-			if string(service.ServiceName) != name {
+			if string(service.GetServiceName()) != name {
 				continue
 			}
 			matched = true
