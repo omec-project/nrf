@@ -6,6 +6,8 @@ Copyright 2019 free5GC.org
 SPDX-License-Identifier: Apache-2.0
 -->
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/omec-project/nrf/badge)](https://scorecard.dev/viewer/?uri=github.com/omec-project/nrf)
+[![GitHub latest release (SemVer)](https://img.shields.io/github/v/release/omec-project/nrf?sort=semver)](https://github.com/omec-project/nrf/releases)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://spdx.org/licenses/Apache-2.0.html)
 
 # NRF
 
@@ -18,7 +20,7 @@ profile from the database and returns it to the caller.
 
 
 ## NRF flow diagram
-![NRF Flow Diagram](/docs/images/README-NRF.png)
+![NRF Flow Diagram](./docs/images/README-NRF.png)
 
 ## Supported Features
 - Registration of Network Functions
@@ -32,7 +34,7 @@ profile from the database and returns it to the caller.
 - Subscription management callbacks to network functions.
 - NRF cache library which can be used by modules to avoid frequent queries to NRF
 
-Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
+Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.aetherproject.org/overview/3gpp-compliance-5g.html)
 
 ## Dynamic Network configuration (via webconsole)
 
