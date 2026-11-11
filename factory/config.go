@@ -46,6 +46,9 @@ type Configuration struct {
 	NfKeepAliveTime       int32    `yaml:"nfKeepAliveTime,omitempty"`
 	MongoDBStreamEnable   bool     `yaml:"mongoDBStreamEnable"`
 	NfProfileExpiryEnable bool     `yaml:"nfProfileExpiryEnable"`
+	// AccessTokenKey is the PEM private key used to sign access tokens.
+	// Defaults to the SBI TLS private key (sbi.tls.key).
+	AccessTokenKey string `yaml:"accessTokenKey,omitempty"`
 }
 
 type Sbi struct {
@@ -64,6 +67,21 @@ type TLS struct {
 func (c *Config) GetVersion() string {
 	if c.Info != nil && c.Info.Version != "" {
 		return c.Info.Version
+	}
+	return ""
+}
+
+// GetAccessTokenKeyPath returns the path of the access token signing key, or
+// "" when neither accessTokenKey nor sbi.tls.key is configured.
+func (c *Config) GetAccessTokenKeyPath() string {
+	if c.Configuration == nil {
+		return ""
+	}
+	if c.Configuration.AccessTokenKey != "" {
+		return c.Configuration.AccessTokenKey
+	}
+	if c.Configuration.Sbi != nil && c.Configuration.Sbi.TLS != nil {
+		return c.Configuration.Sbi.TLS.Key
 	}
 	return ""
 }

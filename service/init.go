@@ -21,6 +21,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
+	"github.com/omec-project/nrf/producer"
 	nrfUtil "github.com/omec-project/nrf/util"
 	openapiLogger "github.com/omec-project/openapi/v2/logger"
 	"github.com/omec-project/util/http2_util"
@@ -75,6 +76,10 @@ func (nrf *NRF) Initialize(c *cli.Command) error {
 	factory.NrfConfig.CfgLocation = absPath
 
 	context.InitNrfContext()
+
+	if err := producer.LoadAccessTokenSigner(factory.NrfConfig.GetAccessTokenKeyPath()); err != nil {
+		return err
+	}
 
 	return nil
 }

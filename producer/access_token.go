@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/util"
@@ -90,14 +89,15 @@ func accessTokenProcedure(request models.AccessTokenReq) (response *models.Acces
 	accessTokenClaims.SetScope(scope)              // TODO: the name of the NF services for which the
 	accessTokenClaims.SetExp(int32(expiresAt.Unix()))
 
-	mySigningKey := []byte("NRF") // AllYourBase
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenJWTClaims{AccessTokenClaims: accessTokenClaims})
-	accessToken, signErr := token.SignedString(mySigningKey)
+	signer := currentAccessTokenSigner.Load()
+	if signer == nil {
+		return nil, nil, errors.New("access token signing key not loaded")
+	}
+	accessToken, signErr := signer.sign(accessTokenJWTClaims{AccessTokenClaims: accessTokenClaims})
 	if signErr != nil {
-		logger.AccessTokenLog.Warnln("Signed string error: ", signErr)
-		errResponse = models.NewAccessTokenErr("invalid_request")
+		logger.AccessTokenLog.Errorln("sign access token failed:", signErr)
 
-		return nil, errResponse, nil
+		return nil, nil, errors.New("failed to sign access token")
 	}
 
 	response = models.NewAccessTokenRsp(accessToken, tokenType)
