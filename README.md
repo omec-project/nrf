@@ -55,6 +55,22 @@ configuration:
 ```
 The scheme (http:// or https://) must be explicitly specified.
 
+## Access token signing key
+
+The NRF signs OAuth2 access tokens (`/oauth2/token`) with a private key in PEM format
+(PKCS#8, PKCS#1 RSA or SEC1 EC): RSA of at least 2048 bits, ECDSA P-256/P-384/P-521, or Ed25519.
+Provision a deployment-specific key (for example as a mounted secret) and reference it in the configuration file
+```
+configuration:
+  ...
+  accessTokenKey: /path/to/nrf-token.key
+  ...
+```
+If `accessTokenKey` is not set, `sbi.tls.key` is used. If no key can be loaded, the NRF still starts and serves
+discovery and management, but access token requests fail with HTTP 500 (fail-closed). A configured `accessTokenKey`
+that cannot be loaded aborts startup. Producers verify tokens with the matching public key or certificate; the
+`kid` header is the base64url SHA-256 of the PKIX-encoded public key.
+
 ## Reach out to us through
 
 1. #sdcore-dev channel in [ONF Community Slack](https://aether5g-project.slack.com/)

@@ -5,6 +5,7 @@ package producer
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -27,9 +28,9 @@ func pkcs8PEM(t *testing.T, key any) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }
 
-func installTestSigner(t *testing.T, key *ecdsa.PrivateKey) {
+func installTestSigner(t *testing.T, pemBytes []byte) {
 	t.Helper()
-	signer, err := newAccessTokenSigner(pkcs8PEM(t, key))
+	signer, err := newAccessTokenSigner(pemBytes)
 	if err != nil {
 		t.Fatalf("newAccessTokenSigner: %v", err)
 	}
@@ -38,35 +39,86 @@ func installTestSigner(t *testing.T, key *ecdsa.PrivateKey) {
 	t.Cleanup(func() { currentAccessTokenSigner.Store(original) })
 }
 
-func TestAccessTokenIsSignedAsymmetricallyAndVerifiable(t *testing.T) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+// must returns key or panics, so key generation can be used inline in tables.
+func must[K any](key K, err error) K {
 	if err != nil {
-		t.Fatalf("generate key: %v", err)
+		panic(err)
 	}
-	installTestSigner(t, key)
+	return key
+}
 
-	req := models.NewAccessTokenReqWithDefaults()
-	req.NfInstanceId = "consumer-1"
-	req.Scope = testServiceNameNudmEe
-	req.SetTargetNfInstanceId(testTargetNfInstanceId)
-
-	rsp, errRsp, err := accessTokenProcedure(*req)
-	if err != nil || errRsp != nil || rsp == nil {
-		t.Fatalf("unexpected result rsp=%+v errRsp=%+v err=%v", rsp, errRsp, err)
+func TestAccessTokenIsSignedAsymmetricallyAndVerifiable(t *testing.T) {
+	tests := []struct {
+		name string
+		alg  string
+		pem  func(t *testing.T) ([]byte, any)
+	}{
+		{"RSA PKCS#8", jwt.SigningMethodRS256.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(rsa.GenerateKey(rand.Reader, 2048))
+			return pkcs8PEM(t, k), &k.PublicKey
+		}},
+		{"RSA PKCS#1", jwt.SigningMethodRS256.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(rsa.GenerateKey(rand.Reader, 2048))
+			return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}), &k.PublicKey
+		}},
+		{"ECDSA P-256 PKCS#8", jwt.SigningMethodES256.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+			return pkcs8PEM(t, k), &k.PublicKey
+		}},
+		{"ECDSA P-256 SEC1", jwt.SigningMethodES256.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+			der, err := x509.MarshalECPrivateKey(k)
+			if err != nil {
+				t.Fatalf("marshal EC key: %v", err)
+			}
+			return pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), &k.PublicKey
+		}},
+		{"ECDSA P-384 PKCS#8", jwt.SigningMethodES384.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(ecdsa.GenerateKey(elliptic.P384(), rand.Reader))
+			return pkcs8PEM(t, k), &k.PublicKey
+		}},
+		{"ECDSA P-521 PKCS#8", jwt.SigningMethodES512.Alg(), func(t *testing.T) ([]byte, any) {
+			k := must(ecdsa.GenerateKey(elliptic.P521(), rand.Reader))
+			return pkcs8PEM(t, k), &k.PublicKey
+		}},
+		{"Ed25519 PKCS#8", jwt.SigningMethodEdDSA.Alg(), func(t *testing.T) ([]byte, any) {
+			pub, priv, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatalf("generate key: %v", err)
+			}
+			return pkcs8PEM(t, priv), pub
+		}},
 	}
 
-	parsed, err := jwt.Parse(rsp.AccessToken, func(*jwt.Token) (any, error) {
-		return &key.PublicKey, nil
-	}, jwt.WithValidMethods([]string{"ES256"}))
-	if err != nil || !parsed.Valid {
-		t.Fatalf("token did not verify with the NRF public key: %v", err)
-	}
-	if parsed.Header["kid"] == "" || parsed.Header["kid"] == nil {
-		t.Fatal("expected kid header")
-	}
-	sub, err := parsed.Claims.GetSubject()
-	if err != nil || sub != "consumer-1" {
-		t.Fatalf("unexpected sub %q (err=%v)", sub, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pemBytes, pub := tc.pem(t)
+			installTestSigner(t, pemBytes)
+
+			req := models.NewAccessTokenReqWithDefaults()
+			req.NfInstanceId = "consumer-1"
+			req.Scope = testServiceNameNudmEe
+			req.SetTargetNfInstanceId(testTargetNfInstanceId)
+
+			rsp, errRsp, err := accessTokenProcedure(*req)
+			if err != nil || errRsp != nil || rsp == nil {
+				t.Fatalf("unexpected result rsp=%+v errRsp=%+v err=%v", rsp, errRsp, err)
+			}
+
+			parsed, err := jwt.Parse(rsp.AccessToken, func(*jwt.Token) (any, error) {
+				return pub, nil
+			}, jwt.WithValidMethods([]string{tc.alg}))
+			if err != nil || !parsed.Valid {
+				t.Fatalf("token did not verify with the NRF public key under %s: %v", tc.alg, err)
+			}
+			if kid, _ := parsed.Header["kid"].(string); kid == "" {
+				t.Fatal("expected kid header")
+			}
+			sub, err := parsed.Claims.GetSubject()
+			if err != nil || sub != "consumer-1" {
+				t.Fatalf("unexpected sub %q (err=%v)", sub, err)
+			}
+		})
 	}
 }
 
@@ -84,7 +136,7 @@ func TestAccessTokenSignedWithLegacyHardCodedSecretIsRejected(t *testing.T) {
 
 	_, err = jwt.Parse(forged, func(*jwt.Token) (any, error) {
 		return &key.PublicKey, nil
-	}, jwt.WithValidMethods([]string{"ES256"}))
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodES256.Alg()}))
 	if err == nil {
 		t.Fatal("token signed with the old hard-coded secret must not verify")
 	}
@@ -137,7 +189,7 @@ func TestLoadAccessTokenSigner(t *testing.T) {
 	if err := LoadAccessTokenSigner(path); err != nil {
 		t.Fatalf("LoadAccessTokenSigner: %v", err)
 	}
-	if s := currentAccessTokenSigner.Load(); s == nil || s.method.Alg() != "ES384" {
+	if s := currentAccessTokenSigner.Load(); s == nil || s.method.Alg() != jwt.SigningMethodES384.Alg() {
 		t.Fatalf("expected ES384 signer, got %+v", s)
 	}
 }

@@ -77,8 +77,16 @@ func (nrf *NRF) Initialize(c *cli.Command) error {
 
 	context.InitNrfContext()
 
+	// A key set explicitly via accessTokenKey is an operator decision, so a bad
+	// one aborts startup. The sbi.tls.key fallback may not exist (e.g. plain
+	// HTTP deployments): discovery and management must still start, and token
+	// issuance stays fail-closed (HTTP 500) until a key is provisioned.
 	if err := producer.LoadAccessTokenSigner(factory.NrfConfig.GetAccessTokenKeyPath()); err != nil {
-		return err
+		if factory.NrfConfig.Configuration != nil && factory.NrfConfig.Configuration.AccessTokenKey != "" {
+			return err
+		}
+		logger.InitLog.Warnf("access token signing disabled, token requests will fail: %v "+
+			"(set configuration.accessTokenKey to enable)", err)
 	}
 
 	return nil
