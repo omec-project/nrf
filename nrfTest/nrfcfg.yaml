@@ -14,6 +14,10 @@ configuration:
     tls: # the local path of TLS key
       pem: config/TLS/nrf.pem # NRF TLS Certificate
       key: config/TLS/nrf.key # NRF TLS Private key
+  # PEM private key (RSA >= 2048, ECDSA P-256/384/521 or Ed25519) that signs access tokens.
+  # Defaults to sbi.tls.key. If no key can be loaded the NRF still starts, but /oauth2/token
+  # returns 500. A key set here that cannot be loaded aborts startup.
+  # accessTokenKey: config/TLS/nrf-token.key
   serviceNameList: # the SBI services provided by this NRF, refer to TS 29.510
     - nnrf-nfm # Nnrf_NFManagement service
     - nnrf-disc # Nnrf_NFDiscovery service

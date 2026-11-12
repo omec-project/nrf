@@ -21,6 +21,7 @@ import (
 	"github.com/omec-project/nrf/logger"
 	"github.com/omec-project/nrf/management"
 	"github.com/omec-project/nrf/metrics"
+	"github.com/omec-project/nrf/producer"
 	nrfUtil "github.com/omec-project/nrf/util"
 	openapiLogger "github.com/omec-project/openapi/v2/logger"
 	"github.com/omec-project/util/http2_util"
@@ -75,6 +76,18 @@ func (nrf *NRF) Initialize(c *cli.Command) error {
 	factory.NrfConfig.CfgLocation = absPath
 
 	context.InitNrfContext()
+
+	// A key set explicitly via accessTokenKey is an operator decision, so a bad
+	// one aborts startup. The sbi.tls.key fallback may not exist (e.g. plain
+	// HTTP deployments): discovery and management must still start, and token
+	// issuance stays fail-closed (HTTP 500) until a key is provisioned.
+	if err := producer.LoadAccessTokenSigner(factory.NrfConfig.GetAccessTokenKeyPath()); err != nil {
+		if factory.NrfConfig.Configuration != nil && factory.NrfConfig.Configuration.AccessTokenKey != "" {
+			return err
+		}
+		logger.InitLog.Warnf("access token signing disabled, token requests will fail: %v "+
+			"(set configuration.accessTokenKey to enable)", err)
+	}
 
 	return nil
 }
