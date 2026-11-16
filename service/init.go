@@ -135,7 +135,8 @@ func (nrf *NRF) Start() {
 	bindAddr := factory.NrfConfig.GetSbiBindingAddr()
 	logger.InitLog.Infof("binding addr: [%s]", bindAddr)
 	// TLS key logging is a debugging aid: off unless the operator sets SSLKEYLOGFILE (see http2_util.NewSBIServer).
-	if err := http2_util.ListenAndServeSBI(bindAddr, router, factory.NrfConfig.GetSbiScheme(), config.Sbi.TLS.PEM, config.Sbi.TLS.Key, logger.InitLog); err != nil {
+	pem, key := factory.NrfConfig.GetSbiTLSPaths()
+	if err := http2_util.ListenAndServeSBI(bindAddr, router, factory.NrfConfig.GetSbiScheme(), pem, key, logger.InitLog); err != nil {
 		logger.InitLog.Fatalf("HTTP server setup failed: %+v", err)
 	}
 }
