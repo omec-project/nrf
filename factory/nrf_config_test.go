@@ -1,13 +1,13 @@
-// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2024 Canonical Ltd.
-/*
- *  Tests for NRF Configuration Factory
- */
+// SPDX-License-Identifier: Apache-2.0
 
 package factory
 
 import (
 	"testing"
+
+	"github.com/omec-project/util/nfconfig"
 )
 
 func TestWebuiUrl(t *testing.T) {
@@ -19,7 +19,7 @@ func TestWebuiUrl(t *testing.T) {
 		{
 			name:       "default webui URL",
 			configFile: "../nrfTest/nrfcfg.yaml",
-			want:       "http://webui:5001",
+			want:       nfconfig.DefaultWebuiUri,
 		},
 		{
 			name:       "custom webui URL",
@@ -40,57 +40,6 @@ func TestWebuiUrl(t *testing.T) {
 			got := NrfConfig.Configuration.WebuiUri
 			if got != tt.want {
 				t.Errorf("The webui URL is not correct. got = %q, want = %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestValidateWebuiUri(t *testing.T) {
-	tests := []struct {
-		name    string
-		uri     string
-		isValid bool
-	}{
-		{
-			name:    "Valid HTTPS URI with port",
-			uri:     "https://webui:9090",
-			isValid: true,
-		},
-		{
-			name:    "Valid HTTP URI with port",
-			uri:     "http://webui:8080",
-			isValid: true,
-		},
-		{
-			name:    "Invalid scheme",
-			uri:     "ftp://webui:21",
-			isValid: false,
-		},
-		{
-			name:    "URI is missing scheme",
-			uri:     "webui:9090",
-			isValid: false,
-		},
-		{
-			name:    "URI is missing host",
-			uri:     "https://",
-			isValid: false,
-		},
-		{
-			name:    "URI is empty string",
-			uri:     "",
-			isValid: false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateWebuiUri(tc.uri)
-			if err == nil && !tc.isValid {
-				t.Errorf("expected URI: %s to be invalid", tc.uri)
-			}
-			if err != nil && tc.isValid {
-				t.Errorf("expected URI: %s to be valid", tc.uri)
 			}
 		})
 	}
