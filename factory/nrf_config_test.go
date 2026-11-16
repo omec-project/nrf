@@ -1,13 +1,15 @@
-// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2024 Canonical Ltd.
-/*
- *  Tests for NRF Configuration Factory
- */
+// SPDX-License-Identifier: Apache-2.0
 
 package factory
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/omec-project/util/nfconfig"
 )
 
 func TestWebuiUrl(t *testing.T) {
@@ -19,7 +21,7 @@ func TestWebuiUrl(t *testing.T) {
 		{
 			name:       "default webui URL",
 			configFile: "../nrfTest/nrfcfg.yaml",
-			want:       "http://webui:5001",
+			want:       nfconfig.DefaultWebuiUri,
 		},
 		{
 			name:       "custom webui URL",
@@ -45,53 +47,42 @@ func TestWebuiUrl(t *testing.T) {
 	}
 }
 
-func TestValidateWebuiUri(t *testing.T) {
-	tests := []struct {
-		name    string
-		uri     string
-		isValid bool
+// An HTTP configuration has no sbi.tls block, and nothing may read the certificate paths of one: the service
+// takes them before it starts the listener, whatever the scheme is.
+func TestGetSbiTLSPaths(t *testing.T) {
+	cases := map[string]struct {
+		cfg      Config
+		pem, key string
 	}{
-		{
-			name:    "Valid HTTPS URI with port",
-			uri:     "https://webui:9090",
-			isValid: true,
-		},
-		{
-			name:    "Valid HTTP URI with port",
-			uri:     "http://webui:8080",
-			isValid: true,
-		},
-		{
-			name:    "Invalid scheme",
-			uri:     "ftp://webui:21",
-			isValid: false,
-		},
-		{
-			name:    "URI is missing scheme",
-			uri:     "webui:9090",
-			isValid: false,
-		},
-		{
-			name:    "URI is missing host",
-			uri:     "https://",
-			isValid: false,
-		},
-		{
-			name:    "URI is empty string",
-			uri:     "",
-			isValid: false,
+		"no configuration": {Config{}, "", ""},
+		"no sbi":           {Config{Configuration: &Configuration{}}, "", ""},
+		"http without tls": {Config{Configuration: &Configuration{Sbi: &Sbi{Scheme: "http"}}}, "", ""},
+		"https with tls": {
+			Config{Configuration: &Configuration{Sbi: &Sbi{Scheme: "https", TLS: &TLS{PEM: "/tls/nrf.pem", Key: "/tls/nrf.key"}}}},
+			"/tls/nrf.pem", "/tls/nrf.key",
 		},
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateWebuiUri(tc.uri)
-			if err == nil && !tc.isValid {
-				t.Errorf("expected URI: %s to be invalid", tc.uri)
-			}
-			if err != nil && tc.isValid {
-				t.Errorf("expected URI: %s to be valid", tc.uri)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			pem, key := tc.cfg.GetSbiTLSPaths()
+			if pem != tc.pem || key != tc.key {
+				t.Errorf("got %q, %q; want %q, %q", pem, key, tc.pem, tc.key)
 			}
 		})
+	}
+}
+
+// The same, from the YAML an operator writes for HTTP: scheme http and no tls block.
+func TestGetSbiTLSPathsFromAnHttpConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nrfcfg.yaml")
+	yaml := "info:\n  version: 1.0.0\nconfiguration:\n  sbi:\n    scheme: http\n    registerIPv4: 127.0.0.1\n    bindingIPv4: 127.0.0.1\n    port: 8000\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := InitConfigFactory(path); err != nil {
+		t.Fatal(err)
+	}
+	if pem, key := NrfConfig.GetSbiTLSPaths(); pem != "" || key != "" || NrfConfig.GetSbiScheme() != "http" {
+		t.Errorf("scheme %q, paths %q %q", NrfConfig.GetSbiScheme(), pem, key)
 	}
 }

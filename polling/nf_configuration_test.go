@@ -1,11 +1,6 @@
+// Copyright (C) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2025 Canonical Ltd.
-//
 // SPDX-License-Identifier: Apache-2.0
-//
-/*
- * NF Polling Unit Tests
- *
- */
 
 package polling
 
@@ -52,7 +47,7 @@ func TestFetchPlmnConfig(t *testing.T) {
 			statusCode:    http.StatusOK,
 			contentType:   "text/plain",
 			responseBody:  string(validJson),
-			expectedError: "unexpected Content-Type: got text/plain, want application/json",
+			expectedError: "unexpected Content-Type: got \"text/plain\", want application/json",
 		},
 		{
 			name:          "400 Bad Request",

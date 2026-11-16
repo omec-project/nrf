@@ -1,12 +1,8 @@
+// Copyright (C) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2025 Canonical Ltd
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
-//
 // SPDX-License-Identifier: Apache-2.0
-
-/*
- * NRF Configuration Factory
- */
 
 package factory
 
@@ -84,6 +80,15 @@ func (c *Config) GetAccessTokenKeyPath() string {
 		return c.Configuration.Sbi.TLS.Key
 	}
 	return ""
+}
+
+// GetSbiTLSPaths returns the certificate and private key files of the SBI. They are empty when the SBI has no
+// tls block, which is how an HTTP configuration looks: nothing reads them then.
+func (c *Config) GetSbiTLSPaths() (pem, key string) {
+	if c.Configuration != nil && c.Configuration.Sbi != nil && c.Configuration.Sbi.TLS != nil {
+		return c.Configuration.Sbi.TLS.PEM, c.Configuration.Sbi.TLS.Key
+	}
+	return "", ""
 }
 
 func (c *Config) GetSbiScheme() string {
