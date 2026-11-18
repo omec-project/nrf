@@ -5,6 +5,7 @@
 package context
 
 import (
+	"math"
 	"testing"
 
 	"github.com/omec-project/openapi/v2/models"
@@ -78,7 +79,17 @@ func TestPaginateLinks(t *testing.T) {
 	tests := []struct {
 		page, size, want int
 	}{
-		{1, 2, 2}, {3, 2, 1}, {4, 2, 0}, {1, 10, 5}, {2, 10, 0},
+		{1, 2, 2},
+		{3, 2, 1},
+		{4, 2, 0},
+		{1, 10, 5},
+		{2, 10, 0},
+		{5, math.MaxInt/2 + 1, 0},
+		{1, math.MaxInt, 5},
+		{math.MaxInt, math.MaxInt, 0},
+		{6148914691236517205, 9223372036854775805, 0},
+		{2, math.MaxInt, 0},
+		{5, 1, 1},
 	}
 	for _, tc := range tests {
 		if got := len(PaginateLinks(items, tc.page, tc.size)); got != tc.want {

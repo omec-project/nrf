@@ -63,10 +63,16 @@ func PaginateLinks(items []models.Link, pageNumber, pageSize int) []models.Link 
 	if pageNumber < 1 || pageSize < 1 {
 		return items
 	}
-	start := (pageNumber - 1) * pageSize
-	if start >= len(items) || start < 0 {
+	// Compare against the collection length before multiplying or adding: both parameters can be
+	// arbitrarily large, so start and end must never be computed from unchecked products or sums.
+	pages := len(items) / pageSize
+	if len(items)%pageSize != 0 {
+		pages++
+	}
+	if pageNumber > pages {
 		return nil
 	}
-	end := min(start+pageSize, len(items))
+	start := (pageNumber - 1) * pageSize
+	end := start + min(pageSize, len(items)-start)
 	return items[start:end]
 }
