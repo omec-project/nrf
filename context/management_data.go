@@ -769,15 +769,14 @@ func SetLocationHeader(nfprofile models.NFProfile) string {
 		return locationHeader[0]
 	}
 
-	var originalUL UriList
-	err = mapstructure.Decode(ul, &originalUL)
+	originalUL, err := DecodeUriList(ul)
 	if err != nil {
 		logger.ManagementLog.Error(err)
 		return locationHeader[0]
 	}
 
 	// obtain location header = NF URI
-	nnrfUriList(&originalUL, &modifyUL, locationHeader)
+	nnrfUriList(originalUL, &modifyUL, locationHeader)
 	modifyUL.NfType = nfprofile.GetNfType()
 
 	tmp, err := json.Marshal(modifyUL)
@@ -844,7 +843,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 	var flag bool
 	var c []models.Link
 	flag = true
-	items := originalUL.Link.Item
+	items := originalUL.Links.Item
 	size := len(location) + len(items)
 
 	// check duplicate
@@ -866,7 +865,7 @@ func nnrfUriList(originalUL *UriList, UL *UriList, location []string) {
 		copy(c, items)
 	}
 
-	UL.Link.Item = c
+	UL.Links.Item = c
 }
 
 func GetNotificationUri(nfProfile models.NFProfile) []string {
@@ -1071,9 +1070,9 @@ func NnrfUriListLimit(originalUL *UriList, limit int) {
 		return
 	}
 
-	if limit < len(originalUL.Link.Item) {
+	if limit < len(originalUL.Links.Item) {
 		c := make([]models.Link, limit)
-		copy(c, originalUL.Link.Item[:limit])
-		originalUL.Link.Item = c
+		copy(c, originalUL.Links.Item[:limit])
+		originalUL.Links.Item = c
 	}
 }

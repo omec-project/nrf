@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
@@ -919,18 +918,17 @@ func loadDiscoveryProfilesFromURIList(queryParameters url.Values) ([]models.NFPr
 		return nil, nil
 	}
 
-	uriList := &context.UriList{}
-	err = mapstructure.Decode(uriListRaw, uriList)
+	uriList, err := context.DecodeUriList(uriListRaw)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.DiscoveryLog.Debugf("fallback urilist count: %d", len(uriList.Link.Item))
+	logger.DiscoveryLog.Debugf("fallback urilist count: %d", len(uriList.Links.Item))
 
-	orderedInstanceIDs := make([]string, 0, len(uriList.Link.Item))
-	uniqueInstanceIDs := make([]string, 0, len(uriList.Link.Item))
-	seenInstanceIDs := make(map[string]struct{}, len(uriList.Link.Item))
-	for _, item := range uriList.Link.Item {
+	orderedInstanceIDs := make([]string, 0, len(uriList.Links.Item))
+	uniqueInstanceIDs := make([]string, 0, len(uriList.Links.Item))
+	seenInstanceIDs := make(map[string]struct{}, len(uriList.Links.Item))
+	for _, item := range uriList.Links.Item {
 		nfInstanceID := getNFInstanceIDFromURI(item.GetHref())
 		if nfInstanceID == "" {
 			continue

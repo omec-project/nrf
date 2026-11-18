@@ -14,10 +14,10 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
-	"github.com/go-viper/mapstructure/v2"
 	nrfContext "github.com/omec-project/nrf/context"
 	"github.com/omec-project/nrf/dbadapter"
 	"github.com/omec-project/nrf/factory"
@@ -156,28 +156,43 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 	logger.ManagementLog.Infoln("handle GetNFInstancesRequest")
 	nfType := request.Query.Get("nf-type")
 
-	// "limit" is an optional query parameter with a minimum of 1. Omitting it
-	// means "no limit", which is conveyed downstream as 0; parsing it
-	// unconditionally would make an optional parameter mandatory. Presence is
-	// tested on the key rather than on the value, because "?limit=" supplies
-	// the parameter with a value that does not satisfy it.
-	limit := 0
-	if request.Query.Has("limit") {
-		limitRaw := request.Query.Get("limit")
-		parsed, err := strconv.Atoi(limitRaw)
+	// "limit", "page-number" and "page-size" are optional query parameters with a minimum of 1. Omitting
+	// one is conveyed downstream as 0; parsing unconditionally would make an optional parameter
+	// mandatory. Presence is tested on the key rather than on the value, because "?limit=" supplies the
+	// parameter with a value that does not satisfy it.
+	var params [3]int
+	for i, name := range []string{"limit", "page-number", "page-size"} {
+		if !request.Query.Has(name) {
+			continue
+		}
+		raw := request.Query.Get(name)
+		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
 			// The detail names the parameter and the constraint. The parse error
 			// itself is an implementation detail and belongs in the log.
-			logger.ManagementLog.Errorf("invalid limit query parameter %q: %v", limitRaw, err)
-			problemDetails := utils.ProblemDetailsWithCause(
-				"Invalid Parameter", http.StatusBadRequest,
-				"query parameter 'limit' must be an integer of at least 1", utils.CauseInvalidRequest)
-			return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
+			logger.ManagementLog.Errorf("invalid %s query parameter %q: %v", name, raw, err)
+			return invalidQueryParameter(fmt.Sprintf("query parameter '%s' must be an integer of at least 1", name))
 		}
-		limit = parsed
+		params[i] = parsed
+	}
+	limit, pageNumber, pageSize := params[0], params[1], params[2]
+
+	// TS 29.510 clause 6.1.3.2.3.1: "page-number" and "page-size" are both present or both absent, and
+	// "limit" is absent when they are present.
+	if (pageNumber == 0) != (pageSize == 0) {
+		return invalidQueryParameter("query parameters 'page-number' and 'page-size' must be provided together")
+	}
+	if pageNumber != 0 && limit != 0 {
+		return invalidQueryParameter("query parameter 'limit' must not be combined with 'page-number' and 'page-size'")
 	}
 
-	response, problemDetails := GetNFInstancesProcedure(nfType, limit)
+	selfHref := nrfContext.GetNfInstanceURI("")
+	selfHref = strings.TrimSuffix(selfHref, "/")
+	if request.URL != nil && request.URL.RawQuery != "" {
+		selfHref += "?" + request.URL.RawQuery
+	}
+
+	response, problemDetails := GetNFInstancesProcedure(nfType, limit, pageNumber, pageSize, selfHref)
 	if response != nil {
 		logger.ManagementLog.Debugln("GetNFInstances success")
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
@@ -188,6 +203,12 @@ func HandleGetNFInstancesRequest(request *httpwrapper.Request) *httpwrapper.Resp
 	problemDetails = utils.ProblemDetailsSystemFailure("NF instance retrieval produced no result")
 	logger.ManagementLog.Errorln("GetNFInstances failed: procedure returned neither a result nor a problem")
 	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
+}
+
+func invalidQueryParameter(detail string) *httpwrapper.Response {
+	problemDetails := utils.ProblemDetailsWithCause(
+		"Invalid Parameter", http.StatusBadRequest, detail, utils.CauseInvalidRequest)
+	return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 }
 
 func HandleRemoveSubscriptionRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -324,11 +345,12 @@ func RemoveSubscriptionProcedure(subscriptionID string) {
 	logger.ManagementLog.Infof("removed subscription with ID %s", subscriptionID)
 }
 
-func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.UriList,
+// GetNFInstancesProcedure returns the NF Instance URIs of nfType as a TS 29.510 UriList. A limit of 0 means
+// no limit; a pageNumber and pageSize of 0 mean no paging. totalItemCount is the number of matching items
+// before the limit or page is applied.
+func GetNFInstancesProcedure(nfType string, limit, pageNumber, pageSize int, selfHref string) (response *models.UriList,
 	problemDetail *models.ProblemDetails,
 ) {
-	// nfType := c.Query("nf-type")
-	// limit, err := strconv.Atoi(c.Query("limit"))
 	collName := collUriList
 	filter := bson.M{fieldNfType: nfType}
 
@@ -338,16 +360,16 @@ func GetNFInstancesProcedure(nfType string, limit int) (response *nrfContext.Uri
 		return nil, utils.ProblemDetailsSystemFailure(err.Error())
 	}
 	logger.ManagementLog.Infoln("UL: ", UL)
-	originalUL := &nrfContext.UriList{}
-	err = mapstructure.Decode(UL, originalUL)
+	originalUL, err := nrfContext.DecodeUriList(UL)
 	if err != nil {
 		logger.ManagementLog.Errorln("Decode error in GetNFInstancesProcedure: ", err)
 		problemDetail := utils.ProblemDetailsSystemFailure(err.Error())
 		return nil, problemDetail
 	}
+	total := len(originalUL.Links.Item)
 	nrfContext.NnrfUriListLimit(originalUL, limit)
-	// c.JSON(http.StatusOK, originalUL)
-	return originalUL, nil
+	items := nrfContext.PaginateLinks(originalUL.Links.Item, pageNumber, pageSize)
+	return nrfContext.BuildUriListResponse(items, total, selfHref), nil
 }
 
 func NFDeleteAll(nfType string) (problemDetails *models.ProblemDetails) {

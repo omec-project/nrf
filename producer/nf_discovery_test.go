@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	testFieldLink                    = "_link"
+	testFieldLink                    = "_links"
 	testNfInstanceAmfLater           = "amf-later"
 	testNfInstanceAmfEarlier         = "amf-earlier"
 	testFieldItem                    = "item"
